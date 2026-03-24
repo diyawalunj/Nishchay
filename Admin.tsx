@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { db, auth, onAuthStateChanged, checkIfAdmin, collection, getDocs, query, orderBy, onSnapshot, addDoc, serverTimestamp, doc, updateDoc, deleteDoc } from './firebase';
+import { db, auth, onAuthStateChanged, checkIfAdmin, collection, getDocs, query, orderBy, onSnapshot, addDoc, serverTimestamp, doc, updateDoc, deleteDoc, limit, where } from './firebase';
 import { LayoutDashboard, MessageSquare, Mail, User, Clock, CheckCircle, XCircle, Send, ChevronLeft } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
@@ -35,28 +35,72 @@ interface Contact {
 
 export default function Admin() {
   const [doubts, setDoubts] = useState<Doubt[]>([]);
-  const [contacts, setContacts] = useState<Contact[]>([]);
   const [loading, setLoading] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
-  const [activeTab, setActiveTab] = useState<'doubts' | 'contacts'>('doubts');
+  const [activeTab, setActiveTab] = useState<'doubts'>('doubts');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'resolved'>('pending');
   const [selectedDoubt, setSelectedDoubt] = useState<Doubt | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState('');
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
   const navigate = useNavigate();
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    let unsubDoubts: (() => void) | null = null;
+
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (user && checkIfAdmin(user)) {
         setIsAdmin(true);
-        fetchData();
+        
+        // Cleanup previous listener if it exists
+        if (unsubDoubts) {
+          unsubDoubts();
+          unsubDoubts = null;
+        }
+
+        setLoading(true);
+        
+        // Real-time doubts with limit and status filter for performance
+        let doubtsQuery;
+        if (statusFilter === 'all') {
+          doubtsQuery = query(
+            collection(db, 'doubts'), 
+            orderBy('createdAt', 'desc'),
+            limit(50)
+          );
+        } else {
+          doubtsQuery = query(
+            collection(db, 'doubts'), 
+            where('status', '==', statusFilter),
+            orderBy('createdAt', 'desc'),
+            limit(50)
+          );
+        }
+
+        unsubDoubts = onSnapshot(doubtsQuery, (snapshot) => {
+          const doubtsList = snapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data()
+          })) as Doubt[];
+          setDoubts(doubtsList);
+          setLoading(false);
+        }, (error) => {
+          console.error("Error fetching doubts:", error);
+          setLoading(false);
+        });
+
       } else {
         setIsAdmin(false);
         if (!loading) navigate('/');
       }
     });
-    return () => unsubscribe();
-  }, [navigate]);
+
+    return () => {
+      unsubscribe();
+      if (unsubDoubts) unsubDoubts();
+    };
+  }, [navigate, statusFilter]);
 
   useEffect(() => {
     if (selectedDoubt) {
@@ -80,36 +124,6 @@ export default function Admin() {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
-
-  const fetchData = () => {
-    setLoading(true);
-    
-    // Real-time doubts
-    const doubtsQuery = query(collection(db, 'doubts'), orderBy('createdAt', 'desc'));
-    const unsubDoubts = onSnapshot(doubtsQuery, (snapshot) => {
-      const doubtsList = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      })) as Doubt[];
-      setDoubts(doubtsList);
-      setLoading(false);
-    });
-
-    // Real-time contacts
-    const contactsQuery = query(collection(db, 'contacts'), orderBy('createdAt', 'desc'));
-    const unsubContacts = onSnapshot(contactsQuery, (snapshot) => {
-      const contactsList = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      })) as Contact[];
-      setContacts(contactsList);
-    });
-
-    return () => {
-      unsubDoubts();
-      unsubContacts();
-    };
-  };
 
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -143,21 +157,12 @@ export default function Admin() {
   };
 
   const handleDeleteDoubt = async (doubtId: string) => {
-    if (!window.confirm('Are you sure you want to delete this doubt?')) return;
     try {
       await deleteDoc(doc(db, 'doubts', doubtId));
       setSelectedDoubt(null);
+      setShowDeleteConfirm(null);
     } catch (error) {
       console.error("Error deleting doubt:", error);
-    }
-  };
-
-  const handleDeleteContact = async (contactId: string) => {
-    if (!window.confirm('Are you sure you want to delete this contact message?')) return;
-    try {
-      await deleteDoc(doc(db, 'contacts', contactId));
-    } catch (error) {
-      console.error("Error deleting contact:", error);
     }
   };
 
@@ -178,31 +183,34 @@ export default function Admin() {
             </div>
           </div>
 
-          <div className="flex gap-4">
-            <button
-              onClick={() => {
-                setActiveTab('doubts');
-                setSelectedDoubt(null);
-              }}
-              className={`px-6 py-3 rounded-xl font-bold transition-all flex items-center gap-2 ${
-                activeTab === 'doubts' ? 'bg-white text-[#1B4332]' : 'bg-white/10 hover:bg-white/20'
-              }`}
-            >
-              <MessageSquare size={20} />
-              Doubts ({doubts.length})
-            </button>
-            <button
-              onClick={() => {
-                setActiveTab('contacts');
-                setSelectedDoubt(null);
-              }}
-              className={`px-6 py-3 rounded-xl font-bold transition-all flex items-center gap-2 ${
-                activeTab === 'contacts' ? 'bg-white text-[#1B4332]' : 'bg-white/10 hover:bg-white/20'
-              }`}
-            >
-              <Mail size={20} />
-              Contact Messages ({contacts.length})
-            </button>
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+            <div className="flex gap-4">
+              <button
+                onClick={() => setActiveTab('doubts')}
+                className={`px-6 py-3 rounded-xl font-bold transition-all flex items-center gap-2 ${
+                  activeTab === 'doubts' ? 'bg-white text-[#1B4332]' : 'bg-white/10 hover:bg-white/20'
+                }`}
+              >
+                <MessageSquare size={20} />
+                Doubts ({doubts.length})
+              </button>
+            </div>
+
+            <div className="flex bg-white/10 backdrop-blur-md rounded-2xl p-1.5 border border-white/20">
+              {(['pending', 'resolved', 'all'] as const).map((status) => (
+                <button
+                  key={status}
+                  onClick={() => setStatusFilter(status)}
+                  className={`px-6 py-2 rounded-xl text-[10px] font-black tracking-widest uppercase transition-all ${
+                    statusFilter === status 
+                      ? 'bg-white text-[#1B4332] shadow-lg' 
+                      : 'text-white/60 hover:text-white hover:bg-white/5'
+                  }`}
+                >
+                  {status}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
       </div>
@@ -215,7 +223,7 @@ export default function Admin() {
           </div>
         ) : (
           <div className="grid gap-6">
-            {activeTab === 'doubts' ? (
+            {activeTab === 'doubts' && (
               selectedDoubt ? (
                 <motion.div 
                   initial={{ opacity: 0, x: 20 }}
@@ -246,7 +254,7 @@ export default function Admin() {
                         </button>
                       )}
                       <button 
-                        onClick={() => handleDeleteDoubt(selectedDoubt.id)}
+                        onClick={() => setShowDeleteConfirm(selectedDoubt.id)}
                         className="px-4 py-2 bg-red-50 text-red-700 rounded-xl text-[10px] font-black tracking-widest hover:bg-red-100 transition-colors flex items-center gap-2"
                       >
                         <XCircle size={14} />
@@ -344,64 +352,40 @@ export default function Admin() {
                   </div>
                 )
               )
-            ) : (
-              contacts.length > 0 ? (
-                contacts.map((contact) => (
-                  <motion.div
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    key={contact.id}
-                    className="bg-white rounded-3xl p-8 shadow-lg border border-gray-100 hover:shadow-xl transition-all"
-                  >
-                    <div className="flex flex-col md:flex-row justify-between gap-6">
-                      <div className="flex-grow">
-                        <div className="flex items-center gap-2 mb-4">
-                          <span className="px-3 py-1 bg-blue-50 text-blue-700 text-[10px] font-black uppercase tracking-widest rounded-full border border-blue-100">
-                            {contact.subject}
-                          </span>
-                          <span className="flex items-center gap-1 text-[10px] text-gray-400 font-bold">
-                            <Clock size={12} />
-                            {contact.createdAt?.toDate ? contact.createdAt.toDate().toLocaleString() : 'Just now'}
-                          </span>
-                        </div>
-                        <h3 className="text-xl font-black text-gray-900 mb-4">{contact.message}</h3>
-                        <div className="flex flex-wrap gap-4">
-                          <div className="flex items-center gap-2 text-xs font-bold text-gray-600">
-                            <User size={14} className="text-[#1B4332]" />
-                            {contact.name}
-                          </div>
-                          <div className="flex items-center gap-2 text-xs font-bold text-gray-600">
-                            <Mail size={14} className="text-[#1B4332]" />
-                            {contact.email}
-                          </div>
-                        </div>
-                      </div>
-                      <div className="flex md:flex-col gap-2 shrink-0">
-                        <button className="flex-grow md:flex-grow-0 px-4 py-2 bg-blue-50 text-blue-700 rounded-xl text-xs font-black tracking-widest hover:bg-blue-100 transition-colors flex items-center justify-center gap-2">
-                          <Mail size={14} />
-                          REPLY
-                        </button>
-                        <button 
-                          onClick={() => handleDeleteContact(contact.id)}
-                          className="flex-grow md:flex-grow-0 px-4 py-2 bg-red-50 text-red-700 rounded-xl text-xs font-black tracking-widest hover:bg-red-100 transition-colors flex items-center justify-center gap-2"
-                        >
-                          <XCircle size={14} />
-                          DELETE
-                        </button>
-                      </div>
-                    </div>
-                  </motion.div>
-                ))
-              ) : (
-                <div className="bg-white rounded-3xl p-20 shadow-xl text-center">
-                  <Mail size={48} className="mx-auto text-gray-200 mb-4" />
-                  <p className="text-gray-400 font-bold">No contact messages yet.</p>
-                </div>
-              )
             )}
           </div>
         )}
       </div>
+
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <motion.div 
+            initial={{ scale: 0.9, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            className="bg-white rounded-[2.5rem] p-10 max-w-md w-full shadow-2xl text-center"
+          >
+            <div className="w-20 h-20 rounded-full bg-red-50 flex items-center justify-center mx-auto text-red-500 mb-6">
+              <XCircle size={48} />
+            </div>
+            <h3 className="text-2xl font-black text-gray-900 mb-2">Are you sure?</h3>
+            <p className="text-gray-500 font-medium mb-8">This will permanently delete this doubt and all its messages. This action cannot be undone.</p>
+            <div className="flex gap-4">
+              <button 
+                onClick={() => setShowDeleteConfirm(null)}
+                className="flex-1 py-4 bg-gray-100 text-gray-500 rounded-2xl font-black tracking-widest text-xs hover:bg-gray-200 transition-all"
+              >
+                CANCEL
+              </button>
+              <button 
+                onClick={() => handleDeleteDoubt(showDeleteConfirm)}
+                className="flex-1 py-4 bg-red-500 text-white rounded-2xl font-black tracking-widest text-xs shadow-lg shadow-red-500/20 hover:bg-red-600 transition-all"
+              >
+                DELETE
+              </button>
+            </div>
+          </motion.div>
+        </div>
+      )}
     </div>
   );
 }

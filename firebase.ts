@@ -1,8 +1,21 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged, User } from 'firebase/auth';
-import { getFirestore, collection, addDoc, serverTimestamp, getDoc, setDoc, doc, query, orderBy, getDocs, where, onSnapshot, limit, updateDoc, deleteDoc } from 'firebase/firestore';
+import { getFirestore, collection, addDoc, serverTimestamp, getDoc, setDoc, doc, query, orderBy, getDocs, where, onSnapshot, limit, updateDoc, deleteDoc, enableIndexedDbPersistence } from 'firebase/firestore';
 
-import firebaseConfig from './firebase-applet-config.json';
+// Import the Firebase configuration
+import firebaseConfigJson from './firebase-applet-config.json';
+
+// Use environment variables if available (for Vercel/Production), otherwise fallback to JSON
+const firebaseConfig = {
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || firebaseConfigJson.apiKey,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || firebaseConfigJson.authDomain,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || firebaseConfigJson.projectId,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || firebaseConfigJson.storageBucket,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || firebaseConfigJson.messagingSenderId,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID || firebaseConfigJson.appId,
+  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID || firebaseConfigJson.measurementId,
+  firestoreDatabaseId: import.meta.env.VITE_FIREBASE_DATABASE_ID || firebaseConfigJson.firestoreDatabaseId
+};
 
 // Firebase is now configured with the user's real API key
 export const isFirebaseConfigured = true;
@@ -11,6 +24,18 @@ const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 // @ts-ignore
 export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId || '(default)');
+
+// Enable offline persistence
+if (typeof window !== 'undefined') {
+  enableIndexedDbPersistence(db).catch((err) => {
+    if (err.code === 'failed-precondition') {
+      console.warn('Firestore persistence failed: Multiple tabs open');
+    } else if (err.code === 'unimplemented') {
+      console.warn('Firestore persistence failed: Browser not supported');
+    }
+  });
+}
+
 export const googleProvider = new GoogleAuthProvider();
 
 // Error Handling Spec for Firestore Operations

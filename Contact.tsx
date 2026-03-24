@@ -76,30 +76,32 @@ const Contact: React.FC = () => {
     
     if (validate()) {
       setIsSubmitting(true);
-      const path = 'contacts';
       try {
-        const contactData: any = {
-          name: formData.fullName,
-          email: formData.email,
-          subject: 'Contact Form Submission',
-          message: formData.message,
-          createdAt: serverTimestamp()
-        };
+        const response = await fetch('/api/contact', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(formData),
+        });
 
-        if (user) {
-          contactData.uid = user.uid;
+        if (!response.ok) {
+          throw new Error('Failed to submit form');
         }
 
-        await addDoc(collection(db, path), contactData);
-
-        console.log('Form submitted successfully');
+        console.log('Form submitted successfully to Google Sheets');
         setIsSuccess(true);
-        setFormData({ fullName: user?.displayName || '', email: user?.email || '', message: '' });
+        setFormData({ 
+          fullName: user?.displayName || '', 
+          email: user?.email || '', 
+          message: '' 
+        });
         
         // Reset success message after 5 seconds
         setTimeout(() => setIsSuccess(false), 5000);
       } catch (error: any) {
-        handleFirestoreError(error, OperationType.CREATE, path);
+        console.error('Submission error:', error);
+        alert('Failed to send message. Please try again later.');
       } finally {
         setIsSubmitting(false);
       }

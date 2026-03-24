@@ -24,16 +24,6 @@ service cloud.firestore {
     //   - message: string (required) - Content of the doubt.
     //   - createdAt: timestamp (required) - Time of creation.
     //
-    // Collection: contacts
-    // Document ID: {contactId}
-    // Fields:
-    //   - uid: string (required) - UID of the user who submitted.
-    //   - name: string (required) - User's name.
-    //   - email: string (required, format: email) - User's email.
-    //   - subject: string (required) - Subject of the contact message.
-    //   - message: string (required) - Content of the contact message.
-    //   - createdAt: timestamp (required) - Time of creation.
-    //
     // ===============================================================
 
     // ===============================================================
@@ -96,18 +86,6 @@ service cloud.firestore {
              data.createdAt is timestamp &&
              data.status in ['pending', 'resolved'];
     }
-    
-    function isValidContact(data) {
-      return hasRequiredFields(['name', 'email', 'subject', 'message', 'createdAt']) &&
-             hasOnlyAllowedFields(['uid', 'name', 'email', 'subject', 'message', 'createdAt']) &&
-             (!('uid' in data) || data.uid is string) &&
-             (isAuthenticated() && 'uid' in data ? data.uid == request.auth.uid : true) &&
-             data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
-             data.email is string && isValidEmail(data.email) &&
-             data.subject is string && data.subject.size() > 0 && data.subject.size() < 200 &&
-             data.message is string && data.message.size() > 0 && data.message.size() < 5000 &&
-             data.createdAt is timestamp;
-    }
 
     // ===============================================================
     // Rules
@@ -125,7 +103,7 @@ service cloud.firestore {
       allow read: if isAdmin() || (isAuthenticated() && resource.data.uid == request.auth.uid);
       allow create: if isAuthenticated() && isValidDoubt(request.resource.data);
       allow update: if isAdmin() || (isAuthenticated() && resource.data.uid == request.auth.uid);
-      allow delete: if isAdmin();
+      allow delete: if isAdmin() || (isAuthenticated() && resource.data.uid == request.auth.uid);
 
       match /messages/{messageId} {
         allow read: if isAdmin() || (isAuthenticated() && get(/databases/$(database)/documents/doubts/$(doubtId)).data.uid == request.auth.uid);
@@ -134,12 +112,6 @@ service cloud.firestore {
           request.resource.data.keys().hasAll(['text', 'senderId', 'senderName', 'createdAt', 'isAdmin']) &&
           request.resource.data.senderId == request.auth.uid;
       }
-    }
-    
-    match /contacts/{contactId} {
-      allow read: if isAdmin();
-      allow create: if isValidContact(request.resource.data);
-      allow update, delete: if isAdmin();
     }
   }
 }
