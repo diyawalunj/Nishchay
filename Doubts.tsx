@@ -1,383 +1,302 @@
 import React, { useState, useEffect, useRef, useCallback, memo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { HelpCircle, Send, MessageSquare, User, Tag, ChevronRight, Search, Lock, Clock, MessageCircle, Trash2, XCircle } from 'lucide-react';
-import { auth, db, collection, addDoc, serverTimestamp, onAuthStateChanged, signInWithGoogle, handleFirestoreError, OperationType, type User as FirebaseUser, query, where, orderBy, onSnapshot, doc, checkIfAdmin, setDoc, retryWrite, deleteDoubtWithMessages } from './firebase';
-import { useNavigate } from 'react-router-dom';
+import { auth, signInWithGoogle, onAuthStateChanged, checkIfAdmin, type User as FirebaseUser } from './firebase';
+import { Lock, MessageSquare, Send, Clock, ChevronRight, ChevronLeft, RefreshCw, HelpCircle } from 'lucide-react';
 import { useToast } from './Toast';
 
+const CATEGORIES = [
+  'General Inquiry',
+  'Mathematics',
+  'General Ability Test (GAT)',
+  'SSB Interview',
+  'Physical Training',
+  'Medical Queries',
+  'Technical Issue'
+];
+
 interface Message {
-  id: string;
-  text: string;
-  senderId: string;
+  doubtId: string;
   senderName: string;
+  message: string;
   isAdmin: boolean;
-  createdAt: any;
+  date: string;
 }
 
 interface Doubt {
   id: string;
   name: string;
   email: string;
-  subject: string;
-  message: string;
-  createdAt: any;
-  status: 'pending' | 'resolved';
+  category: string;
+  question: string;
+  status: string;
+  date: string;
 }
 
-const CATEGORIES = [
-  'Mathematics',
-  'English',
-  'GK',
-  'Current Affairs',
-  'SSB',
-  'NCC',
-  'Fitness',
-  'Strategy'
-];
-
-// ── Memoized sub-components to prevent unnecessary re-renders ──
+// ── Memoized sub-components ──
 
 const ChatMessage = memo(function ChatMessage({ msg }: { msg: Message }) {
   return (
     <div className={`max-w-[80%] flex flex-col ${msg.isAdmin ? 'self-start' : 'self-end'}`}>
       <span className={`text-[9px] font-black uppercase tracking-widest mb-1 ${msg.isAdmin ? 'text-[#1B4332]' : 'text-gray-400 text-right'}`}>
-        {msg.isAdmin ? 'ADMIN MENTOR' : 'YOU'}
+        {msg.isAdmin ? msg.senderName.toUpperCase() : 'YOU'}
       </span>
       <div className={`px-5 py-3 rounded-2xl text-sm font-medium shadow-sm ${
-        msg.isAdmin 
-          ? 'bg-white text-gray-800 rounded-tl-none border border-gray-100' 
+        msg.isAdmin
+          ? 'bg-white text-gray-800 rounded-tl-none border border-gray-100'
           : 'bg-[#1B4332] text-white rounded-tr-none'
       }`}>
-        {msg.text}
+        {msg.message}
       </div>
+      <span className={`text-[8px] text-gray-300 mt-1 ${msg.isAdmin ? '' : 'text-right'}`}>
+        {msg.date ? new Date(msg.date).toLocaleString() : ''}
+      </span>
     </div>
   );
 });
 
-const DoubtListItem = memo(function DoubtListItem({ doubt, isSelected, onSelect, onDelete }: {
+const DoubtListItem = memo(function DoubtListItem({ doubt, isSelected, onSelect }: {
   doubt: Doubt;
   isSelected: boolean;
   onSelect: (doubt: Doubt) => void;
-  onDelete: (id: string) => void;
 }) {
   return (
     <motion.button
       onClick={() => onSelect(doubt)}
-      whileHover={{ x: 10 }}
-      className={`w-full text-left bg-white rounded-3xl p-6 border transition-all flex items-center justify-between group ${
-        isSelected 
-          ? 'border-[#1B4332] shadow-lg ring-1 ring-[#1B4332]' 
-          : 'border-gray-100 shadow-sm hover:shadow-md'
+      whileHover={{ x: 4 }}
+      className={`w-full p-6 rounded-[2rem] text-left transition-all border ${
+        isSelected
+          ? 'bg-[#1B4332] border-[#1B4332] shadow-xl shadow-[#1B4332]/20'
+          : 'bg-white border-gray-100 hover:border-[#1B4332]/30 shadow-sm hover:shadow-md'
       }`}
     >
-      <div className="flex items-center gap-6">
-        <div className={`w-12 h-12 rounded-2xl flex items-center justify-center transition-colors ${
-          isSelected ? 'bg-[#1B4332] text-white' : 'bg-gray-50 text-gray-400 group-hover:bg-[#1B4332]/5 group-hover:text-[#1B4332]'
+      <div className="flex justify-between items-start mb-3">
+        <span className={`px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-widest border ${
+          isSelected
+            ? 'bg-white/10 text-white border-white/20'
+            : 'bg-amber-50 text-amber-600 border-amber-100'
         }`}>
-          <MessageSquare size={24} />
-        </div>
-        <div>
-          <h4 className="font-black text-gray-900 line-clamp-1">{doubt.message}</h4>
-          <div className="flex items-center gap-3 mt-1">
-            <span className="text-[9px] font-black uppercase tracking-widest text-gray-400">
-              {doubt.subject}
-            </span>
-            <span className="w-1 h-1 rounded-full bg-gray-300" />
-            <span className="text-[9px] font-bold text-gray-400">
-              {doubt.createdAt?.toDate ? doubt.createdAt.toDate().toLocaleDateString() : 'Just now'}
-            </span>
-            {doubt.status === 'resolved' && (
-              <span className="px-2 py-0.5 bg-green-50 text-green-600 text-[8px] font-black uppercase tracking-widest rounded-full border border-green-100">
-                RESOLVED
-              </span>
-            )}
-          </div>
-        </div>
+          {doubt.category}
+        </span>
+        <span className={`text-[8px] font-black uppercase tracking-widest ${isSelected ? 'text-white/40' : 'text-gray-300'}`}>
+          {doubt.date ? new Date(doubt.date).toLocaleDateString() : 'Today'}
+        </span>
       </div>
-      <div className="flex items-center gap-4">
-        <button 
-          onClick={(e) => {
-            e.stopPropagation();
-            onDelete(doubt.id);
-          }}
-          className="p-2 hover:bg-red-50 text-red-400 hover:text-red-500 rounded-full transition-colors"
-          title="Delete Chat"
-        >
-          <Trash2 size={20} />
-        </button>
-        <ChevronRight size={20} className={`transition-transform ${isSelected ? 'text-[#1B4332] translate-x-2' : 'text-gray-300 group-hover:text-[#1B4332]'}`} />
+      <h4 className={`text-sm font-bold line-clamp-2 leading-relaxed mb-3 ${isSelected ? 'text-white' : 'text-gray-800'}`}>
+        {doubt.question}
+      </h4>
+      <div className="flex items-center justify-between">
+        <span className={`text-[8px] font-black uppercase tracking-[0.2em] ${
+          isSelected
+            ? 'text-white'
+            : doubt.status === 'resolved'
+              ? 'text-green-500'
+              : 'text-orange-500'
+        }`}>
+          {doubt.status}
+        </span>
+        <ChevronRight size={14} className={isSelected ? 'text-white/40' : 'text-gray-300'} />
       </div>
     </motion.button>
   );
 });
 
-// ── Skeleton loader for initial auth state ──
-function DoubtsSkeleton() {
-  return (
-    <div className="space-y-8 animate-pulse">
-      <div className="bg-white rounded-[2.5rem] p-10 border border-gray-100">
-        <div className="h-8 bg-gray-100 rounded-xl w-1/3 mb-8" />
-        <div className="space-y-6">
-          <div className="h-12 bg-gray-50 rounded-2xl" />
-          <div className="h-12 bg-gray-50 rounded-2xl" />
-          <div className="h-24 bg-gray-50 rounded-2xl" />
-          <div className="h-14 bg-gray-100 rounded-2xl" />
-        </div>
-      </div>
-    </div>
-  );
-}
-
 export default function Doubts() {
-  const [myDoubts, setMyDoubts] = useState<Doubt[]>([]);
+  const [user, setUser] = useState<FirebaseUser | null>(null);
+  const [formData, setFormData] = useState({
+    name: '',
+    category: CATEGORIES[0],
+    question: ''
+  });
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showSuccess, setShowSuccess] = useState(false);
+  const [errors, setErrors] = useState<{ [key: string]: string }>({});
+  const [doubts, setDoubts] = useState<Doubt[]>([]);
+  const [loadingDoubts, setLoadingDoubts] = useState(false);
   const [selectedDoubt, setSelectedDoubt] = useState<Doubt | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState('');
-  const [user, setUser] = useState<FirebaseUser | null>(null);
-  const [authLoading, setAuthLoading] = useState(true);
-  const [formData, setFormData] = useState({
-    name: '',
-    category: 'Mathematics',
-    question: ''
-  });
-  const [errors, setErrors] = useState<{ name?: string; question?: string }>({});
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [showSuccess, setShowSuccess] = useState(false);
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
-  const navigate = useNavigate();
-  const messagesEndRef = useRef<HTMLDivElement>(null);
   const { showToast } = useToast();
+  const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    let unsubDoubts: (() => void) | null = null;
-
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-      setUser(currentUser);
-      setAuthLoading(false);
-      
-      if (unsubDoubts) {
-        unsubDoubts();
-        unsubDoubts = null;
-      }
-
-      if (currentUser) {
-        if (checkIfAdmin(currentUser)) {
-          navigate('/admin');
-          return;
-        }
-        setFormData(prev => ({ ...prev, name: currentUser.displayName || '' }));
-        
-        const q = query(
-          collection(db, 'doubts'),
-          where('uid', '==', currentUser.uid),
-          orderBy('createdAt', 'desc')
-        );
-        
-        unsubDoubts = onSnapshot(q, (snapshot) => {
-          const doubtsList = snapshot.docs.map(doc => ({
-            id: doc.id,
-            ...doc.data()
-          })) as Doubt[];
-          setMyDoubts(doubtsList);
-        }, (error) => {
-          console.error("Error fetching doubts:", error);
-          if (error.message.includes('requires an index')) {
-            showToast('Database index required. Please contact admin.', 'error');
-          }
-        });
-      } else {
-        setMyDoubts([]);
-        setSelectedDoubt(null);
-      }
-    });
-
-    return () => {
-      unsubscribe();
-      if (unsubDoubts) unsubDoubts();
+  // Helper to get authenticated headers
+  const getAuthHeaders = useCallback(async () => {
+    if (!auth.currentUser) return {};
+    const token = await auth.currentUser.getIdToken();
+    return {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json',
     };
-  }, [navigate, showToast]);
+  }, []);
+
+  // Sync user and pre-fill name
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (u) => {
+      setUser(u);
+      if (u) {
+        setFormData(prev => ({ ...prev, name: u.displayName || '' }));
+      }
+    });
+    return () => unsubscribe();
+  }, []);
+
+  // Fetch student's doubts
+  const fetchMyDoubts = useCallback(async () => {
+    if (!user) return;
+    try {
+      setLoadingDoubts(true);
+      const headers = await getAuthHeaders();
+      const res = await fetch('/api/doubts', { headers });
+      const data = await res.json();
+      if (data.success) {
+        setDoubts(data.doubts);
+      }
+    } catch (error) {
+      console.error('Error fetching doubts:', error);
+    } finally {
+      setLoadingDoubts(false);
+    }
+  }, [user, getAuthHeaders]);
 
   useEffect(() => {
-    if (!selectedDoubt) {
-      setMessages([]);
-      return;
+    if (user) fetchMyDoubts();
+  }, [user, fetchMyDoubts]);
+
+  // Fetch messages for selected doubt
+  const fetchMessages = useCallback(async () => {
+    if (!selectedDoubt) return;
+    try {
+      const headers = await getAuthHeaders();
+      const res = await fetch(`/api/doubts/${selectedDoubt.id}/messages`, { headers });
+      const data = await res.json();
+      if (data.success) setMessages(data.messages);
+    } catch (error) {
+      console.error('Error fetching messages:', error);
     }
+  }, [selectedDoubt, getAuthHeaders]);
 
-    const q = query(
-      collection(db, `doubts/${selectedDoubt.id}/messages`),
-      orderBy('createdAt', 'asc')
-    );
-
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const msgs = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      })) as Message[];
-      setMessages(msgs);
-    }, (error) => {
-      console.error("Error fetching messages:", error);
-      showToast('Failed to load messages. Please try again.', 'error');
-    });
-
-    return () => unsubscribe();
-  }, [selectedDoubt, showToast]);
+  useEffect(() => {
+    if (!selectedDoubt) { setMessages([]); return; }
+    fetchMessages();
+    const interval = setInterval(fetchMessages, 10000); // Poll every 10s
+    return () => clearInterval(interval);
+  }, [selectedDoubt, fetchMessages]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  const validate = useCallback(() => {
-    const newErrors: { name?: string; question?: string } = {};
-    if (!formData.name.trim()) {
-      newErrors.name = 'Name is required';
-    }
-    if (!formData.question.trim()) {
-      newErrors.question = 'Question is required';
-    } else if (formData.question.trim().length < 10) {
-      newErrors.question = 'Question must be at least 10 characters';
-    }
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
-  }, [formData.name, formData.question]);
-
-  const handleSubmit = useCallback(async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!user) {
-      signInWithGoogle();
+    if (!user) return;
+
+    const newErrors: { [key: string]: string } = {};
+    if (!formData.name.trim()) newErrors.name = 'Full name is required';
+    if (!formData.question.trim()) newErrors.question = 'Please describe your doubt';
+
+    if (Object.keys(newErrors).length > 0) {
+      setErrors(newErrors);
       return;
     }
-    if (!validate()) return;
 
     setIsSubmitting(true);
     try {
-      const doubtRef = doc(collection(db, 'doubts'));
-      const messageRef = doc(collection(db, `doubts/${doubtRef.id}/messages`));
-      
-      const doubtData = {
-        uid: user.uid,
-        name: formData.name,
-        email: user.email,
-        subject: formData.category,
-        message: formData.question,
-        status: 'pending' as const,
-        createdAt: serverTimestamp()
-      };
+      const headers = await getAuthHeaders();
+      const res = await fetch('/api/doubts', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          ...formData,
+          email: user.email,
+        }),
+      });
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error);
 
-      const messageData = {
-        text: formData.question,
-        senderId: user.uid,
-        senderName: user.displayName || 'Student',
-        isAdmin: false,
-        createdAt: serverTimestamp()
-      };
-
-      await retryWrite(() => setDoc(doubtRef, doubtData));
-      await retryWrite(() => setDoc(messageRef, messageData));
-
-      const newDoubt: Doubt = {
-        id: doubtRef.id,
-        ...doubtData,
-        createdAt: { toDate: () => new Date() }
-      };
-      
-      setSelectedDoubt(newDoubt);
-      setFormData({ name: user.displayName || '', category: 'Mathematics', question: '' });
       setShowSuccess(true);
+      setFormData(prev => ({ ...prev, question: '' }));
+      setErrors({});
+      fetchMyDoubts();
+      setTimeout(() => setShowSuccess(false), 5000);
       showToast('Doubt submitted successfully!', 'success');
-      setTimeout(() => setShowSuccess(false), 3000);
     } catch (error: any) {
-      console.error('Error submitting doubt:', error);
-      showToast('Failed to submit doubt. Please try again.', 'error');
+      console.error('Submission error:', error);
+      showToast(error.message || 'Failed to submit doubt', 'error');
     } finally {
       setIsSubmitting(false);
     }
-  }, [user, formData, validate, showToast]);
+  };
 
   const handleSendMessage = useCallback(async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user || !selectedDoubt || !newMessage.trim()) return;
 
     try {
-      await retryWrite(() => addDoc(collection(db, `doubts/${selectedDoubt.id}/messages`), {
-        text: newMessage,
-        senderId: user.uid,
-        senderName: user.displayName || 'Student',
-        isAdmin: false,
-        createdAt: serverTimestamp()
-      }));
+      const headers = await getAuthHeaders();
+      const res = await fetch(`/api/doubts/${selectedDoubt.id}/reply`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          senderName: user.displayName || 'Student',
+          message: newMessage,
+          isAdmin: false,
+        }),
+      });
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error);
       setNewMessage('');
+      fetchMessages();
     } catch (error) {
-      console.error("Error sending message:", error);
+      console.error('Error sending message:', error);
       showToast('Failed to send message. Please try again.', 'error');
     }
-  }, [user, selectedDoubt, newMessage, showToast]);
-
-  const handleDeleteDoubt = useCallback(async (doubtId: string) => {
-    setShowDeleteConfirm(null);
-    try {
-      await deleteDoubtWithMessages(doubtId);
-      if (selectedDoubt?.id === doubtId) {
-        setSelectedDoubt(null);
-      }
-      showToast('Doubt deleted successfully.', 'success');
-    } catch (error: any) {
-      console.error("Error deleting doubt:", error);
-      showToast('Failed to delete doubt. Please try again.', 'error');
-    }
-  }, [selectedDoubt, showToast]);
-
-  const handleSelectDoubt = useCallback((doubt: Doubt) => {
-    setSelectedDoubt(doubt);
-  }, []);
-
-  const handleRequestDelete = useCallback((id: string) => {
-    setShowDeleteConfirm(id);
-  }, []);
+  }, [user, selectedDoubt, newMessage, showToast, fetchMessages, getAuthHeaders]);
 
   return (
     <div className="min-h-screen bg-[#F8F9FA]">
       {/* Hero Section */}
       <section className="relative py-48 pt-32 bg-[#050A0F] overflow-hidden">
-        <div className="absolute inset-0 z-0 opacity-30">
-          <div className="absolute inset-0 bg-gradient-to-b from-[#1B4332]/40 to-transparent"></div>
-          <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/camouflage.png')]"></div>
+        <div className="absolute inset-0 bg-gradient-to-b from-[#1B4332]/20 to-transparent" />
+        <div className="absolute top-0 left-0 w-full h-full opacity-10 pointer-events-none">
+          <div className="absolute top-20 left-10 w-64 h-64 bg-[#1B4332] rounded-full blur-[128px]" />
+          <div className="absolute bottom-20 right-10 w-96 h-96 bg-[#1B4332] rounded-full blur-[128px]" />
         </div>
-        
-        <motion.div 
-          initial={{ opacity: 0, y: 20 }}
+
+        <motion.div
+          initial={{ opacity: 0, y: 30 }}
           animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.8, ease: "easeOut" }}
           className="relative z-10 max-w-7xl mx-auto px-4 text-center"
         >
           <span className="inline-block px-4 py-1.5 bg-white/10 backdrop-blur-md border border-white/20 rounded-full text-white text-[10px] font-black tracking-[0.4em] uppercase mb-8">
-            PRIVATE MENTORSHIP
+            PRIVATE GUIDANCE
           </span>
           <h1 className="text-7xl md:text-[10rem] font-display text-white mb-8 tracking-tighter text-glow-white leading-none">
             DOUBTS
           </h1>
           <p className="text-white/60 max-w-2xl mx-auto text-lg md:text-2xl font-medium leading-relaxed tracking-tight">
-            Ask your doubts privately. Our mentors will reply to you directly in a chat.
+            Ask your doubts privately. Our founders will reply to you directly.
           </p>
         </motion.div>
       </section>
 
-      <div className="max-w-7xl mx-auto px-4 py-24 relative">
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-12">
-          
-          {/* Left Column: Ask Form */}
+      <div className="max-w-7xl mx-auto px-4 pb-32 -mt-20 relative z-20">
+        <div className="grid lg:grid-cols-12 gap-12">
+          {/* Left Column: Form */}
           <div className="lg:col-span-4">
-            {authLoading ? (
-              <DoubtsSkeleton />
-            ) : (
-              <motion.div 
-                initial={{ opacity: 0, x: -20 }}
-                animate={{ opacity: 1, x: 0 }}
-                className="bg-white rounded-[2.5rem] p-10 shadow-[0_40px_100px_rgba(0,0,0,0.03)] border border-gray-100 sticky top-32"
+            {!selectedDoubt ? (
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                className="bg-white rounded-[2.5rem] p-10 shadow-2xl border border-gray-100 sticky top-32"
               >
                 <div className="flex items-center gap-4 mb-10">
-                  <div className="w-12 h-12 rounded-2xl bg-[#1B4332]/5 flex items-center justify-center text-[#1B4332] shadow-inner">
-                    <HelpCircle size={28} />
+                  <div className="w-12 h-12 rounded-2xl bg-[#1B4332]/5 flex items-center justify-center text-[#1B4332]">
+                    <HelpCircle size={24} />
                   </div>
-                  <h2 className="text-3xl font-black tracking-tighter text-[#1A1A1A]">Ask Now</h2>
+                  <div>
+                    <h2 className="text-2xl font-black text-gray-900 tracking-tight">Ask Doubt</h2>
+                    <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest">Personal Response</p>
+                  </div>
                 </div>
 
                 <form onSubmit={handleSubmit} className="space-y-8">
@@ -389,7 +308,7 @@ export default function Doubts() {
                         exit={{ opacity: 0, height: 0 }}
                         className="bg-green-50 text-green-700 p-5 rounded-2xl text-[10px] font-black tracking-[0.2em] uppercase border border-green-100 mb-6"
                       >
-                        Question submitted! Chat opened.
+                        Question submitted! You'll be notified when a founder replies.
                       </motion.div>
                     )}
                   </AnimatePresence>
@@ -417,10 +336,10 @@ export default function Doubts() {
                     <>
                       <div className="space-y-2">
                         <label className="block text-[10px] font-black text-gray-300 uppercase tracking-[0.3em] ml-1">Your Name</label>
-                        <input 
+                        <input
                           type="text"
                           value={formData.name}
-                          onChange={(e) => setFormData({...formData, name: e.target.value})}
+                          onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                           placeholder="e.g. Rahul Singh"
                           className="w-full px-6 py-4 rounded-2xl bg-gray-50 border border-gray-100 focus:border-[#1B4332] outline-none transition-all font-bold text-gray-700"
                         />
@@ -429,9 +348,9 @@ export default function Doubts() {
 
                       <div className="space-y-2">
                         <label className="block text-[10px] font-black text-gray-300 uppercase tracking-[0.3em] ml-1">Category</label>
-                        <select 
+                        <select
                           value={formData.category}
-                          onChange={(e) => setFormData({...formData, category: e.target.value})}
+                          onChange={(e) => setFormData({ ...formData, category: e.target.value })}
                           className="w-full px-6 py-4 rounded-2xl bg-gray-50 border border-gray-100 focus:border-[#1B4332] outline-none transition-all font-bold text-gray-700 appearance-none cursor-pointer"
                         >
                           {CATEGORIES.map(cat => (
@@ -442,9 +361,9 @@ export default function Doubts() {
 
                       <div className="space-y-2">
                         <label className="block text-[10px] font-black text-gray-300 uppercase tracking-[0.3em] ml-1">Your Question</label>
-                        <textarea 
+                        <textarea
                           value={formData.question}
-                          onChange={(e) => setFormData({...formData, question: e.target.value})}
+                          onChange={(e) => setFormData({ ...formData, question: e.target.value })}
                           placeholder="Describe your doubt..."
                           rows={4}
                           className="w-full px-6 py-4 rounded-2xl bg-gray-50 border border-gray-100 focus:border-[#1B4332] outline-none transition-all font-bold text-gray-700 resize-none"
@@ -470,12 +389,49 @@ export default function Doubts() {
                   )}
                 </form>
               </motion.div>
+            ) : (
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="bg-white rounded-[2.5rem] p-8 shadow-xl border border-gray-100 sticky top-32"
+              >
+                <button
+                  onClick={() => setSelectedDoubt(null)}
+                  className="w-full py-4 bg-gray-50 text-gray-500 rounded-2xl font-black tracking-widest text-xs hover:bg-gray-100 transition-all flex items-center justify-center gap-2 mb-8"
+                >
+                  <ChevronLeft size={16} />
+                  BACK TO FORM
+                </button>
+                <div className="space-y-4">
+                  <h3 className="text-[10px] font-black text-gray-300 uppercase tracking-[0.3em] ml-1">My History</h3>
+                  <div className="space-y-3 overflow-y-auto max-h-[300px] pr-2 custom-scrollbar">
+                    {doubts.map(d => (
+                      <button
+                        key={d.id}
+                        onClick={() => setSelectedDoubt(d)}
+                        className={`w-full p-4 rounded-2xl text-left transition-all border ${
+                          selectedDoubt?.id === d.id
+                            ? 'bg-[#1B4332] border-[#1B4332] text-white shadow-lg shadow-[#1B4332]/10'
+                            : 'bg-gray-50 border-gray-100 text-gray-600 hover:border-[#1B4332]/30'
+                        }`}
+                      >
+                        <p className={`text-xs font-bold line-clamp-1 mb-1 ${selectedDoubt?.id === d.id ? 'text-white' : 'text-gray-800'}`}>
+                          {d.question}
+                        </p>
+                        <span className={`text-[8px] font-black uppercase tracking-widest ${selectedDoubt?.id === d.id ? 'text-white/60' : 'text-gray-400'}`}>
+                          {d.status}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </motion.div>
             )}
           </div>
 
           {/* Right Column: Active Chat & History */}
           <div className="lg:col-span-8 space-y-12">
-            {/* Active Chat Section */}
+            {/* Active Chat */}
             <AnimatePresence mode="wait">
               {selectedDoubt ? (
                 <motion.div
@@ -491,146 +447,109 @@ export default function Doubts() {
                         <MessageSquare size={20} />
                       </div>
                       <div>
-                        <h3 className="font-black text-gray-900 text-lg line-clamp-1">{selectedDoubt.message}</h3>
+                        <h3 className="font-black text-gray-900 text-lg line-clamp-1">{selectedDoubt.question}</h3>
                         <div className="flex items-center gap-2">
                           <span className="px-2 py-0.5 bg-amber-50 text-amber-700 text-[8px] font-black uppercase tracking-widest rounded-full border border-amber-100">
-                            {selectedDoubt.subject}
+                            {selectedDoubt.category}
                           </span>
-                          <span className="text-[10px] text-gray-400 font-bold">
-                            Status: {selectedDoubt.status.toUpperCase()}
+                          <span className={`px-2 py-0.5 text-[8px] font-black uppercase tracking-widest rounded-full border ${
+                            selectedDoubt.status === 'resolved'
+                              ? 'bg-green-50 text-green-600 border-green-100'
+                              : 'bg-orange-50 text-orange-600 border-orange-100'
+                          }`}>
+                            {selectedDoubt.status}
                           </span>
                         </div>
                       </div>
                     </div>
-                      <div className="flex items-center gap-2">
-                        <button 
-                          onClick={() => setShowDeleteConfirm(selectedDoubt.id)}
-                          className="p-2 hover:bg-red-50 text-red-400 hover:text-red-500 rounded-full transition-colors"
-                          title="Delete Chat"
-                        >
-                          <Trash2 size={20} />
-                        </button>
-                        <button 
-                          onClick={() => setSelectedDoubt(null)}
-                          className="p-2 hover:bg-gray-200 rounded-full transition-colors text-gray-400"
-                        >
-                          <XCircle size={24} />
-                        </button>
-                      </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={fetchMessages}
+                        className="p-2 hover:bg-gray-200 rounded-full transition-colors text-gray-400"
+                        title="Refresh"
+                      >
+                        <RefreshCw size={18} />
+                      </button>
+                    </div>
                   </div>
 
-                  <div className="flex-grow p-6 overflow-y-auto flex flex-col gap-4 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] bg-opacity-5">
-                    {messages.map((msg) => (
-                      <ChatMessage key={msg.id} msg={msg} />
+                  <div className="flex-grow p-6 overflow-y-auto flex flex-col gap-4">
+                    {messages.map((msg, i) => (
+                      <ChatMessage key={i} msg={msg} />
                     ))}
+                    {messages.length === 0 && (
+                      <div className="text-center text-gray-300 py-10">
+                        <Clock size={32} className="mx-auto mb-3" />
+                        <p className="text-xs font-bold uppercase tracking-widest">Waiting for founder response...</p>
+                      </div>
+                    )}
                     <div ref={messagesEndRef} />
                   </div>
 
-                  <form onSubmit={handleSendMessage} className="p-6 border-t border-gray-100 flex gap-3 bg-white">
-                    <input 
+                  <form onSubmit={handleSendMessage} className="p-6 border-t border-gray-100 flex gap-3">
+                    <input
                       type="text"
                       value={newMessage}
                       onChange={(e) => setNewMessage(e.target.value)}
                       placeholder="Type your message..."
                       className="flex-grow px-6 py-4 rounded-2xl bg-gray-50 border border-gray-100 focus:border-[#1B4332] outline-none transition-all font-bold text-gray-700"
                     />
-                    <button 
+                    <button
                       type="submit"
                       disabled={!newMessage.trim()}
-                      className="w-14 h-14 bg-[#1B4332] text-white rounded-2xl flex items-center justify-center shadow-lg shadow-[#1B4332]/20 hover:bg-[#2D6A4F] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="w-14 h-14 bg-[#1B4332] text-white rounded-2xl flex items-center justify-center shadow-lg shadow-[#1B4332]/20 hover:bg-[#2D6A4F] transition-all disabled:opacity-50"
                     >
                       <Send size={20} />
                     </button>
                   </form>
                 </motion.div>
               ) : (
-                <motion.div
-                  key="no-chat"
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  className="bg-white rounded-[2.5rem] p-20 text-center border border-dashed border-gray-200 flex flex-col items-center justify-center gap-6"
-                >
-                  <div className="w-20 h-20 rounded-3xl bg-gray-50 flex items-center justify-center text-gray-200">
-                    <MessageCircle size={48} />
+                <div className="space-y-8">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h2 className="text-3xl font-black text-gray-900 tracking-tight">Recent Doubts</h2>
+                      <p className="text-sm text-gray-400 font-medium">Your private history across all sessions</p>
+                    </div>
+                    <button
+                      onClick={fetchMyDoubts}
+                      className="p-3 bg-white rounded-2xl shadow-sm border border-gray-100 text-[#1B4332] hover:bg-gray-50 transition-all"
+                    >
+                      <RefreshCw size={20} />
+                    </button>
                   </div>
-                  <div>
-                    <h3 className="text-2xl font-black text-gray-800 tracking-tight">Select a Chat</h3>
-                    <p className="text-gray-400 font-medium mt-2">Choose a previous doubt below to continue the conversation.</p>
-                  </div>
-                </motion.div>
+
+                  {loadingDoubts ? (
+                    <div className="grid md:grid-cols-2 gap-6 animate-pulse">
+                      {[1, 2, 3, 4].map(i => (
+                        <div key={i} className="h-48 bg-white border border-gray-100 rounded-[2rem]" />
+                      ))}
+                    </div>
+                  ) : doubts.length > 0 ? (
+                    <div className="grid md:grid-cols-2 gap-6">
+                      {doubts.map(d => (
+                        <DoubtListItem
+                          key={d.id}
+                          doubt={d}
+                          isSelected={selectedDoubt?.id === d.id}
+                          onSelect={() => setSelectedDoubt(d)}
+                        />
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="bg-white rounded-[2.5rem] p-20 text-center shadow-sm border border-gray-50">
+                      <div className="w-20 h-20 rounded-full bg-gray-50 flex items-center justify-center mx-auto text-gray-200 mb-6">
+                        <MessageSquare size={40} />
+                      </div>
+                      <h3 className="text-2xl font-black text-gray-900 mb-2">No doubts yet.</h3>
+                      <p className="text-gray-400 font-medium max-w-xs mx-auto">Ask your first question using the form on the left. We're here to help!</p>
+                    </div>
+                  )}
+                </div>
               )}
             </AnimatePresence>
-
-            {/* History Section */}
-            <div className="space-y-8">
-              <div className="flex items-center justify-between">
-                <h2 className="text-3xl font-black tracking-tighter text-[#1A1A1A]">Previous Doubts</h2>
-                <div className="flex items-center gap-2">
-                  <div className="w-2 h-2 rounded-full bg-[#1B4332] animate-pulse" />
-                  <span className="text-[10px] font-black tracking-widest text-[#1B4332] uppercase">
-                    {myDoubts.length} TOTAL
-                  </span>
-                </div>
-              </div>
-
-              <div className="grid gap-4">
-                {myDoubts.length > 0 ? (
-                  myDoubts.map((doubt) => (
-                    <DoubtListItem
-                      key={doubt.id}
-                      doubt={doubt}
-                      isSelected={selectedDoubt?.id === doubt.id}
-                      onSelect={handleSelectDoubt}
-                      onDelete={handleRequestDelete}
-                    />
-                  ))
-                ) : (
-                  <div className="bg-white rounded-[2.5rem] p-12 text-center border border-dashed border-gray-200">
-                    <p className="text-gray-400 font-bold uppercase tracking-widest text-xs">No history yet</p>
-                  </div>
-                )}
-              </div>
-            </div>
           </div>
-
         </div>
       </div>
-
-      <AnimatePresence>
-        {showDeleteConfirm && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-            <motion.div 
-              initial={{ scale: 0.9, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.9, opacity: 0 }}
-              className="bg-white rounded-[2.5rem] p-10 max-w-md w-full shadow-2xl text-center"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="w-20 h-20 rounded-full bg-red-50 flex items-center justify-center mx-auto text-red-500 mb-6">
-                <Trash2 size={48} />
-              </div>
-              <h3 className="text-2xl font-black text-gray-900 mb-2">Are you sure?</h3>
-              <p className="text-gray-500 font-medium mb-8">This will permanently delete this doubt and all its messages. This action cannot be undone.</p>
-              <div className="flex gap-4">
-                <button 
-                  type="button"
-                  onClick={() => setShowDeleteConfirm(null)}
-                  className="flex-1 py-4 bg-gray-100 text-gray-500 rounded-2xl font-black tracking-widest text-xs hover:bg-gray-200 transition-all"
-                >
-                  CANCEL
-                </button>
-                <button 
-                  type="button"
-                  onClick={() => handleDeleteDoubt(showDeleteConfirm)}
-                  className="flex-1 py-4 bg-red-500 text-white rounded-2xl font-black tracking-widest text-xs shadow-lg shadow-red-500/20 hover:bg-red-600 transition-all"
-                >
-                  DELETE
-                </button>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
     </div>
   );
 }

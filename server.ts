@@ -1,11 +1,13 @@
-import express from 'express';
+import express, { Request, Response, NextFunction } from 'express';
 import path from 'path';
 import fs from 'fs';
 import cors from 'cors';
-import axios from 'axios';
 import dotenv from 'dotenv';
+import nodemailer from 'nodemailer';
 import { GoogleSpreadsheet } from 'google-spreadsheet';
 import { JWT } from 'google-auth-library';
+import crypto from 'crypto';
+import admin from 'firebase-admin';
 
 dotenv.config();
 
@@ -15,7 +17,63 @@ const PORT = 3000;
 app.use(cors());
 app.use(express.json());
 
-// Request logging for debugging in Vercel
+// Initialize Firebase Admin
+try {
+  const { GOOGLE_SERVICE_ACCOUNT_EMAIL, GOOGLE_PRIVATE_KEY, VITE_FIREBASE_PROJECT_ID } = process.env;
+  if (GOOGLE_SERVICE_ACCOUNT_EMAIL && GOOGLE_PRIVATE_KEY) {
+    const privateKey = GOOGLE_PRIVATE_KEY
+      .replace(/\\n/g, '\n')
+      .replace(/^"(.*)"$/, '$1')
+      .trim();
+
+    admin.initializeApp({
+      credential: admin.credential.cert({
+        projectId: VITE_FIREBASE_PROJECT_ID,
+        clientEmail: GOOGLE_SERVICE_ACCOUNT_EMAIL,
+        privateKey: privateKey,
+      }),
+    });
+    console.log('✅ Firebase Admin initialized');
+  } else {
+    console.warn('⚠️ Firebase Admin NOT initialized (missing credentials)');
+  }
+} catch (error: any) {
+  console.error('❌ Firebase Admin initialization error:', error.message);
+}
+
+// Admin Emails (Mirroring firebase.ts for server-side verification)
+const ADMIN_EMAILS = [
+  "diyawalunj@gmail.com",
+  "vedantranjeetjadhav@gmail.com",
+  "abhijeetgaikwad1904@gmail.com",
+  "muthalrishikesh2006@gmail.com",
+  "adityasahane076@gmail.com"
+];
+
+// Auth Middleware
+export interface AuthRequest extends Request {
+  user?: admin.auth.DecodedIdToken & { isAdmin: boolean };
+}
+
+const authenticate = async (req: AuthRequest, res: Response, next: NextFunction) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader?.startsWith('Bearer ')) {
+    return res.status(401).json({ success: false, error: 'Unauthorized: No token provided' });
+  }
+
+  const token = authHeader.split('Bearer ')[1];
+  try {
+    const decodedToken = await admin.auth().verifyIdToken(token);
+    const isAdmin = decodedToken.email ? ADMIN_EMAILS.includes(decodedToken.email) : false;
+    req.user = { ...decodedToken, isAdmin };
+    next();
+  } catch (error: any) {
+    console.error('❌ Auth error:', error.message);
+    res.status(401).json({ success: false, error: 'Unauthorized: Invalid token' });
+  }
+};
+
+// Request logging
 app.use((req, res, next) => {
   if (req.url.startsWith('/api')) {
     console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
@@ -24,113 +82,392 @@ app.use((req, res, next) => {
 });
 
 /* =========================
-   GOOGLE SHEETS FUNCTION
+   GOOGLE SHEETS HELPERS
 ========================= */
-async function saveToGoogleSheet(data: any, type: 'qna' | 'contact') {
-  console.log(`➡️ Saving ${type} data to Google Sheets...`);
 
-  const {
-    GOOGLE_SERVICE_ACCOUNT_EMAIL,
-    GOOGLE_PRIVATE_KEY,
-    GOOGLE_SHEET_ID_QNA,
-    GOOGLE_SHEET_ID_CONTACT,
-  } = process.env;
-
+function getSheetAuth() {
+  const { GOOGLE_SERVICE_ACCOUNT_EMAIL, GOOGLE_PRIVATE_KEY } = process.env;
   if (!GOOGLE_SERVICE_ACCOUNT_EMAIL || !GOOGLE_PRIVATE_KEY) {
-    const msg = 'Missing Google Service Account credentials (EMAIL or PRIVATE_KEY)';
-    console.error(`❌ ${msg}`);
-    throw new Error(msg);
+    throw new Error('Missing Google Service Account credentials');
   }
-
-  const sheetId = type === 'qna' ? GOOGLE_SHEET_ID_QNA : GOOGLE_SHEET_ID_CONTACT;
-  if (!sheetId) {
-    const msg = `Missing Google Sheet ID for ${type}`;
-    console.error(`❌ ${msg}`);
-    throw new Error(msg);
+  const privateKey = GOOGLE_PRIVATE_KEY
+    .replace(/\\n/g, '\n')
+    .replace(/^"(.*)"$/, '$1')
+    .trim();
+  if (!privateKey.includes('BEGIN PRIVATE KEY')) {
+    throw new Error('GOOGLE_PRIVATE_KEY is malformed');
   }
+  return new JWT({
+    email: GOOGLE_SERVICE_ACCOUNT_EMAIL,
+    key: privateKey,
+    scopes: ['https://www.googleapis.com/auth/spreadsheets'],
+  });
+}
 
-  try {
-    const privateKey = GOOGLE_PRIVATE_KEY
-      .replace(/\\n/g, '\n')
-      .replace(/\n/g, '\n')
-      .replace(/^"(.*)"$/, '$1')
-      .trim();
+async function getSheet(sheetId: string, tabName: string, defaultHeaders: string[]) {
+  const auth = getSheetAuth();
+  const doc = new GoogleSpreadsheet(sheetId, auth);
+  await doc.loadInfo();
 
-    if (!privateKey.includes('BEGIN PRIVATE KEY')) {
-      throw new Error('GOOGLE_PRIVATE_KEY is missing the "BEGIN PRIVATE KEY" marker. Ensure you copied the entire key from the JSON file.');
-    }
-
-    // Initialize auth
-    const serviceAccountAuth = new JWT({
-      email: GOOGLE_SERVICE_ACCOUNT_EMAIL,
-      key: privateKey,
-      scopes: ['https://www.googleapis.com/auth/spreadsheets'],
-    });
-
-    const doc = new GoogleSpreadsheet(sheetId, serviceAccountAuth);
-    await doc.loadInfo(); // loads document properties and worksheets
-
-    // Use the first sheet (index 0) or find by title
-    const sheetTitle = type === 'qna' ? 'doubts' : 'contactform';
-    let sheet = doc.sheetsByTitle[sheetTitle];
-    
-    // Fallback to first sheet if title doesn't match
-    if (!sheet) {
-      if (doc.sheetCount > 0) {
-        sheet = doc.sheetsByIndex[0];
-        console.log(`⚠️ Sheet '${sheetTitle}' not found, using first sheet: '${sheet.title}'`);
-      } else {
-        throw new Error(`No sheets found in document ${sheetId}`);
-      }
-    }
-
-    // Load headers for the sheet
+  let sheet = doc.sheetsByTitle[tabName];
+  if (!sheet) {
+    // Create the tab if it doesn't exist
+    sheet = await doc.addSheet({ title: tabName, headerValues: defaultHeaders });
+    console.log(`✅ Created new sheet tab: ${tabName}`);
+  } else {
     try {
       await sheet.loadHeaderRow();
-    } catch (e) {
-      console.log(`ℹ️ No headers found in sheet '${sheet.title}', initializing headers...`);
-      const headers = type === 'qna' 
-        ? ['Name', 'Phone', 'Category', 'Question'] 
-        : ['Full Name', 'Email', 'Message'];
-      await sheet.setHeaderRow(headers);
+    } catch {
+      await sheet.setHeaderRow(defaultHeaders);
     }
+  }
+  return sheet;
+}
 
-    let rowData = {};
-    if (type === 'qna') {
-      rowData = {
-        'Name': data.name || '',
-        'Phone': data.phone || '',
-        'Category': data.category || '',
-        'Question': data.question || '',
-      };
-    } else {
-      rowData = {
-        'Full Name': data.fullName || '',
-        'Email': data.email || '',
-        'Message': data.message || '',
-      };
-    }
+async function getQnaSheetId() {
+  const id = process.env.GOOGLE_SHEET_ID_QNA;
+  if (!id) throw new Error('Missing GOOGLE_SHEET_ID_QNA');
+  return id;
+}
 
-    await sheet.addRow(rowData);
-    console.log(`✅ ${type} saved successfully to Google Sheet: ${sheet.title}`);
+/* =========================
+   EMAIL HELPER
+========================= */
+
+function createEmailTransporter() {
+  const email = process.env.SMTP_EMAIL;
+  const password = process.env.SMTP_PASSWORD;
+  if (!email || !password) {
+    console.warn('⚠️ SMTP_EMAIL or SMTP_PASSWORD not set — emails will not be sent');
+    return null;
+  }
+  return nodemailer.createTransport({
+    service: 'gmail',
+    auth: { user: email, pass: password },
+  });
+}
+
+async function sendReplyEmail(
+  studentEmail: string,
+  studentName: string,
+  founderName: string,
+  originalDoubt: string,
+  category: string,
+  adminReply: string
+) {
+  const transporter = createEmailTransporter();
+  if (!transporter) return;
+
+  const html = `
+    <div style="font-family: 'Inter', Arial, sans-serif; max-width: 600px; margin: 0 auto; background: #f8f9fa; padding: 40px 20px;">
+      <div style="background: #1B4332; border-radius: 20px; padding: 32px; text-align: center; margin-bottom: 24px;">
+        <h1 style="color: white; font-size: 24px; margin: 0; letter-spacing: 2px;">NISHCHAY DEFENCE</h1>
+        <p style="color: rgba(255,255,255,0.7); font-size: 12px; margin-top: 8px; letter-spacing: 3px;">FOUNDER'S RESPONSE</p>
+      </div>
+      <div style="background: white; border-radius: 20px; padding: 32px; border: 1px solid #e5e7eb;">
+        <p style="color: #6b7280; font-size: 14px; margin: 0 0 16px;">Hi <strong>${studentName}</strong>,</p>
+        <p style="color: #1a1a1a; font-size: 16px; font-weight: 700; margin: 0 0 24px;">
+          <strong>${founderName}</strong> responded to your doubt!
+        </p>
+        <div style="background: #f3f4f6; border-radius: 16px; padding: 20px; margin-bottom: 16px;">
+          <p style="color: #9ca3af; font-size: 10px; font-weight: 800; letter-spacing: 2px; text-transform: uppercase; margin: 0 0 8px;">YOUR DOUBT · ${category}</p>
+          <p style="color: #374151; font-size: 14px; margin: 0;">${originalDoubt}</p>
+        </div>
+        <div style="background: #f0fdf4; border-radius: 16px; padding: 20px; border: 1px solid #bbf7d0;">
+          <p style="color: #15803d; font-size: 10px; font-weight: 800; letter-spacing: 2px; text-transform: uppercase; margin: 0 0 8px;">FOUNDER'S RESPONSE</p>
+          <p style="color: #166534; font-size: 14px; margin: 0;">${adminReply}</p>
+        </div>
+        <p style="color: #9ca3af; font-size: 12px; margin-top: 24px; text-align: center;">
+          Visit the Doubts page on our website to continue the conversation.
+        </p>
+      </div>
+    </div>
+  `;
+
+  try {
+    await transporter.sendMail({
+      from: `"Nishchay Defence" <${process.env.SMTP_EMAIL}>`,
+      to: studentEmail,
+      subject: `${founderName} responded to your doubt`,
+      html,
+    });
+    console.log(`📧 Email sent to ${studentEmail}`);
   } catch (error: any) {
-    console.error(`❌ Error saving ${type} to Google Sheets:`, error.message);
-    throw error; // Rethrow to allow the route handler to catch it
+    console.error(`❌ Failed to send email to ${studentEmail}:`, error.message);
   }
 }
 
 /* =========================
-   API ROUTES
+   DOUBT API ROUTES
 ========================= */
 
+const DOUBT_HEADERS = ['ID', 'Name', 'Email', 'Category', 'Question', 'Status', 'Date', 'UID'];
+const MESSAGE_HEADERS = ['DoubtID', 'SenderName', 'Message', 'IsAdmin', 'Date'];
+
+// POST /api/doubts — Submit a new doubt (Authenticated)
+app.post('/api/doubts', authenticate as any, async (req: AuthRequest, res) => {
+  try {
+    const { name, email, category, question } = req.body;
+    if (!name || !email || !question) {
+      return res.status(400).json({ success: false, error: 'name, email, and question are required' });
+    }
+
+    // Security check: Verify email matches token
+    if (req.user?.email && req.user.email.toLowerCase() !== email.toLowerCase()) {
+      return res.status(403).json({ success: false, error: 'Forbidden: Email mismatch' });
+    }
+
+    const sheetId = await getQnaSheetId();
+    const doubtsSheet = await getSheet(sheetId, 'doubts', DOUBT_HEADERS);
+    const messagesSheet = await getSheet(sheetId, 'messages', MESSAGE_HEADERS);
+
+    const doubtId = crypto.randomUUID();
+    const now = new Date().toISOString();
+
+    await doubtsSheet.addRow({
+      ID: doubtId,
+      Name: name,
+      Email: email,
+      Category: category || 'General',
+      Question: question,
+      Status: 'pending',
+      Date: now,
+      UID: req.user?.uid || '',
+    });
+
+    await messagesSheet.addRow({
+      DoubtID: doubtId,
+      SenderName: name,
+      Message: question,
+      IsAdmin: 'false',
+      Date: now,
+    });
+
+    res.json({ success: true, doubtId });
+  } catch (error: any) {
+    console.error('❌ POST /api/doubts error:', error.message);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// GET /api/doubts — Fetch doubts (Authenticated)
+app.get('/api/doubts', authenticate as any, async (req: AuthRequest, res) => {
+  try {
+    const sheetId = await getQnaSheetId();
+    const doubtsSheet = await getSheet(sheetId, 'doubts', DOUBT_HEADERS);
+    const rows = await doubtsSheet.getRows();
+
+    let doubts = rows.map((row) => ({
+      id: row.get('ID') || '',
+      name: row.get('Name') || '',
+      email: row.get('Email') || '',
+      category: row.get('Category') || '',
+      question: row.get('Question') || '',
+      status: row.get('Status') || 'pending',
+      date: row.get('Date') || '',
+      uid: row.get('UID') || '',
+    })).filter(d => d.id);
+
+    // Visibility Security
+    if (!req.user?.isAdmin) {
+      // Students only see their own doubts (by email or UID)
+      const userEmail = req.user?.email?.toLowerCase();
+      doubts = doubts.filter(d => d.email.toLowerCase() === userEmail || (req.user?.uid && d.uid === req.user.uid));
+    }
+
+    // Sort: newest first
+    doubts.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+    res.json({ success: true, doubts });
+  } catch (error: any) {
+    console.error('❌ GET /api/doubts error:', error.message);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// GET /api/doubts/:id/messages — Fetch messages (Authenticated)
+app.get('/api/doubts/:id/messages', authenticate as any, async (req: AuthRequest, res) => {
+  try {
+    const doubtId = req.params.id;
+    const sheetId = await getQnaSheetId();
+    
+    // Security: Verify user can access this doubt
+    if (!req.user?.isAdmin) {
+      const doubtsSheet = await getSheet(sheetId, 'doubts', DOUBT_HEADERS);
+      const rows = await doubtsSheet.getRows();
+      const doubt = rows.find(r => r.get('ID') === doubtId);
+      if (!doubt || (doubt.get('Email').toLowerCase() !== req.user?.email?.toLowerCase() && doubt.get('UID') !== req.user?.uid)) {
+        return res.status(403).json({ success: false, error: 'Forbidden: Access denied' });
+      }
+    }
+
+    const messagesSheet = await getSheet(sheetId, 'messages', MESSAGE_HEADERS);
+    const rows = await messagesSheet.getRows();
+
+    const messages = rows
+      .filter(row => row.get('DoubtID') === doubtId)
+      .map(row => ({
+        doubtId: row.get('DoubtID') || '',
+        senderName: row.get('SenderName') || '',
+        message: row.get('Message') || '',
+        isAdmin: row.get('IsAdmin') === 'true',
+        date: row.get('Date') || '',
+      }))
+      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+    res.json({ success: true, messages });
+  } catch (error: any) {
+    console.error('❌ GET /api/doubts/:id/messages error:', error.message);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// POST /api/doubts/:id/reply — Reply (Authenticated)
+app.post('/api/doubts/:id/reply', authenticate as any, async (req: AuthRequest, res) => {
+  try {
+    const { senderName, message, isAdmin } = req.body;
+    if (!senderName || !message) {
+      return res.status(400).json({ success: false, error: 'senderName and message are required' });
+    }
+
+    // Security: Only admins can send isAdmin: true
+    if (isAdmin && !req.user?.isAdmin) {
+      return res.status(403).json({ success: false, error: 'Forbidden: Admin access required' });
+    }
+
+    const sheetId = await getQnaSheetId();
+    
+    // Security: Verify student owns the doubt
+    if (!isAdmin) {
+      const doubtsSheet = await getSheet(sheetId, 'doubts', DOUBT_HEADERS);
+      const doubtRows = await doubtsSheet.getRows();
+      const doubtRow = doubtRows.find(row => row.get('ID') === req.params.id);
+      if (!doubtRow || (doubtRow.get('Email').toLowerCase() !== req.user?.email?.toLowerCase() && doubtRow.get('UID') !== req.user?.uid)) {
+        return res.status(403).json({ success: false, error: 'Forbidden: Access denied' });
+      }
+    }
+
+    const messagesSheet = await getSheet(sheetId, 'messages', MESSAGE_HEADERS);
+    const now = new Date().toISOString();
+
+    await messagesSheet.addRow({
+      DoubtID: req.params.id,
+      SenderName: senderName,
+      Message: message,
+      IsAdmin: isAdmin ? 'true' : 'false',
+      Date: now,
+    });
+
+    // Admin reply logic
+    if (isAdmin) {
+      const doubtsSheet = await getSheet(sheetId, 'doubts', DOUBT_HEADERS);
+      const doubtRows = await doubtsSheet.getRows();
+      const doubtRow = doubtRows.find(row => row.get('ID') === req.params.id);
+
+      if (doubtRow) {
+        doubtRow.set('Status', 'resolved');
+        await doubtRow.save();
+
+        sendReplyEmail(doubtRow.get('Email'), doubtRow.get('Name'), senderName, doubtRow.get('Question'), doubtRow.get('Category'), message)
+          .catch(err => console.error('Email send failed:', err));
+      }
+    }
+
+    res.json({ success: true });
+  } catch (error: any) {
+    console.error('❌ POST /api/doubts/:id/reply error:', error.message);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// PATCH /api/doubts/:id/status — Status (Admin Only)
+app.patch('/api/doubts/:id/status', authenticate as any, async (req: AuthRequest, res) => {
+  try {
+    if (!req.user?.isAdmin) return res.status(403).json({ success: false, error: 'Admin only' });
+
+    const { status } = req.body;
+    if (!['pending', 'resolved'].includes(status)) {
+      return res.status(400).json({ success: false, error: 'Invalid status' });
+    }
+
+    const sheetId = await getQnaSheetId();
+    const doubtsSheet = await getSheet(sheetId, 'doubts', DOUBT_HEADERS);
+    const rows = await doubtsSheet.getRows();
+    const row = rows.find(r => r.get('ID') === req.params.id);
+
+    if (!row) return res.status(404).json({ success: false, error: 'Not found' });
+
+    row.set('Status', status);
+    await row.save();
+    res.json({ success: true });
+  } catch (error: any) {
+    console.error('❌ PATCH /api/doubts/:id/status error:', error.message);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// DELETE /api/doubts/:id — Delete (Admin Only)
+app.delete('/api/doubts/:id', authenticate as any, async (req: AuthRequest, res) => {
+  try {
+    if (!req.user?.isAdmin) return res.status(403).json({ success: false, error: 'Admin only' });
+
+    const doubtId = req.params.id;
+    const sheetId = await getQnaSheetId();
+    
+    // Delete from doubts tab
+    const doubtsSheet = await getSheet(sheetId, 'doubts', DOUBT_HEADERS);
+    const doubtRows = await doubtsSheet.getRows();
+    const doubtRow = doubtRows.find(r => r.get('ID') === doubtId);
+    if (doubtRow) await doubtRow.delete();
+
+    // Delete messages from messages tab
+    const messagesSheet = await getSheet(sheetId, 'messages', MESSAGE_HEADERS);
+    const messageRows = await messagesSheet.getRows();
+    for (const row of messageRows) {
+      if (row.get('DoubtID') === doubtId) {
+        await row.delete();
+      }
+    }
+
+    res.json({ success: true });
+  } catch (error: any) {
+    console.error('❌ DELETE /api/doubts/:id error:', error.message);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/* =========================
+   LEGACY API ROUTES
+========================= */
+
+async function saveToGoogleSheet(data: any, type: 'qna' | 'contact') {
+  const sheetId = type === 'contact' ? process.env.GOOGLE_SHEET_ID_CONTACT : await getQnaSheetId();
+  if (!sheetId) throw new Error(`Missing Google Sheet ID for ${type}`);
+
+  const tabName = type === 'qna' ? 'doubts' : 'contactform';
+  const headers = type === 'qna'
+    ? ['Name', 'Phone', 'Category', 'Question']
+    : ['Full Name', 'Email', 'Message'];
+  const sheet = await getSheet(sheetId, tabName, headers);
+
+  const rowData = type === 'qna'
+    ? { Name: data.name || '', Phone: data.phone || '', Category: data.category || '', Question: data.question || '' }
+    : { 'Full Name': data.fullName || '', Email: data.email || '', Message: data.message || '' };
+
+  await sheet.addRow(rowData);
+  console.log(`✅ ${type} saved to Google Sheet: ${sheet.title}`);
+}
+
 app.get('/api/health', (req, res) => {
-  res.json({ 
-    status: 'ok', 
+  res.json({
+    status: 'ok',
     env: {
       email: !!process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
       key: !!process.env.GOOGLE_PRIVATE_KEY,
       sheetQna: !!process.env.GOOGLE_SHEET_ID_QNA,
-      sheetContact: !!process.env.GOOGLE_SHEET_ID_CONTACT
+      sheetContact: !!process.env.GOOGLE_SHEET_ID_CONTACT,
+      smtp: !!process.env.SMTP_EMAIL,
+      firebase: !!admin.apps.length,
     }
   });
 });
@@ -145,39 +482,25 @@ app.post('/api/contact', async (req, res) => {
   }
 });
 
-app.post('/api/qna', async (req, res) => {
-  try {
-    await saveToGoogleSheet(req.body, 'qna');
-    res.json({ success: true });
-  } catch (error: any) {
-    console.error('❌ QnA error:', error);
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
 /* =========================
    VITE / VERCEL SETUP
 ========================= */
 
 async function setupServer() {
-  // Check environment variables
   const {
     GOOGLE_SERVICE_ACCOUNT_EMAIL,
     GOOGLE_PRIVATE_KEY,
     GOOGLE_SHEET_ID_QNA,
     GOOGLE_SHEET_ID_CONTACT,
+    SMTP_EMAIL,
   } = process.env;
 
   console.log('--- Environment Variable Check ---');
   console.log('GOOGLE_SERVICE_ACCOUNT_EMAIL:', GOOGLE_SERVICE_ACCOUNT_EMAIL ? '✅ Present' : '❌ Missing');
   console.log('GOOGLE_PRIVATE_KEY:', GOOGLE_PRIVATE_KEY ? '✅ Present' : '❌ Missing');
-  if (GOOGLE_PRIVATE_KEY) {
-    const isWellFormed = GOOGLE_PRIVATE_KEY.includes('BEGIN PRIVATE KEY') && GOOGLE_PRIVATE_KEY.includes('END PRIVATE KEY');
-    console.log('GOOGLE_PRIVATE_KEY Format:', isWellFormed ? '✅ Well-formed' : '❌ Missing BEGIN/END markers');
-    console.log('GOOGLE_PRIVATE_KEY Length:', GOOGLE_PRIVATE_KEY.length, 'characters');
-  }
   console.log('GOOGLE_SHEET_ID_QNA:', GOOGLE_SHEET_ID_QNA ? '✅ Present' : '❌ Missing');
   console.log('GOOGLE_SHEET_ID_CONTACT:', GOOGLE_SHEET_ID_CONTACT ? '✅ Present' : '❌ Missing');
+  console.log('SMTP_EMAIL:', SMTP_EMAIL ? '✅ Present' : '❌ Missing');
   console.log('---------------------------------');
 
   if (process.env.NODE_ENV !== 'production' && !process.env.VERCEL) {
@@ -188,7 +511,6 @@ async function setupServer() {
     });
     app.use(vite.middlewares);
   } else if (!process.env.VERCEL) {
-    // Only serve static files if NOT on Vercel (Vercel handles this via vercel.json)
     const distPath = path.join(process.cwd(), 'dist');
     if (fs.existsSync(distPath)) {
       app.use(express.static(distPath));

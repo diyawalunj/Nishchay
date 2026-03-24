@@ -11,6 +11,7 @@
     ],
     "skipLibCheck": true,
     "types": ["node"],
+    "esModuleInterop": true,
     "moduleResolution": "bundler",
     "isolatedModules": true,
     "moduleDetection": "force",
@@ -22,6 +23,7 @@
       ]
     },
     "allowImportingTsExtensions": true,
+    "allowSyntheticDefaultImports": true,
     "noEmit": true
   }
 }
