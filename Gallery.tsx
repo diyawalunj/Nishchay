@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Image as ImageIcon, Camera, Trophy, Users, Dumbbell } from 'lucide-react';
+import { Image as ImageIcon, Camera, Trophy, Users, Dumbbell, X, ChevronLeft, ChevronRight } from 'lucide-react';
 
 const categories = ['ALL', 'NCC CAMPS', 'TRAINING', 'EVENTS', 'ACHIEVEMENTS', 'SPORTS'];
 
@@ -84,10 +84,27 @@ const galleryItems = [
 
 const Gallery: React.FC = () => {
   const [activeCategory, setActiveCategory] = useState('ALL');
+  const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
 
   const filteredItems = activeCategory === 'ALL' 
     ? galleryItems 
     : galleryItems.filter(item => item.category === activeCategory);
+
+  const handlePrevious = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (selectedIndex !== null) {
+      setSelectedIndex((prev) => (prev !== null && prev > 0 ? prev - 1 : filteredItems.length - 1));
+    }
+  };
+
+  const handleNext = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (selectedIndex !== null) {
+      setSelectedIndex((prev) => (prev !== null && prev < filteredItems.length - 1 ? prev + 1 : 0));
+    }
+  };
+
+  const selectedItem = selectedIndex !== null ? filteredItems[selectedIndex] : null;
 
   return (
     <div className="min-h-screen bg-[#F8F9FA]">
@@ -144,7 +161,7 @@ const Gallery: React.FC = () => {
           className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-10"
         >
           <AnimatePresence mode="popLayout">
-            {filteredItems.map((item) => (
+            {filteredItems.map((item, index) => (
               <motion.div
                 key={item.id}
                 layout
@@ -153,7 +170,8 @@ const Gallery: React.FC = () => {
                 exit={{ opacity: 0, scale: 0.9 }}
                 transition={{ duration: 0.5 }}
                 whileHover={{ y: -12 }}
-                className="bg-white rounded-[3rem] aspect-[4/5] flex flex-col items-center justify-end text-center text-white relative group overflow-hidden shadow-2xl transition-all duration-500"
+                onClick={() => setSelectedIndex(index)}
+                className="bg-white rounded-[3rem] aspect-[4/5] flex flex-col items-center justify-end text-center text-white relative group overflow-hidden shadow-2xl transition-all duration-500 cursor-pointer"
               >
                 {/* Image Background */}
                 <img 
@@ -179,6 +197,86 @@ const Gallery: React.FC = () => {
           </AnimatePresence>
         </motion.div>
       </section>
+
+      {/* Lightbox Modal */}
+      <AnimatePresence>
+        {selectedItem && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={() => setSelectedIndex(null)}
+            className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/95 backdrop-blur-xl cursor-zoom-out"
+          >
+            {/* Close Button */}
+            <motion.button
+              initial={{ opacity: 0, scale: 0.5 }}
+              animate={{ opacity: 1, scale: 1 }}
+              className="absolute top-8 right-8 text-white/50 hover:text-white transition-colors p-4 z-[110]"
+              onClick={(e) => {
+                e.stopPropagation();
+                setSelectedIndex(null);
+              }}
+            >
+              <X size={48} strokeWidth={1.5} />
+            </motion.button>
+
+            {/* Navigation Arrows */}
+            <div className="absolute inset-x-8 top-1/2 -translate-y-1/2 flex justify-between pointer-events-none z-[110]">
+              <motion.button
+                initial={{ opacity: 0, x: -20 }}
+                animate={{ opacity: 1, x: 0 }}
+                whileHover={{ scale: 1.1, x: -5 }}
+                whileTap={{ scale: 0.9 }}
+                onClick={handlePrevious}
+                className="p-6 rounded-full bg-white/5 hover:bg-white/10 text-white backdrop-blur-md border border-white/10 pointer-events-auto transition-all"
+              >
+                <ChevronLeft size={40} strokeWidth={1.5} />
+              </motion.button>
+
+              <motion.button
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                whileHover={{ scale: 1.1, x: 5 }}
+                whileTap={{ scale: 0.9 }}
+                onClick={handleNext}
+                className="p-6 rounded-full bg-white/5 hover:bg-white/10 text-white backdrop-blur-md border border-white/10 pointer-events-auto transition-all"
+              >
+                <ChevronRight size={40} strokeWidth={1.5} />
+              </motion.button>
+            </div>
+
+            {/* Image Container */}
+            <motion.div
+              key={selectedItem.id}
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              transition={{ type: "spring", damping: 25, stiffness: 200 }}
+              className="relative max-w-5xl w-full bg-white/5 backdrop-blur-md rounded-[4rem] overflow-hidden shadow-2xl flex flex-col items-center p-4 border border-white/10"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <img
+                src={selectedItem.image}
+                alt="Gallery Preview"
+                className="w-full h-full object-contain max-h-[75vh] rounded-[3.5rem]"
+                referrerPolicy="no-referrer"
+              />
+              
+              {/* Category Indicator */}
+              <motion.div 
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="absolute bottom-10 px-8 py-3 bg-black/40 backdrop-blur-md border border-white/10 rounded-full"
+              >
+                <p className="text-[10px] text-white font-black uppercase tracking-[0.4em]">
+                  {selectedItem.category}
+                </p>
+              </motion.div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };
