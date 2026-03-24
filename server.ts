@@ -16,6 +16,14 @@ const PORT = 3000;
 app.use(cors());
 app.use(express.json());
 
+// Request logging for debugging in Vercel
+app.use((req, res, next) => {
+  if (req.url.startsWith('/api')) {
+    console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
+  }
+  next();
+});
+
 /* =========================
    GOOGLE SHEETS FUNCTION
 ========================= */
@@ -30,21 +38,33 @@ async function saveToGoogleSheet(data: any, type: 'qna' | 'contact') {
   } = process.env;
 
   if (!GOOGLE_SERVICE_ACCOUNT_EMAIL || !GOOGLE_PRIVATE_KEY) {
-    console.error('❌ Missing Google Service Account credentials');
-    return;
+    const msg = 'Missing Google Service Account credentials (EMAIL or PRIVATE_KEY)';
+    console.error(`❌ ${msg}`);
+    throw new Error(msg);
   }
 
   const sheetId = type === 'qna' ? GOOGLE_SHEET_ID_QNA : GOOGLE_SHEET_ID_CONTACT;
   if (!sheetId) {
-    console.error(`❌ Missing Google Sheet ID for ${type}`);
-    return;
+    const msg = `Missing Google Sheet ID for ${type}`;
+    console.error(`❌ ${msg}`);
+    throw new Error(msg);
   }
 
   try {
+    const privateKey = GOOGLE_PRIVATE_KEY
+      .replace(/\\n/g, '\n')
+      .replace(/\n/g, '\n')
+      .replace(/^"(.*)"$/, '$1')
+      .trim();
+
+    if (!privateKey.includes('BEGIN PRIVATE KEY')) {
+      throw new Error('GOOGLE_PRIVATE_KEY is missing the "BEGIN PRIVATE KEY" marker. Ensure you copied the entire key from the JSON file.');
+    }
+
     // Initialize auth
     const serviceAccountAuth = new JWT({
       email: GOOGLE_SERVICE_ACCOUNT_EMAIL,
-      key: GOOGLE_PRIVATE_KEY.replace(/\\n/g, '\n'),
+      key: privateKey,
       scopes: ['https://www.googleapis.com/auth/spreadsheets'],
     });
 
@@ -57,8 +77,20 @@ async function saveToGoogleSheet(data: any, type: 'qna' | 'contact') {
     
     // Fallback to first sheet if title doesn't match
     if (!sheet) {
-      sheet = doc.sheetsByIndex[0];
-      console.log(`⚠️ Sheet '${sheetTitle}' not found, using first sheet: '${sheet.title}'`);
+      if (doc.sheetCount > 0) {
+        sheet = doc.sheetsByIndex[0];
+        console.log(`⚠️ Sheet '${sheetTitle}' not found, using first sheet: '${sheet.title}'`);
+      } else {
+        throw new Error(`No sheets found in document ${sheetId}`);
+      }
+    }
+
+    if (sheet.headerValues.length === 0) {
+      const headers = type === 'qna' 
+        ? ['Name', 'Phone', 'Category', 'Question'] 
+        : ['Full Name', 'Email', 'Message'];
+      await sheet.setHeaderRow(headers);
+      console.log(`✅ Set headers for ${type} sheet: ${headers.join(', ')}`);
     }
 
     let rowData = {};
@@ -105,9 +137,9 @@ app.post('/api/contact', async (req, res) => {
   try {
     await saveToGoogleSheet(req.body, 'contact');
     res.json({ success: true });
-  } catch (error) {
+  } catch (error: any) {
     console.error('❌ Contact error:', error);
-    res.status(500).json({ success: false });
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 
@@ -115,9 +147,9 @@ app.post('/api/qna', async (req, res) => {
   try {
     await saveToGoogleSheet(req.body, 'qna');
     res.json({ success: true });
-  } catch (error) {
+  } catch (error: any) {
     console.error('❌ QnA error:', error);
-    res.status(500).json({ success: false });
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 
@@ -152,7 +184,8 @@ async function setupServer() {
       appType: 'spa',
     });
     app.use(vite.middlewares);
-  } else {
+  } else if (!process.env.VERCEL) {
+    // Only serve static files if NOT on Vercel (Vercel handles this via vercel.json)
     const distPath = path.join(process.cwd(), 'dist');
     if (fs.existsSync(distPath)) {
       app.use(express.static(distPath));
