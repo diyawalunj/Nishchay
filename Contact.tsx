@@ -69,8 +69,10 @@ const Contact: React.FC = () => {
           body: JSON.stringify(formData),
         });
 
+        const result = await response.json();
+
         if (!response.ok) {
-          throw new Error('Failed to submit form');
+          throw new Error(result.error || 'Failed to submit form');
         }
 
         console.log('Form submitted successfully');
@@ -79,9 +81,9 @@ const Contact: React.FC = () => {
         
         // Reset success message after 5 seconds
         setTimeout(() => setIsSuccess(false), 5000);
-      } catch (error) {
+      } catch (error: any) {
         console.error('Error submitting form:', error);
-        alert('Failed to submit form. Please try again later.');
+        alert(`Failed to submit form: ${error.message}. Please try again later.`);
       } finally {
         setIsSubmitting(false);
       }
