@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { db, auth, onAuthStateChanged, checkIfAdmin, collection, getDocs, query, orderBy, onSnapshot, addDoc, serverTimestamp, doc, updateDoc, deleteDoc, limit, where } from './firebase';
-import { LayoutDashboard, MessageSquare, Mail, User, Clock, CheckCircle, XCircle, Send, ChevronLeft } from 'lucide-react';
+import { LayoutDashboard, MessageSquare, Mail, User, Clock, CheckCircle, XCircle, Send, ChevronLeft, Trash2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 interface Message {
@@ -157,10 +157,10 @@ export default function Admin() {
   };
 
   const handleDeleteDoubt = async (doubtId: string) => {
+    setShowDeleteConfirm(null);
     try {
       await deleteDoc(doc(db, 'doubts', doubtId));
       setSelectedDoubt(null);
-      setShowDeleteConfirm(null);
     } catch (error) {
       console.error("Error deleting doubt:", error);
     }
@@ -257,7 +257,7 @@ export default function Admin() {
                         onClick={() => setShowDeleteConfirm(selectedDoubt.id)}
                         className="px-4 py-2 bg-red-50 text-red-700 rounded-xl text-[10px] font-black tracking-widest hover:bg-red-100 transition-colors flex items-center gap-2"
                       >
-                        <XCircle size={14} />
+                        <Trash2 size={14} />
                         DELETE
                       </button>
                       <span className="px-3 py-1 bg-amber-50 text-amber-700 text-[10px] font-black uppercase tracking-widest rounded-full border border-amber-100">
@@ -357,35 +357,41 @@ export default function Admin() {
         )}
       </div>
 
-      {showDeleteConfirm && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-          <motion.div 
-            initial={{ scale: 0.9, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            className="bg-white rounded-[2.5rem] p-10 max-w-md w-full shadow-2xl text-center"
-          >
-            <div className="w-20 h-20 rounded-full bg-red-50 flex items-center justify-center mx-auto text-red-500 mb-6">
-              <XCircle size={48} />
-            </div>
-            <h3 className="text-2xl font-black text-gray-900 mb-2">Are you sure?</h3>
-            <p className="text-gray-500 font-medium mb-8">This will permanently delete this doubt and all its messages. This action cannot be undone.</p>
-            <div className="flex gap-4">
-              <button 
-                onClick={() => setShowDeleteConfirm(null)}
-                className="flex-1 py-4 bg-gray-100 text-gray-500 rounded-2xl font-black tracking-widest text-xs hover:bg-gray-200 transition-all"
-              >
-                CANCEL
-              </button>
-              <button 
-                onClick={() => handleDeleteDoubt(showDeleteConfirm)}
-                className="flex-1 py-4 bg-red-500 text-white rounded-2xl font-black tracking-widest text-xs shadow-lg shadow-red-500/20 hover:bg-red-600 transition-all"
-              >
-                DELETE
-              </button>
-            </div>
-          </motion.div>
-        </div>
-      )}
+      <AnimatePresence>
+        {showDeleteConfirm && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-white rounded-[2.5rem] p-10 max-w-md w-full shadow-2xl text-center"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="w-20 h-20 rounded-full bg-red-50 flex items-center justify-center mx-auto text-red-500 mb-6">
+                <Trash2 size={48} />
+              </div>
+              <h3 className="text-2xl font-black text-gray-900 mb-2">Are you sure?</h3>
+              <p className="text-gray-500 font-medium mb-8">This will permanently delete this doubt and all its messages. This action cannot be undone.</p>
+              <div className="flex gap-4">
+                <button 
+                  type="button"
+                  onClick={() => setShowDeleteConfirm(null)}
+                  className="flex-1 py-4 bg-gray-100 text-gray-500 rounded-2xl font-black tracking-widest text-xs hover:bg-gray-200 transition-all"
+                >
+                  CANCEL
+                </button>
+                <button 
+                  type="button"
+                  onClick={() => handleDeleteDoubt(showDeleteConfirm)}
+                  className="flex-1 py-4 bg-red-500 text-white rounded-2xl font-black tracking-widest text-xs shadow-lg shadow-red-500/20 hover:bg-red-600 transition-all"
+                >
+                  DELETE
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
