@@ -84,12 +84,15 @@ async function saveToGoogleSheet(data: any, type: 'qna' | 'contact') {
       }
     }
 
-    if (sheet.headerValues.length === 0) {
+    // Load headers for the sheet
+    try {
+      await sheet.loadHeaderRow();
+    } catch (e) {
+      console.log(`ℹ️ No headers found in sheet '${sheet.title}', initializing headers...`);
       const headers = type === 'qna' 
         ? ['Name', 'Phone', 'Category', 'Question'] 
         : ['Full Name', 'Email', 'Message'];
       await sheet.setHeaderRow(headers);
-      console.log(`✅ Set headers for ${type} sheet: ${headers.join(', ')}`);
     }
 
     let rowData = {};
