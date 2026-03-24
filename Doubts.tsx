@@ -1,18 +1,30 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { HelpCircle, Send, MessageSquare, User, Tag, ChevronRight, Search } from 'lucide-react';
+import { HelpCircle, Send, MessageSquare, User, Tag, ChevronRight, Search, Lock, Clock, MessageCircle } from 'lucide-react';
+import { auth, db, collection, addDoc, serverTimestamp, onAuthStateChanged, signInWithGoogle, handleFirestoreError, OperationType, type User as FirebaseUser, query, where, orderBy, onSnapshot, doc, checkIfAdmin } from './firebase';
+import { useNavigate } from 'react-router-dom';
+
+interface Message {
+  id: string;
+  text: string;
+  senderId: string;
+  senderName: string;
+  isAdmin: boolean;
+  createdAt: any;
+}
 
 interface Doubt {
   id: string;
-  question: string;
-  answer: string;
+  name: string;
+  email: string;
   category: string;
-  author: string;
-  date?: string;
+  subject: string;
+  message: string;
+  createdAt: any;
+  status: 'pending' | 'resolved';
 }
 
 const CATEGORIES = [
-  'All',
   'Mathematics',
   'English',
   'GK',
@@ -23,106 +35,146 @@ const CATEGORIES = [
   'Strategy'
 ];
 
-const INITIAL_DOUBTS: Doubt[] = [
-  {
-    id: '1',
-    question: 'How to prepare for NDA Maths in 3 months?',
-    answer: 'Focus on NCERT basics first, then solve past 10 years\' papers. Prioritize Algebra, Trigonometry, and Calculus.',
-    category: 'Mathematics',
-    author: 'Rahul S.',
-  },
-  {
-    id: '2',
-    question: 'What books are best for CDS English?',
-    answer: 'Wren & Martin for Grammar, Word Power Made Easy for vocabulary, and read The Hindu daily for comprehension.',
-    category: 'English',
-    author: 'Anjali P.',
-  },
-  {
-    id: '3',
-    question: 'How important is GK for NDA exam?',
-    answer: 'GK carries 400 marks in NDA GAT paper. Focus on History, Geography, Physics, Chemistry, and Current Affairs.',
-    category: 'GK',
-    author: 'Vikram M.',
-  },
-  {
-    id: '4',
-    question: 'What are the 15 OLQs tested in SSB?',
-    answer: 'Officer Like Qualities include Effective Intelligence, Reasoning, Organizing Ability, Power of Expression, and more.',
-    category: 'SSB',
-    author: 'Sandeep K.',
-  }
-];
-
 export default function Doubts() {
-  const [selectedCategory, setSelectedCategory] = useState('All');
-  const [doubts, setDoubts] = useState<Doubt[]>(INITIAL_DOUBTS);
+  const [myDoubts, setMyDoubts] = useState<Doubt[]>([]);
+  const [selectedDoubt, setSelectedDoubt] = useState<Doubt | null>(null);
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [newMessage, setNewMessage] = useState('');
+  const [user, setUser] = useState<FirebaseUser | null>(null);
   const [formData, setFormData] = useState({
     name: '',
-    phone: '',
     category: 'Mathematics',
     question: ''
   });
-  const [errors, setErrors] = useState<{ name?: string; phone?: string; question?: string }>({});
+  const [errors, setErrors] = useState<{ name?: string; question?: string }>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
+  const navigate = useNavigate();
+  const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  const filteredDoubts = selectedCategory === 'All' 
-    ? doubts 
-    : doubts.filter(d => d.category === selectedCategory);
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      setUser(currentUser);
+      if (currentUser) {
+        if (checkIfAdmin(currentUser)) {
+          navigate('/admin');
+          return;
+        }
+        setFormData(prev => ({ ...prev, name: currentUser.displayName || '' }));
+        // Fetch user's doubts
+        const q = query(
+          collection(db, 'doubts'),
+          where('uid', '==', currentUser.uid),
+          orderBy('createdAt', 'desc')
+        );
+        const unsubDoubts = onSnapshot(q, (snapshot) => {
+          const doubtsList = snapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data()
+          })) as Doubt[];
+          setMyDoubts(doubtsList);
+        });
+        return () => unsubDoubts();
+      } else {
+        setMyDoubts([]);
+      }
+    });
+    return () => unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    if (selectedDoubt) {
+      const q = query(
+        collection(db, `doubts/${selectedDoubt.id}/messages`),
+        orderBy('createdAt', 'asc')
+      );
+      const unsubMessages = onSnapshot(q, (snapshot) => {
+        const msgs = snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        })) as Message[];
+        setMessages(msgs);
+      });
+      return () => unsubMessages();
+    } else {
+      setMessages([]);
+    }
+  }, [selectedDoubt]);
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
 
   const validate = () => {
-    const newErrors: { name?: string; phone?: string; question?: string } = {};
+    const newErrors: { name?: string; question?: string } = {};
     if (!formData.name.trim()) {
       newErrors.name = 'Name is required';
-    } else if (formData.name.trim().length < 2) {
-      newErrors.name = 'Name must be at least 2 characters';
     }
-
-    if (!formData.phone.trim()) {
-      newErrors.phone = 'Contact number is required';
-    } else if (!/^\d{10}$/.test(formData.phone.trim())) {
-      newErrors.phone = 'Enter a valid 10-digit number';
-    }
-
     if (!formData.question.trim()) {
       newErrors.question = 'Question is required';
     } else if (formData.question.trim().length < 10) {
       newErrors.question = 'Question must be at least 10 characters';
     }
-
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!user) {
+      signInWithGoogle();
+      return;
+    }
     if (!validate()) return;
 
     setIsSubmitting(true);
+    const path = 'doubts';
     try {
-      const response = await fetch('/api/qna', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(formData),
+      const doubtRef = await addDoc(collection(db, path), {
+        uid: user.uid,
+        name: formData.name,
+        email: user.email,
+        category: formData.category,
+        subject: formData.category,
+        message: formData.question,
+        status: 'pending',
+        createdAt: serverTimestamp()
       });
 
-      const result = await response.json();
+      // Add the initial question as the first message
+      await addDoc(collection(db, `doubts/${doubtRef.id}/messages`), {
+        text: formData.question,
+        senderId: user.uid,
+        senderName: user.displayName || 'Student',
+        isAdmin: false,
+        createdAt: serverTimestamp()
+      });
 
-      if (!response.ok) {
-        throw new Error(result.error || 'Failed to submit question');
-      }
-
-      setFormData({ name: '', phone: '', category: 'Mathematics', question: '' });
+      setFormData({ name: user.displayName || '', category: 'Mathematics', question: '' });
       setShowSuccess(true);
       setTimeout(() => setShowSuccess(false), 3000);
     } catch (error: any) {
-      console.error('Error submitting question:', error);
-      alert(`Failed to submit question: ${error.message}. Please try again later.`);
+      handleFirestoreError(error, OperationType.CREATE, path);
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  const handleSendMessage = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user || !selectedDoubt || !newMessage.trim()) return;
+
+    try {
+      await addDoc(collection(db, `doubts/${selectedDoubt.id}/messages`), {
+        text: newMessage,
+        senderId: user.uid,
+        senderName: user.displayName || 'Student',
+        isAdmin: false,
+        createdAt: serverTimestamp()
+      });
+      setNewMessage('');
+    } catch (error) {
+      console.error("Error sending message:", error);
     }
   };
 
@@ -133,7 +185,6 @@ export default function Doubts() {
         <div className="absolute inset-0 z-0 opacity-30">
           <div className="absolute inset-0 bg-gradient-to-b from-[#1B4332]/40 to-transparent"></div>
           <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/camouflage.png')]"></div>
-          <div className="absolute top-0 left-0 right-0 h-64 bg-gradient-to-b from-[#1B4332]/60 to-transparent"></div>
         </div>
         
         <motion.div 
@@ -142,20 +193,18 @@ export default function Doubts() {
           className="relative z-10 max-w-7xl mx-auto px-4 text-center"
         >
           <span className="inline-block px-4 py-1.5 bg-white/10 backdrop-blur-md border border-white/20 rounded-full text-white text-[10px] font-black tracking-[0.4em] uppercase mb-8">
-            ASK ANYTHING
+            PRIVATE MENTORSHIP
           </span>
           <h1 className="text-7xl md:text-[10rem] font-display text-white mb-8 tracking-tighter text-glow-white leading-none">
             DOUBTS
           </h1>
           <p className="text-white/60 max-w-2xl mx-auto text-lg md:text-2xl font-medium leading-relaxed tracking-tight">
-            Get your questions answered by NDA/CDS-qualified mentors.
+            Ask your doubts privately. Our mentors will reply to you directly in a chat.
           </p>
         </motion.div>
       </section>
 
       <div className="max-w-7xl mx-auto px-4 py-24 relative">
-        <div className="absolute top-0 left-0 w-full h-px bg-gradient-to-r from-transparent via-gray-100 to-transparent"></div>
-        
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-12">
           
           {/* Left Column: Ask Form */}
@@ -181,176 +230,178 @@ export default function Doubts() {
                       exit={{ opacity: 0, height: 0 }}
                       className="bg-green-50 text-green-700 p-5 rounded-2xl text-[10px] font-black tracking-[0.2em] uppercase border border-green-100 mb-6"
                     >
-                      Question submitted successfully!
+                      Question submitted! Check "My Doubts" below.
                     </motion.div>
                   )}
                 </AnimatePresence>
 
-                <div className="space-y-2">
-                  <label className="block text-[10px] font-black text-gray-300 uppercase tracking-[0.3em] ml-1">Your Name</label>
-                  <input 
-                    type="text"
-                    value={formData.name}
-                    onChange={(e) => {
-                      setFormData({...formData, name: e.target.value});
-                      if (errors.name) setErrors({...errors, name: undefined});
-                    }}
-                    placeholder="e.g. Rahul Singh"
-                    className={`w-full px-6 py-4 rounded-2xl bg-gray-50 border ${errors.name ? 'border-red-500 ring-4 ring-red-500/5' : 'border-gray-100 focus:border-[#1B4332] focus:ring-4 focus:ring-[#1B4332]/5'} outline-none transition-all font-bold text-gray-700 placeholder:text-gray-300`}
-                  />
-                  {errors.name && <p className="mt-2 text-[10px] text-red-500 font-black uppercase tracking-widest ml-1">{errors.name}</p>}
-                </div>
-
-                <div className="space-y-2">
-                  <label className="block text-[10px] font-black text-gray-300 uppercase tracking-[0.3em] ml-1">Contact Number</label>
-                  <input 
-                    type="tel"
-                    value={formData.phone}
-                    onChange={(e) => {
-                      setFormData({...formData, phone: e.target.value});
-                      if (errors.phone) setErrors({...errors, phone: undefined});
-                    }}
-                    placeholder="10-digit mobile"
-                    className={`w-full px-6 py-4 rounded-2xl bg-gray-50 border ${errors.phone ? 'border-red-500 ring-4 ring-red-500/5' : 'border-gray-100 focus:border-[#1B4332] focus:ring-4 focus:ring-[#1B4332]/5'} outline-none transition-all font-bold text-gray-700 placeholder:text-gray-300`}
-                  />
-                  {errors.phone && <p className="mt-2 text-[10px] text-red-500 font-black uppercase tracking-widest ml-1">{errors.phone}</p>}
-                </div>
-
-                <div className="space-y-2">
-                  <label className="block text-[10px] font-black text-gray-300 uppercase tracking-[0.3em] ml-1">Category</label>
-                  <div className="relative">
-                    <select 
-                      value={formData.category}
-                      onChange={(e) => setFormData({...formData, category: e.target.value})}
-                      className="w-full px-6 py-4 rounded-2xl bg-gray-50 border border-gray-100 focus:border-[#1B4332] outline-none transition-all font-bold text-gray-700 appearance-none cursor-pointer"
-                    >
-                      {CATEGORIES.filter(c => c !== 'All').map(cat => (
-                        <option key={cat} value={cat}>{cat}</option>
-                      ))}
-                    </select>
-                    <div className="absolute right-6 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400">
-                      <ChevronRight size={20} className="rotate-90" />
+                {!user ? (
+                  <div className="text-center py-10 space-y-6">
+                    <div className="w-16 h-16 rounded-full bg-gray-50 flex items-center justify-center mx-auto text-gray-300">
+                      <Lock size={32} />
                     </div>
+                    <div>
+                      <h3 className="text-xl font-black tracking-tight text-gray-800">Sign In Required</h3>
+                      <p className="text-sm text-gray-500 font-medium mt-2">Please sign in to ask a private doubt.</p>
+                    </div>
+                    <motion.button
+                      whileHover={{ scale: 1.05 }}
+                      whileTap={{ scale: 0.95 }}
+                      type="button"
+                      onClick={signInWithGoogle}
+                      className="w-full py-4 bg-[#1B4332] text-white rounded-2xl font-black tracking-widest text-xs shadow-xl shadow-[#1B4332]/10"
+                    >
+                      SIGN IN WITH GOOGLE
+                    </motion.button>
                   </div>
-                </div>
+                ) : (
+                  <>
+                    <div className="space-y-2">
+                      <label className="block text-[10px] font-black text-gray-300 uppercase tracking-[0.3em] ml-1">Your Name</label>
+                      <input 
+                        type="text"
+                        value={formData.name}
+                        onChange={(e) => setFormData({...formData, name: e.target.value})}
+                        placeholder="e.g. Rahul Singh"
+                        className="w-full px-6 py-4 rounded-2xl bg-gray-50 border border-gray-100 focus:border-[#1B4332] outline-none transition-all font-bold text-gray-700"
+                      />
+                    </div>
 
-                <div className="space-y-2">
-                  <label className="block text-[10px] font-black text-gray-300 uppercase tracking-[0.3em] ml-1">Your Question</label>
-                  <textarea 
-                    value={formData.question}
-                    onChange={(e) => {
-                      setFormData({...formData, question: e.target.value});
-                      if (errors.question) setErrors({...errors, question: undefined});
-                    }}
-                    placeholder="Describe your doubt in detail..."
-                    rows={4}
-                    className={`w-full px-6 py-4 rounded-2xl bg-gray-50 border ${errors.question ? 'border-red-500 ring-4 ring-red-500/5' : 'border-gray-100 focus:border-[#1B4332] focus:ring-4 focus:ring-[#1B4332]/5'} outline-none transition-all font-bold text-gray-700 placeholder:text-gray-300 resize-none`}
-                  />
-                  {errors.question && <p className="mt-2 text-[10px] text-red-500 font-black uppercase tracking-widest ml-1">{errors.question}</p>}
-                </div>
+                    <div className="space-y-2">
+                      <label className="block text-[10px] font-black text-gray-300 uppercase tracking-[0.3em] ml-1">Category</label>
+                      <select 
+                        value={formData.category}
+                        onChange={(e) => setFormData({...formData, category: e.target.value})}
+                        className="w-full px-6 py-4 rounded-2xl bg-gray-50 border border-gray-100 focus:border-[#1B4332] outline-none transition-all font-bold text-gray-700 appearance-none cursor-pointer"
+                      >
+                        {CATEGORIES.map(cat => (
+                          <option key={cat} value={cat}>{cat}</option>
+                        ))}
+                      </select>
+                    </div>
 
-                <motion.button
-                  whileHover={{ scale: 1.02, y: -2 }}
-                  whileTap={{ scale: 0.98 }}
-                  disabled={isSubmitting}
-                  type="submit"
-                  className={`w-full py-5 ${isSubmitting ? 'bg-gray-100 text-gray-400' : 'bg-[#1B4332] text-white hover:bg-[#2D6A4F]'} rounded-2xl font-black tracking-[0.3em] uppercase text-xs flex items-center justify-center gap-3 transition-all duration-300 shadow-xl shadow-[#1B4332]/10`}
-                >
-                  {isSubmitting ? (
-                    <div className="w-5 h-5 border-2 border-gray-300 border-t-gray-500 rounded-full animate-spin" />
-                  ) : (
-                    <Send size={18} />
-                  )}
-                  {isSubmitting ? 'SUBMITTING...' : 'SUBMIT DOUBT'}
-                </motion.button>
+                    <div className="space-y-2">
+                      <label className="block text-[10px] font-black text-gray-300 uppercase tracking-[0.3em] ml-1">Your Question</label>
+                      <textarea 
+                        value={formData.question}
+                        onChange={(e) => setFormData({...formData, question: e.target.value})}
+                        placeholder="Describe your doubt..."
+                        rows={4}
+                        className="w-full px-6 py-4 rounded-2xl bg-gray-50 border border-gray-100 focus:border-[#1B4332] outline-none transition-all font-bold text-gray-700 resize-none"
+                      />
+                    </div>
+
+                    <motion.button
+                      whileHover={{ scale: 1.02 }}
+                      whileTap={{ scale: 0.98 }}
+                      disabled={isSubmitting}
+                      type="submit"
+                      className="w-full py-5 bg-[#1B4332] text-white rounded-2xl font-black tracking-[0.3em] uppercase text-xs flex items-center justify-center gap-3"
+                    >
+                      {isSubmitting ? 'SUBMITTING...' : 'SUBMIT DOUBT'}
+                    </motion.button>
+                  </>
+                )}
               </form>
             </motion.div>
           </div>
 
-          {/* Right Column: Doubts List */}
+          {/* Right Column: My Doubts & Chat */}
           <div className="lg:col-span-8">
-            {/* Category Filter */}
-            <div className="flex flex-wrap gap-3 mb-12">
-              {CATEGORIES.map((cat) => (
-                <button
-                  key={cat}
-                  onClick={() => setSelectedCategory(cat)}
-                  className={`px-8 py-3 rounded-2xl text-[10px] font-black tracking-[0.2em] uppercase transition-all duration-300 ${
-                    selectedCategory === cat
-                      ? 'bg-[#1B4332] text-white shadow-xl shadow-[#1B4332]/20 scale-105'
-                      : 'bg-white text-gray-400 hover:text-gray-600 hover:bg-gray-50 border border-gray-100'
-                  }`}
-                >
-                  {cat}
-                </button>
-              ))}
+            <div className="flex items-center justify-between mb-12">
+              <h2 className="text-4xl font-black tracking-tighter text-[#1A1A1A]">My Doubts</h2>
+              <span className="px-4 py-1 bg-[#1B4332]/5 text-[#1B4332] text-[10px] font-black tracking-widest uppercase rounded-full">
+                {myDoubts.length} ACTIVE
+              </span>
             </div>
 
-            {/* Doubts Feed */}
-            <div className="space-y-8">
-              <AnimatePresence mode="popLayout">
-                {filteredDoubts.map((doubt, index) => (
+            <div className="grid gap-8">
+              {myDoubts.length > 0 ? (
+                myDoubts.map((doubt) => (
                   <motion.div
                     key={doubt.id}
                     layout
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, scale: 0.95 }}
-                    transition={{ delay: index * 0.1 }}
-                    className="bg-white rounded-[2.5rem] p-10 shadow-[0_30px_60px_rgba(0,0,0,0.02)] border border-gray-100 group hover:border-[#1B4332]/20 transition-all duration-500 relative overflow-hidden"
+                    className={`bg-white rounded-[2.5rem] p-8 border transition-all duration-500 ${
+                      selectedDoubt?.id === doubt.id ? 'border-[#1B4332] shadow-2xl' : 'border-gray-100 shadow-sm hover:shadow-md'
+                    }`}
                   >
-                    <div className="absolute -right-10 -top-10 opacity-[0.02] group-hover:opacity-[0.05] transition-opacity duration-500">
-                      <HelpCircle size={200} />
-                    </div>
-                    <div className="flex gap-6 relative z-10">
-                      <div className="mt-1.5 text-[#1B4332]/20 group-hover:text-[#1B4332] transition-colors duration-500">
-                        <HelpCircle size={32} />
-                      </div>
-                      <div className="flex-grow">
-                        <h3 className="text-2xl font-black tracking-tight text-[#1A1A1A] mb-6 group-hover:text-[#1B4332] transition-colors duration-500 leading-tight">
-                          {doubt.question}
-                        </h3>
-                        <div className="flex items-start gap-5 mb-10 bg-gray-50/50 p-8 rounded-3xl border border-gray-50 group-hover:bg-white transition-colors duration-500">
-                          <div className="mt-1 p-1.5 bg-[#1B4332]/10 text-[#1B4332] rounded-lg">
-                            <MessageSquare size={18} />
-                          </div>
-                          <p className="text-gray-500 font-medium leading-relaxed text-lg">
-                            {doubt.answer}
-                          </p>
+                    <div className="flex justify-between items-start mb-6">
+                      <div>
+                        <div className="flex items-center gap-3 mb-2">
+                          <span className="px-3 py-1 bg-amber-50 text-amber-700 text-[10px] font-black uppercase tracking-widest rounded-full border border-amber-100">
+                            {doubt.category}
+                          </span>
+                          <span className="text-[10px] text-gray-400 font-bold flex items-center gap-1">
+                            <Clock size={12} />
+                            {doubt.createdAt?.toDate ? doubt.createdAt.toDate().toLocaleDateString() : 'Just now'}
+                          </span>
                         </div>
-                        
-                        <div className="flex flex-wrap items-center justify-between gap-6 pt-8 border-t border-gray-50">
-                          <div className="flex items-center gap-6">
-                            <div className="flex items-center gap-3 text-gray-300">
-                              <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center">
-                                <User size={14} className="text-gray-400" />
-                              </div>
-                              <span className="text-[10px] font-black uppercase tracking-[0.2em]">{doubt.author}</span>
-                            </div>
-                            <div className="w-1.5 h-1.5 rounded-full bg-gray-100" />
-                            <span className="text-[10px] font-black text-gray-300 uppercase tracking-[0.2em]">{doubt.date}</span>
-                          </div>
-                          
-                          <div className="flex items-center gap-2.5 px-5 py-2 bg-[#1B4332]/5 text-[#1B4332] rounded-2xl border border-[#1B4332]/5">
-                            <Tag size={12} className="opacity-50" />
-                            <span className="text-[10px] font-black uppercase tracking-[0.3em]">{doubt.category}</span>
-                          </div>
-                        </div>
+                        <h3 className="text-xl font-black text-gray-900 line-clamp-2">{doubt.message}</h3>
                       </div>
+                      <button 
+                        onClick={() => setSelectedDoubt(selectedDoubt?.id === doubt.id ? null : doubt)}
+                        className={`px-6 py-3 rounded-xl font-black text-[10px] tracking-widest uppercase transition-all ${
+                          selectedDoubt?.id === doubt.id ? 'bg-gray-100 text-gray-500' : 'bg-[#1B4332] text-white shadow-lg shadow-[#1B4332]/20'
+                        }`}
+                      >
+                        {selectedDoubt?.id === doubt.id ? 'CLOSE CHAT' : 'OPEN CHAT'}
+                      </button>
                     </div>
-                  </motion.div>
-                ))}
-              </AnimatePresence>
 
-              {filteredDoubts.length === 0 && (
-                <motion.div 
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  className="text-center py-20 bg-white rounded-2xl border border-dashed border-gray-200"
-                >
-                  <Search size={48} className="mx-auto text-gray-300 mb-4" />
-                  <p className="text-gray-500 font-bold uppercase tracking-widest">No doubts found in this category</p>
-                </motion.div>
+                    <AnimatePresence>
+                      {selectedDoubt?.id === doubt.id && (
+                        <motion.div
+                          initial={{ opacity: 0, height: 0 }}
+                          animate={{ opacity: 1, height: 'auto' }}
+                          exit={{ opacity: 0, height: 0 }}
+                          className="overflow-hidden"
+                        >
+                          <div className="bg-gray-50 rounded-3xl p-6 mb-4 h-[400px] overflow-y-auto flex flex-col gap-4">
+                            {messages.map((msg) => (
+                              <div 
+                                key={msg.id}
+                                className={`max-w-[80%] flex flex-col ${msg.isAdmin ? 'self-start' : 'self-end'}`}
+                              >
+                                <span className={`text-[9px] font-black uppercase tracking-widest mb-1 ${msg.isAdmin ? 'text-[#1B4332]' : 'text-gray-400 text-right'}`}>
+                                  {msg.isAdmin ? 'ADMIN MENTOR' : 'YOU'}
+                                </span>
+                                <div className={`px-5 py-3 rounded-2xl text-sm font-medium shadow-sm ${
+                                  msg.isAdmin 
+                                    ? 'bg-white text-gray-800 rounded-tl-none border border-gray-100' 
+                                    : 'bg-[#1B4332] text-white rounded-tr-none'
+                                }`}>
+                                  {msg.text}
+                                </div>
+                              </div>
+                            ))}
+                            <div ref={messagesEndRef} />
+                          </div>
+
+                          <form onSubmit={handleSendMessage} className="flex gap-3">
+                            <input 
+                              type="text"
+                              value={newMessage}
+                              onChange={(e) => setNewMessage(e.target.value)}
+                              placeholder="Type your message..."
+                              className="flex-grow px-6 py-4 rounded-2xl bg-white border border-gray-100 focus:border-[#1B4332] outline-none transition-all font-bold text-gray-700"
+                            />
+                            <button 
+                              type="submit"
+                              className="w-14 h-14 bg-[#1B4332] text-white rounded-2xl flex items-center justify-center shadow-lg shadow-[#1B4332]/20 hover:bg-[#2D6A4F] transition-all"
+                            >
+                              <Send size={20} />
+                            </button>
+                          </form>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </motion.div>
+                ))
+              ) : (
+                <div className="bg-white rounded-[2.5rem] p-20 text-center border border-dashed border-gray-200">
+                  <MessageCircle size={48} className="mx-auto text-gray-200 mb-4" />
+                  <p className="text-gray-400 font-bold uppercase tracking-widest">No doubts asked yet</p>
+                </div>
               )}
             </div>
           </div>

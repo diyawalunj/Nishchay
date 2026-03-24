@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
-import { Mail, Phone, MapPin, Send, Instagram, Youtube, Send as Telegram, MessageCircle } from 'lucide-react';
+import { Mail, Phone, MapPin, Send, Instagram, Youtube, Send as Telegram, MessageCircle, Lock } from 'lucide-react';
+import { auth, db, collection, addDoc, serverTimestamp, onAuthStateChanged, signInWithGoogle, handleFirestoreError, OperationType, type User as FirebaseUser } from './firebase';
 
 interface FormData {
   fullName: string;
@@ -15,6 +16,7 @@ interface FormErrors {
 }
 
 const Contact: React.FC = () => {
+  const [user, setUser] = useState<FirebaseUser | null>(null);
   const [formData, setFormData] = useState<FormData>({
     fullName: '',
     email: '',
@@ -24,6 +26,20 @@ const Contact: React.FC = () => {
   const [errors, setErrors] = useState<FormErrors>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      setUser(currentUser);
+      if (currentUser) {
+        setFormData(prev => ({ 
+          ...prev, 
+          fullName: currentUser.displayName || '',
+          email: currentUser.email || ''
+        }));
+      }
+    });
+    return () => unsubscribe();
+  }, []);
 
   const validate = (): boolean => {
     const newErrors: FormErrors = {};
@@ -60,30 +76,30 @@ const Contact: React.FC = () => {
     
     if (validate()) {
       setIsSubmitting(true);
+      const path = 'contacts';
       try {
-        const response = await fetch('/api/contact', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(formData),
-        });
+        const contactData: any = {
+          name: formData.fullName,
+          email: formData.email,
+          subject: 'Contact Form Submission',
+          message: formData.message,
+          createdAt: serverTimestamp()
+        };
 
-        const result = await response.json();
-
-        if (!response.ok) {
-          throw new Error(result.error || 'Failed to submit form');
+        if (user) {
+          contactData.uid = user.uid;
         }
+
+        await addDoc(collection(db, path), contactData);
 
         console.log('Form submitted successfully');
         setIsSuccess(true);
-        setFormData({ fullName: '', email: '', message: '' });
+        setFormData({ fullName: user?.displayName || '', email: user?.email || '', message: '' });
         
         // Reset success message after 5 seconds
         setTimeout(() => setIsSuccess(false), 5000);
       } catch (error: any) {
-        console.error('Error submitting form:', error);
-        alert(`Failed to submit form: ${error.message}. Please try again later.`);
+        handleFirestoreError(error, OperationType.CREATE, path);
       } finally {
         setIsSubmitting(false);
       }

@@ -12,6 +12,7 @@ import About from './About';
 import Notes from './Notes';
 import Gallery from './Gallery';
 import Contact from './Contact';
+import Admin from './Admin';
 
 // ScrollToTop component to reset scroll position on route change
 function ScrollToTop() {
@@ -55,6 +56,7 @@ function AppContent() {
           <Route path="/ssb" element={<SSB />} />
           <Route path="/gallery" element={<Gallery />} />
           <Route path="/contact" element={<Contact />} />
+          <Route path="/admin" element={<Admin />} />
           {/* Fallback for other routes */}
           <Route path="*" element={<Home />} />
         </Routes>

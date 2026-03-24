@@ -1,0 +1,145 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: users
+    // Document ID: {userId}
+    // Fields:
+    //   - uid: string (required) - Unique identifier for the user.
+    //   - email: string (required, format: email) - User's email.
+    //   - displayName: string (required) - User's display name.
+    //   - photoURL: string (optional) - URL of user's profile photo.
+    //   - role: string (optional, enum: ['admin', 'user']) - User's role.
+    //
+    // Collection: doubts
+    // Document ID: {doubtId}
+    // Fields:
+    //   - uid: string (required) - UID of the user who submitted.
+    //   - name: string (required) - User's name.
+    //   - email: string (required, format: email) - User's email.
+    //   - subject: string (required) - Subject of the doubt.
+    //   - message: string (required) - Content of the doubt.
+    //   - createdAt: timestamp (required) - Time of creation.
+    //
+    // Collection: contacts
+    // Document ID: {contactId}
+    // Fields:
+    //   - uid: string (required) - UID of the user who submitted.
+    //   - name: string (required) - User's name.
+    //   - email: string (required, format: email) - User's email.
+    //   - subject: string (required) - Subject of the contact message.
+    //   - message: string (required) - Content of the contact message.
+    //   - createdAt: timestamp (required) - Time of creation.
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+    
+    function isAdmin() {
+      return isAuthenticated() && 
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+         ((request.auth.token.email == "diyawalunj@gmail.com" ||
+           request.auth.token.email == "vedantranjeetjadhav@gmail.com" ||
+           request.auth.token.email == "abhijeetgaikwad1904@gmail.com" ||
+           request.auth.token.email == "muthalrishikesh2006@gmail.com" ||
+           request.auth.token.email == "adityasahane076@gmail.com") && 
+          request.auth.token.email_verified == true));
+    }
+    
+    function isValidEmail(email) {
+      return email is string && email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
+    }
+    
+    function hasOnlyAllowedFields(fields) {
+      return request.resource.data.keys().hasOnly(fields);
+    }
+    
+    function hasRequiredFields(fields) {
+      return request.resource.data.keys().hasAll(fields);
+    }
+
+    // ===============================================================
+    // Domain Validators
+    // ===============================================================
+    
+    function isValidUser(data) {
+      return hasRequiredFields(['uid', 'email', 'displayName']) &&
+             hasOnlyAllowedFields(['uid', 'email', 'displayName', 'photoURL', 'role']) &&
+             data.uid is string && data.uid.size() > 0 &&
+             data.email is string && isValidEmail(data.email) &&
+             data.displayName is string && data.displayName.size() > 0 &&
+             (!('photoURL' in data) || (data.photoURL is string)) &&
+             (!('role' in data) || (data.role in ['admin', 'user']));
+    }
+    
+    function isValidDoubt(data) {
+      return hasRequiredFields(['uid', 'name', 'email', 'subject', 'message', 'createdAt', 'status']) &&
+             hasOnlyAllowedFields(['uid', 'name', 'email', 'subject', 'message', 'createdAt', 'status']) &&
+             data.uid is string && data.uid == request.auth.uid &&
+             data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
+             data.email is string && isValidEmail(data.email) &&
+             data.subject is string && data.subject.size() > 0 && data.subject.size() < 200 &&
+             data.message is string && data.message.size() > 0 && data.message.size() < 5000 &&
+             data.createdAt is timestamp &&
+             data.status in ['pending', 'resolved'];
+    }
+    
+    function isValidContact(data) {
+      return hasRequiredFields(['name', 'email', 'subject', 'message', 'createdAt']) &&
+             hasOnlyAllowedFields(['uid', 'name', 'email', 'subject', 'message', 'createdAt']) &&
+             (!('uid' in data) || data.uid is string) &&
+             (isAuthenticated() && 'uid' in data ? data.uid == request.auth.uid : true) &&
+             data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
+             data.email is string && isValidEmail(data.email) &&
+             data.subject is string && data.subject.size() > 0 && data.subject.size() < 200 &&
+             data.message is string && data.message.size() > 0 && data.message.size() < 5000 &&
+             data.createdAt is timestamp;
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      allow create: if isOwner(userId) && isValidUser(request.resource.data) && 
+                      (request.resource.data.role == 'user' || isAdmin());
+      allow update: if isOwner(userId) && isValidUser(request.resource.data) && 
+                      (request.resource.data.role == resource.data.role || isAdmin());
+    }
+    
+    match /doubts/{doubtId} {
+      allow read: if isAdmin() || (isAuthenticated() && resource.data.uid == request.auth.uid);
+      allow create: if isAuthenticated() && isValidDoubt(request.resource.data);
+      allow update: if isAdmin() || (isAuthenticated() && resource.data.uid == request.auth.uid);
+      allow delete: if isAdmin();
+
+      match /messages/{messageId} {
+        allow read: if isAdmin() || (isAuthenticated() && get(/databases/$(database)/documents/doubts/$(doubtId)).data.uid == request.auth.uid);
+        allow create: if isAuthenticated() && 
+          (isAdmin() || get(/databases/$(database)/documents/doubts/$(doubtId)).data.uid == request.auth.uid) &&
+          request.resource.data.keys().hasAll(['text', 'senderId', 'senderName', 'createdAt', 'isAdmin']) &&
+          request.resource.data.senderId == request.auth.uid;
+      }
+    }
+    
+    match /contacts/{contactId} {
+      allow read: if isAdmin();
+      allow create: if isValidContact(request.resource.data);
+      allow update, delete: if isAdmin();
+    }
+  }
+}
