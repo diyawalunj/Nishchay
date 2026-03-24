@@ -115,16 +115,6 @@ export default function Doubts() {
         throw new Error(result.error || 'Failed to submit question');
       }
 
-      const newDoubt: Doubt = {
-        id: Date.now().toString(),
-        question: formData.question,
-        answer: 'Our mentors will answer this shortly. Stay tuned!',
-        category: formData.category,
-        author: formData.name,
-        date: 'Just now'
-      };
-
-      setDoubts([newDoubt, ...doubts]);
       setFormData({ name: '', phone: '', category: 'Mathematics', question: '' });
       setShowSuccess(true);
       setTimeout(() => setShowSuccess(false), 3000);
