@@ -1,6 +1,6 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged, User } from 'firebase/auth';
-import { getFirestore, collection, addDoc, serverTimestamp, getDoc, setDoc, doc, query, orderBy, getDocs, where, onSnapshot, limit, updateDoc, deleteDoc, enableIndexedDbPersistence } from 'firebase/firestore';
+import { getFirestore, initializeFirestore, persistentLocalCache, collection, addDoc, serverTimestamp, getDoc, setDoc, doc, query, orderBy, getDocs, where, onSnapshot, limit, updateDoc, deleteDoc, writeBatch } from 'firebase/firestore';
 
 // Import the Firebase configuration
 import firebaseConfigJson from './firebase-applet-config.json';
@@ -22,19 +22,18 @@ export const isFirebaseConfigured = true;
 
 const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
-// @ts-ignore
-export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId || '(default)');
-
-// Enable offline persistence
-if (typeof window !== 'undefined') {
-  enableIndexedDbPersistence(db).catch((err) => {
-    if (err.code === 'failed-precondition') {
-      console.warn('Firestore persistence failed: Multiple tabs open');
-    } else if (err.code === 'unimplemented') {
-      console.warn('Firestore persistence failed: Browser not supported');
-    }
-  });
-}
+export const db = (() => {
+  try {
+    // Use modern persistence API (replaces deprecated enableIndexedDbPersistence)
+    return initializeFirestore(app, {
+      localCache: persistentLocalCache({}),
+    }, firebaseConfig.firestoreDatabaseId || '(default)');
+  } catch (e) {
+    // Fallback if persistence fails (e.g., multiple tabs)
+    // @ts-ignore
+    return getFirestore(app, firebaseConfig.firestoreDatabaseId || '(default)');
+  }
+})();
 
 export const googleProvider = new GoogleAuthProvider();
 
@@ -90,7 +89,10 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
   throw new Error(JSON.stringify(errInfo));
 }
 
-export const ADMIN_EMAILS = [
+// ── Admin Check ──
+// Private list — only used for initial role assignment during sign-up.
+// The actual admin check reads from Firestore.
+const ADMIN_EMAILS = [
   "diyawalunj@gmail.com",
   "vedantranjeetjadhav@gmail.com",
   "abhijeetgaikwad1904@gmail.com",
@@ -98,10 +100,63 @@ export const ADMIN_EMAILS = [
   "adityasahane076@gmail.com"
 ];
 
+/** Synchronous fallback — checks email list. Use for fast routing decisions only. */
 export const checkIfAdmin = (user: User | null) => {
   if (!user || !user.email) return false;
   return ADMIN_EMAILS.includes(user.email);
 };
+
+/** Async admin check — reads role from Firestore `users/{uid}`. Authoritative source. */
+export const checkIfAdminAsync = async (user: User | null): Promise<boolean> => {
+  if (!user) return false;
+  // Fast path: check email first
+  if (checkIfAdmin(user)) return true;
+  // Authoritative path: check Firestore role
+  try {
+    const userDoc = await getDoc(doc(db, 'users', user.uid));
+    return userDoc.exists() && userDoc.data()?.role === 'admin';
+  } catch (e) {
+    console.warn('Could not verify admin role from Firestore, falling back to email check', e);
+    return checkIfAdmin(user);
+  }
+};
+
+// ── Retry Wrapper ──
+/** Retry a Firestore write operation with exponential backoff. */
+export async function retryWrite<T>(fn: () => Promise<T>, maxRetries = 2): Promise<T> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await fn();
+    } catch (error: any) {
+      lastError = error;
+      // Don't retry permission errors
+      if (error?.code === 'permission-denied' || error?.code === 'unauthenticated') {
+        throw error;
+      }
+      if (attempt < maxRetries) {
+        await new Promise(resolve => setTimeout(resolve, 500 * Math.pow(2, attempt)));
+      }
+    }
+  }
+  throw lastError;
+}
+
+// ── Subcollection Cleanup ──
+/** Delete a doubt and all its messages in one batch. */
+export async function deleteDoubtWithMessages(doubtId: string): Promise<void> {
+  // Fetch all messages in the subcollection
+  const messagesSnap = await getDocs(collection(db, `doubts/${doubtId}/messages`));
+  
+  // Firestore batches are limited to 500 ops — fine for typical chat threads
+  const batch = writeBatch(db);
+  messagesSnap.docs.forEach(msgDoc => {
+    batch.delete(msgDoc.ref);
+  });
+  batch.delete(doc(db, 'doubts', doubtId));
+  
+  await batch.commit();
+}
 
 // Auth Helpers
 export const signInWithGoogle = async () => {

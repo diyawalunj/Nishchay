@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
-import { Mail, Phone, MapPin, Send, Instagram, Youtube, Send as Telegram, MessageCircle, Lock } from 'lucide-react';
-import { auth, db, collection, addDoc, serverTimestamp, onAuthStateChanged, signInWithGoogle, handleFirestoreError, OperationType, type User as FirebaseUser } from './firebase';
+import { Mail, Phone, MapPin, Send } from 'lucide-react';
+import { auth, onAuthStateChanged, signInWithGoogle, type User as FirebaseUser } from './firebase';
 
 interface FormData {
   fullName: string;
@@ -26,6 +26,7 @@ const Contact: React.FC = () => {
   const [errors, setErrors] = useState<FormErrors>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
@@ -76,6 +77,7 @@ const Contact: React.FC = () => {
     
     if (validate()) {
       setIsSubmitting(true);
+      setErrorMessage(null);
       try {
         const response = await fetch('/api/contact', {
           method: 'POST',
@@ -101,7 +103,7 @@ const Contact: React.FC = () => {
         setTimeout(() => setIsSuccess(false), 5000);
       } catch (error: any) {
         console.error('Submission error:', error);
-        alert('Failed to send message. Please try again later.');
+        setErrorMessage('Failed to send message. Please try again later.');
       } finally {
         setIsSubmitting(false);
       }
@@ -268,6 +270,15 @@ const Contact: React.FC = () => {
                   )}
                   {isSubmitting ? 'SENDING...' : 'SEND MESSAGE'}
                 </motion.button>
+                {errorMessage && (
+                  <motion.div 
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    className="bg-red-50 text-red-700 p-5 rounded-2xl text-[10px] font-black tracking-[0.2em] uppercase border border-red-100"
+                  >
+                    {errorMessage}
+                  </motion.div>
+                )}
               </form>
             )}
           </motion.div>

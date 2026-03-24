@@ -4,39 +4,39 @@ import { Link } from 'react-router-dom';
 import { Quote, ArrowRight, Download, MessageCircle } from 'lucide-react';
 import { SERVICES } from './constants';
 
+const quotes = [
+  {
+    text: "In the matter of courage, the opportunity is everything.",
+    author: "Swami Vivekananda"
+  },
+  {
+    text: "A true soldier fights not because he hates what is in front of him, but because he loves what is behind him.",
+    author: "G.K. Chesterton"
+  },
+  {
+    text: "The soldier is the Army. No army is better than its soldiers.",
+    author: "George S. Patton"
+  },
+  {
+    text: "Either I will find a way, or I will make one.",
+    author: "Philip Sidney"
+  },
+  {
+    text: "Fortune favors the brave.",
+    author: "Virgil"
+  },
+  {
+    text: "Either I will come back after hoisting the Tricolour, or I will come back wrapped in it.",
+    author: "Captain Vikram Batra"
+  },
+  {
+    text: "The safety, honour and welfare of your country come first, always and every time.",
+    author: "Indian Military Academy (Chetwode Motto)"
+  }
+];
+
 export default function Home() {
   const [activeQuote, setActiveQuote] = useState(0);
-
-  const quotes = [
-    {
-      text: "In the matter of courage, the opportunity is everything.",
-      author: "Swami Vivekananda"
-    },
-    {
-      text: "A true soldier fights not because he hates what is in front of him, but because he loves what is behind him.",
-      author: "G.K. Chesterton"
-    },
-    {
-      text: "The soldier is the Army. No army is better than its soldiers.",
-      author: "George S. Patton"
-    },
-    {
-      text: "Either I will find a way, or I will make one.",
-      author: "Philip Sidney"
-    },
-    {
-      text: "Fortune favors the brave.",
-      author: "Virgil"
-    },
-    {
-      text: "Either I will come back after hoisting the Tricolour, or I will come back wrapped in it.",
-      author: "Captain Vikram Batra"
-    },
-    {
-      text: "The safety, honour and welfare of your country come first, always and every time.",
-      author: "Indian Military Academy (Chetwode Motto)"
-    }
-  ];
 
   useEffect(() => {
     const timer = setInterval(() => {

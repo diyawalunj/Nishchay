@@ -1,18 +1,32 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense, lazy } from 'react';
 import { BrowserRouter as Router, Routes, Route, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
-import Doubts from './Doubts';
-import Tests from './Tests';
-import SSB from './SSB';
 import { ChevronUp } from 'lucide-react';
 import Header from './Header';
 import Footer from './Footer';
-import Home from './Home';
-import About from './About';
-import Notes from './Notes';
-import Gallery from './Gallery';
-import Contact from './Contact';
-import Admin from './Admin';
+
+// Lazy-loaded route components — each page is code-split into its own chunk
+const Home = lazy(() => import('./Home'));
+const About = lazy(() => import('./About'));
+const Notes = lazy(() => import('./Notes'));
+const Doubts = lazy(() => import('./Doubts'));
+const Tests = lazy(() => import('./Tests'));
+const SSB = lazy(() => import('./SSB'));
+const Gallery = lazy(() => import('./Gallery'));
+const Contact = lazy(() => import('./Contact'));
+const Admin = lazy(() => import('./Admin'));
+
+// Minimal loading spinner shown while a route chunk is downloading
+function PageLoader() {
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-[#F8F9FA]">
+      <div className="flex flex-col items-center gap-4">
+        <div className="w-10 h-10 border-4 border-[#1B4332] border-t-transparent rounded-full animate-spin" />
+        <p className="text-gray-400 text-xs font-black tracking-widest uppercase">Loading...</p>
+      </div>
+    </div>
+  );
+}
 
 // ScrollToTop component to reset scroll position on route change
 function ScrollToTop() {
@@ -47,19 +61,21 @@ function AppContent() {
       <Header />
       
       <main className={`flex-grow ${!isHome ? 'pt-20' : ''}`}>
-        <Routes>
-          <Route path="/" element={<Home />} />
-          <Route path="/about" element={<About />} />
-          <Route path="/notes" element={<Notes />} />
-          <Route path="/doubts" element={<Doubts />} />
-          <Route path="/tests" element={<Tests />} />
-          <Route path="/ssb" element={<SSB />} />
-          <Route path="/gallery" element={<Gallery />} />
-          <Route path="/contact" element={<Contact />} />
-          <Route path="/admin" element={<Admin />} />
-          {/* Fallback for other routes */}
-          <Route path="*" element={<Home />} />
-        </Routes>
+        <Suspense fallback={<PageLoader />}>
+          <Routes>
+            <Route path="/" element={<Home />} />
+            <Route path="/about" element={<About />} />
+            <Route path="/notes" element={<Notes />} />
+            <Route path="/doubts" element={<Doubts />} />
+            <Route path="/tests" element={<Tests />} />
+            <Route path="/ssb" element={<SSB />} />
+            <Route path="/gallery" element={<Gallery />} />
+            <Route path="/contact" element={<Contact />} />
+            <Route path="/admin" element={<Admin />} />
+            {/* Fallback for other routes */}
+            <Route path="*" element={<Home />} />
+          </Routes>
+        </Suspense>
       </main>
 
       <Footer />
@@ -90,3 +106,4 @@ export default function App() {
     </Router>
   );
 }
+

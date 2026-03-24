@@ -1,8 +1,9 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback, memo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { db, auth, onAuthStateChanged, checkIfAdmin, collection, getDocs, query, orderBy, onSnapshot, addDoc, serverTimestamp, doc, updateDoc, deleteDoc, limit, where } from './firebase';
+import { db, auth, onAuthStateChanged, checkIfAdminAsync, collection, query, orderBy, onSnapshot, addDoc, serverTimestamp, doc, updateDoc, limit, where, retryWrite, deleteDoubtWithMessages } from './firebase';
 import { LayoutDashboard, MessageSquare, Mail, User, Clock, CheckCircle, XCircle, Send, ChevronLeft, Trash2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { useToast } from './Toast';
 
 interface Message {
   id: string;
@@ -24,13 +25,96 @@ interface Doubt {
   status: 'pending' | 'resolved';
 }
 
-interface Contact {
-  id: string;
-  name: string;
-  email: string;
-  subject: string;
-  message: string;
-  createdAt: any;
+// ── Memoized sub-components ──
+
+const AdminChatMessage = memo(function AdminChatMessage({ msg }: { msg: Message }) {
+  return (
+    <div className={`max-w-[70%] flex flex-col ${msg.isAdmin ? 'self-end' : 'self-start'}`}>
+      <span className={`text-[9px] font-black uppercase tracking-widest mb-1 ${msg.isAdmin ? 'text-right text-[#1B4332]' : 'text-gray-400'}`}>
+        {msg.isAdmin ? 'YOU (ADMIN)' : msg.senderName}
+      </span>
+      <div className={`px-5 py-3 rounded-2xl text-sm font-medium shadow-sm ${
+        msg.isAdmin 
+          ? 'bg-[#1B4332] text-white rounded-tr-none' 
+          : 'bg-gray-100 text-gray-800 rounded-tl-none'
+      }`}>
+        {msg.text}
+      </div>
+    </div>
+  );
+});
+
+const AdminDoubtCard = memo(function AdminDoubtCard({ doubt, onSelect }: {
+  doubt: Doubt;
+  onSelect: (doubt: Doubt) => void;
+}) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="bg-white rounded-3xl p-8 shadow-lg border border-gray-100 hover:shadow-xl transition-all cursor-pointer"
+      onClick={() => onSelect(doubt)}
+    >
+      <div className="flex flex-col md:flex-row justify-between gap-6">
+        <div className="flex-grow">
+          <div className="flex items-center gap-2 mb-4">
+            <span className="px-3 py-1 bg-amber-50 text-amber-700 text-[10px] font-black uppercase tracking-widest rounded-full border border-amber-100">
+              Subject: {doubt.subject}
+            </span>
+            <span className="flex items-center gap-1 text-[10px] text-gray-400 font-bold">
+              <Clock size={12} />
+              {doubt.createdAt?.toDate ? doubt.createdAt.toDate().toLocaleString() : 'Just now'}
+            </span>
+          </div>
+          <h3 className="text-xl font-black text-gray-900 mb-4">{doubt.message}</h3>
+          <div className="flex flex-wrap gap-4">
+            <div className="flex items-center gap-2 text-xs font-bold text-gray-600">
+              <User size={14} className="text-[#1B4332]" />
+              {doubt.name}
+            </div>
+            <div className="flex items-center gap-2 text-xs font-bold text-gray-600">
+              <Mail size={14} className="text-[#1B4332]" />
+              {doubt.email}
+            </div>
+          </div>
+        </div>
+        <div className="flex md:flex-col gap-2 shrink-0 justify-center">
+          <button className="px-6 py-3 bg-[#1B4332] text-white rounded-xl text-xs font-black tracking-widest hover:bg-[#2D6A4F] transition-all flex items-center gap-2">
+            <MessageSquare size={16} />
+            OPEN CHAT
+          </button>
+        </div>
+      </div>
+    </motion.div>
+  );
+});
+
+// ── Skeleton loader ──
+function AdminSkeleton() {
+  return (
+    <div className="grid gap-6 animate-pulse">
+      {[1, 2, 3].map((i) => (
+        <div key={i} className="bg-white rounded-3xl p-8 shadow-lg border border-gray-100">
+          <div className="flex flex-col md:flex-row justify-between gap-6">
+            <div className="flex-grow space-y-4">
+              <div className="flex items-center gap-2">
+                <div className="h-6 w-24 bg-gray-100 rounded-full" />
+                <div className="h-4 w-32 bg-gray-50 rounded" />
+              </div>
+              <div className="h-6 bg-gray-100 rounded-xl w-3/4" />
+              <div className="flex gap-4">
+                <div className="h-4 w-28 bg-gray-50 rounded" />
+                <div className="h-4 w-36 bg-gray-50 rounded" />
+              </div>
+            </div>
+            <div className="flex md:flex-col gap-2 shrink-0 justify-center">
+              <div className="h-10 w-32 bg-gray-100 rounded-xl" />
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
 }
 
 export default function Admin() {
@@ -45,51 +129,57 @@ export default function Admin() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
   const navigate = useNavigate();
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const { showToast } = useToast();
 
   useEffect(() => {
     let unsubDoubts: (() => void) | null = null;
 
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      if (user && checkIfAdmin(user)) {
-        setIsAdmin(true);
-        
-        // Cleanup previous listener if it exists
-        if (unsubDoubts) {
-          unsubDoubts();
-          unsubDoubts = null;
-        }
+      if (user) {
+        // Use async Firestore-based admin check
+        const adminStatus = await checkIfAdminAsync(user);
+        if (adminStatus) {
+          setIsAdmin(true);
+          
+          if (unsubDoubts) {
+            unsubDoubts();
+            unsubDoubts = null;
+          }
 
-        setLoading(true);
-        
-        // Real-time doubts with limit and status filter for performance
-        let doubtsQuery;
-        if (statusFilter === 'all') {
-          doubtsQuery = query(
-            collection(db, 'doubts'), 
-            orderBy('createdAt', 'desc'),
-            limit(50)
-          );
+          setLoading(true);
+          
+          let doubtsQuery;
+          if (statusFilter === 'all') {
+            doubtsQuery = query(
+              collection(db, 'doubts'), 
+              orderBy('createdAt', 'desc'),
+              limit(50)
+            );
+          } else {
+            doubtsQuery = query(
+              collection(db, 'doubts'), 
+              where('status', '==', statusFilter),
+              orderBy('createdAt', 'desc'),
+              limit(50)
+            );
+          }
+
+          unsubDoubts = onSnapshot(doubtsQuery, (snapshot) => {
+            const doubtsList = snapshot.docs.map(doc => ({
+              id: doc.id,
+              ...doc.data()
+            })) as Doubt[];
+            setDoubts(doubtsList);
+            setLoading(false);
+          }, (error) => {
+            console.error("Error fetching doubts:", error);
+            showToast('Failed to load doubts. Please refresh.', 'error');
+            setLoading(false);
+          });
         } else {
-          doubtsQuery = query(
-            collection(db, 'doubts'), 
-            where('status', '==', statusFilter),
-            orderBy('createdAt', 'desc'),
-            limit(50)
-          );
+          setIsAdmin(false);
+          navigate('/');
         }
-
-        unsubDoubts = onSnapshot(doubtsQuery, (snapshot) => {
-          const doubtsList = snapshot.docs.map(doc => ({
-            id: doc.id,
-            ...doc.data()
-          })) as Doubt[];
-          setDoubts(doubtsList);
-          setLoading(false);
-        }, (error) => {
-          console.error("Error fetching doubts:", error);
-          setLoading(false);
-        });
-
       } else {
         setIsAdmin(false);
         if (!loading) navigate('/');
@@ -100,7 +190,7 @@ export default function Admin() {
       unsubscribe();
       if (unsubDoubts) unsubDoubts();
     };
-  }, [navigate, statusFilter]);
+  }, [navigate, statusFilter, showToast]);
 
   useEffect(() => {
     if (selectedDoubt) {
@@ -114,57 +204,69 @@ export default function Admin() {
           ...doc.data()
         })) as Message[];
         setMessages(msgs);
+      }, (error) => {
+        console.error("Error fetching messages:", error);
+        showToast('Failed to load messages.', 'error');
       });
       return () => unsubMessages();
     } else {
       setMessages([]);
     }
-  }, [selectedDoubt]);
+  }, [selectedDoubt, showToast]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  const handleSendMessage = async (e: React.FormEvent) => {
+  const handleSendMessage = useCallback(async (e: React.FormEvent) => {
     e.preventDefault();
     if (!auth.currentUser || !selectedDoubt || !newMessage.trim()) return;
 
     try {
-      await addDoc(collection(db, `doubts/${selectedDoubt.id}/messages`), {
+      await retryWrite(() => addDoc(collection(db, `doubts/${selectedDoubt.id}/messages`), {
         text: newMessage,
-        senderId: auth.currentUser.uid,
-        senderName: auth.currentUser.displayName || 'Admin',
+        senderId: auth.currentUser!.uid,
+        senderName: auth.currentUser!.displayName || 'Admin',
         isAdmin: true,
         createdAt: serverTimestamp()
-      });
+      }));
       setNewMessage('');
     } catch (error) {
       console.error("Error sending message:", error);
+      showToast('Failed to send message. Please try again.', 'error');
     }
-  };
+  }, [selectedDoubt, newMessage, showToast]);
 
-  const handleResolveDoubt = async (doubtId: string) => {
+  const handleResolveDoubt = useCallback(async (doubtId: string) => {
     try {
-      await updateDoc(doc(db, 'doubts', doubtId), {
+      await retryWrite(() => updateDoc(doc(db, 'doubts', doubtId), {
         status: 'resolved'
-      });
+      }));
       if (selectedDoubt?.id === doubtId) {
         setSelectedDoubt(prev => prev ? { ...prev, status: 'resolved' } : null);
       }
+      showToast('Doubt marked as resolved.', 'success');
     } catch (error) {
       console.error("Error resolving doubt:", error);
+      showToast('Failed to resolve doubt. Please try again.', 'error');
     }
-  };
+  }, [selectedDoubt, showToast]);
 
-  const handleDeleteDoubt = async (doubtId: string) => {
+  const handleDeleteDoubt = useCallback(async (doubtId: string) => {
     setShowDeleteConfirm(null);
     try {
-      await deleteDoc(doc(db, 'doubts', doubtId));
+      await deleteDoubtWithMessages(doubtId);
       setSelectedDoubt(null);
+      showToast('Doubt and messages deleted.', 'success');
     } catch (error) {
       console.error("Error deleting doubt:", error);
+      showToast('Failed to delete doubt. Please try again.', 'error');
     }
-  };
+  }, [showToast]);
+
+  const handleSelectDoubt = useCallback((doubt: Doubt) => {
+    setSelectedDoubt(doubt);
+  }, []);
 
   if (!isAdmin && !loading) return null;
 
@@ -217,10 +319,7 @@ export default function Admin() {
 
       <div className="max-w-7xl mx-auto px-6 -mt-10">
         {loading ? (
-          <div className="bg-white rounded-3xl p-20 shadow-xl flex flex-col items-center justify-center gap-4">
-            <div className="w-12 h-12 border-4 border-[#1B4332] border-t-transparent rounded-full animate-spin" />
-            <p className="text-gray-500 font-bold animate-pulse tracking-widest uppercase text-xs">Loading Dashboard...</p>
-          </div>
+          <AdminSkeleton />
         ) : (
           <div className="grid gap-6">
             {activeTab === 'doubts' && (
@@ -268,21 +367,7 @@ export default function Admin() {
 
                   <div className="flex-grow p-6 overflow-y-auto flex flex-col gap-4">
                     {messages.map((msg) => (
-                      <div 
-                        key={msg.id}
-                        className={`max-w-[70%] flex flex-col ${msg.isAdmin ? 'self-end' : 'self-start'}`}
-                      >
-                        <span className={`text-[9px] font-black uppercase tracking-widest mb-1 ${msg.isAdmin ? 'text-right text-[#1B4332]' : 'text-gray-400'}`}>
-                          {msg.isAdmin ? 'YOU (ADMIN)' : msg.senderName}
-                        </span>
-                        <div className={`px-5 py-3 rounded-2xl text-sm font-medium shadow-sm ${
-                          msg.isAdmin 
-                            ? 'bg-[#1B4332] text-white rounded-tr-none' 
-                            : 'bg-gray-100 text-gray-800 rounded-tl-none'
-                        }`}>
-                          {msg.text}
-                        </div>
-                      </div>
+                      <AdminChatMessage key={msg.id} msg={msg} />
                     ))}
                     <div ref={messagesEndRef} />
                   </div>
@@ -306,44 +391,11 @@ export default function Admin() {
               ) : (
                 doubts.length > 0 ? (
                   doubts.map((doubt) => (
-                    <motion.div
-                      initial={{ opacity: 0, y: 20 }}
-                      animate={{ opacity: 1, y: 0 }}
+                    <AdminDoubtCard
                       key={doubt.id}
-                      className="bg-white rounded-3xl p-8 shadow-lg border border-gray-100 hover:shadow-xl transition-all cursor-pointer"
-                      onClick={() => setSelectedDoubt(doubt)}
-                    >
-                      <div className="flex flex-col md:flex-row justify-between gap-6">
-                        <div className="flex-grow">
-                          <div className="flex items-center gap-2 mb-4">
-                            <span className="px-3 py-1 bg-amber-50 text-amber-700 text-[10px] font-black uppercase tracking-widest rounded-full border border-amber-100">
-                              Subject: {doubt.subject}
-                            </span>
-                            <span className="flex items-center gap-1 text-[10px] text-gray-400 font-bold">
-                              <Clock size={12} />
-                              {doubt.createdAt?.toDate ? doubt.createdAt.toDate().toLocaleString() : 'Just now'}
-                            </span>
-                          </div>
-                          <h3 className="text-xl font-black text-gray-900 mb-4">{doubt.message}</h3>
-                          <div className="flex flex-wrap gap-4">
-                            <div className="flex items-center gap-2 text-xs font-bold text-gray-600">
-                              <User size={14} className="text-[#1B4332]" />
-                              {doubt.name}
-                            </div>
-                            <div className="flex items-center gap-2 text-xs font-bold text-gray-600">
-                              <Mail size={14} className="text-[#1B4332]" />
-                              {doubt.email}
-                            </div>
-                          </div>
-                        </div>
-                        <div className="flex md:flex-col gap-2 shrink-0 justify-center">
-                          <button className="px-6 py-3 bg-[#1B4332] text-white rounded-xl text-xs font-black tracking-widest hover:bg-[#2D6A4F] transition-all flex items-center gap-2">
-                            <MessageSquare size={16} />
-                            OPEN CHAT
-                          </button>
-                        </div>
-                      </div>
-                    </motion.div>
+                      doubt={doubt}
+                      onSelect={handleSelectDoubt}
+                    />
                   ))
                 ) : (
                   <div className="bg-white rounded-3xl p-20 shadow-xl text-center">

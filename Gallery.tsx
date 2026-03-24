@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Image as ImageIcon, Camera, Trophy, Users, Dumbbell, X, ChevronLeft, ChevronRight } from 'lucide-react';
 
@@ -86,9 +86,12 @@ const Gallery: React.FC = () => {
   const [activeCategory, setActiveCategory] = useState('ALL');
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
 
-  const filteredItems = activeCategory === 'ALL' 
-    ? galleryItems 
-    : galleryItems.filter(item => item.category === activeCategory);
+  const filteredItems = useMemo(() => 
+    activeCategory === 'ALL' 
+      ? galleryItems 
+      : galleryItems.filter(item => item.category === activeCategory),
+    [activeCategory]
+  );
 
   const handlePrevious = (e: React.MouseEvent) => {
     e.stopPropagation();
