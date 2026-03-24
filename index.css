@@ -1,0 +1,79 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=Anton&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-serif: "Playfair Display", ui-serif, Georgia, serif;
+  --font-display: "Anton", sans-serif;
+}
+
+@layer base {
+  body {
+    @apply bg-[#F8F9FA] text-[#1A1A1A] font-sans antialiased;
+  }
+}
+
+.quote-text {
+  @apply font-serif italic text-2xl md:text-4xl text-[#1A1A1A] leading-tight tracking-tight;
+}
+
+.section-label {
+  @apply inline-block px-4 py-1.5 bg-[#1B4332]/5 text-[#1B4332] text-[10px] font-black tracking-[0.3em] uppercase rounded-full mb-6 border border-[#1B4332]/10;
+}
+
+.glass-card {
+  @apply bg-white/80 backdrop-blur-xl border border-white/20 shadow-[0_8px_32px_rgba(0,0,0,0.05)];
+}
+
+.glass-card-dark {
+  @apply bg-black/40 backdrop-blur-xl border border-white/10 shadow-[0_8px_32px_rgba(0,0,0,0.2)];
+}
+
+.text-glow-white {
+  @apply drop-shadow-[0_0_10px_rgba(255,255,255,0.5)];
+}
+
+.text-glow-green {
+  @apply drop-shadow-[0_0_10px_rgba(27,67,50,0.3)];
+}
+
+.btn-primary {
+  @apply px-8 py-4 bg-[#1B4332] text-white rounded-xl font-black tracking-widest uppercase text-xs transition-all duration-300 hover:bg-[#2D6A4F] hover:shadow-[0_10px_20px_rgba(27,67,50,0.2)] active:scale-95;
+}
+
+.btn-secondary {
+  @apply px-8 py-4 bg-white/10 backdrop-blur-md border border-white/20 text-white rounded-xl font-black tracking-widest uppercase text-xs transition-all duration-300 hover:bg-white/20 active:scale-95;
+}
+
+.btn-white {
+  @apply px-8 py-4 bg-white text-[#1B4332] rounded-xl font-black tracking-widest uppercase text-xs transition-all duration-300 hover:bg-gray-50 hover:shadow-[0_10px_20px_rgba(255,255,255,0.2)] active:scale-95;
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-10px); }
+}
+
+.animate-float {
+  animation: float 6s ease-in-out infinite;
+}
+
+@keyframes text-glow {
+  0%, 100% {
+    text-shadow: 0 0 10px rgba(255, 255, 255, 0.3), 0 0 20px rgba(255, 255, 255, 0.2);
+    opacity: 0.8;
+  }
+  50% {
+    text-shadow: 0 0 20px rgba(255, 255, 255, 0.6), 0 0 30px rgba(255, 255, 255, 0.4);
+    opacity: 1;
+  }
+}
+
+.animate-text-glow {
+  animation: text-glow 3s ease-in-out infinite;
+}
+
+.nav-link-hover {
+  @apply hover:bg-gray-100/50 transition-all duration-300;
+}
+
