@@ -4,28 +4,28 @@ import { Target, Eye, Heart, Shield, Flag, Mountain, Medal, Dumbbell, Globe, Quo
 const FOUNDERS = [
   {
     name: 'Abhijeet Gaikwad',
-    image: 'public/abhi.jpg',
+    image: '/abhi.jpg',
     qualification: 'NDA Qualified',
     degrees: ['B.Tech in AI & Data Science', 'B.A. (Hons.) Political Science'],
     squadron: 'NCC-1 MAH AIR SQN'
   },
   {
     name: 'Aditya Sahane',
-    image: 'public/aditya.jpg',
+    image: '/aditya.jpg',
     qualification: 'NDA Qualified',
     degrees: ['B.Tech in Computer Science Engineering'],
     squadron: 'NCC-3 MAH AIR SQN'
   },
   {
     name: 'Rishikesh Muthal',
-    image: 'public/rishi.jpg',
+    image: '/rishi.jpg',
     qualification: 'NDA Qualified',
     degrees: ['B.Tech in AI & Data Science'],
     squadron: 'NCC-1 MAH AIR SQN'
   },
   {
     name: 'Vedant Jadhav',
-    image: 'public/vedant.jpg',
+    image: '/vedant.jpg',
     qualification: 'CDS Qualified',
     degrees: ['B.E. Information Technology'],
     squadron: 'NCC-1 MAH AIR SQN'
