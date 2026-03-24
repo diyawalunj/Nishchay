@@ -109,8 +109,10 @@ export default function Doubts() {
         body: JSON.stringify(formData),
       });
 
+      const result = await response.json();
+
       if (!response.ok) {
-        throw new Error('Failed to submit question');
+        throw new Error(result.error || 'Failed to submit question');
       }
 
       const newDoubt: Doubt = {
@@ -126,9 +128,9 @@ export default function Doubts() {
       setFormData({ name: '', phone: '', category: 'Mathematics', question: '' });
       setShowSuccess(true);
       setTimeout(() => setShowSuccess(false), 3000);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error submitting question:', error);
-      alert('Failed to submit question. Please try again later.');
+      alert(`Failed to submit question: ${error.message}. Please try again later.`);
     } finally {
       setIsSubmitting(false);
     }
