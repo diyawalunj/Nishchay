@@ -226,8 +226,13 @@ export default function Admin() {
 
   // Auto-scroll
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+    if (messagesEndRef.current) {
+      messagesEndRef.current.parentElement?.scrollTo({
+        top: messagesEndRef.current.parentElement.scrollHeight,
+        behavior: 'smooth'
+      });
+    }
+  }, [messages.length]);
 
   // Send reply (optimistic)
   const handleSendMessage = useCallback(async (e: React.FormEvent) => {

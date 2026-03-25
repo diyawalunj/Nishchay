@@ -204,8 +204,13 @@ export default function Doubts() {
   }, [selectedDoubt, fetchMessages]);
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+    if (messagesEndRef.current) {
+      messagesEndRef.current.parentElement?.scrollTo({
+        top: messagesEndRef.current.parentElement.scrollHeight,
+        behavior: 'smooth'
+      });
+    }
+  }, [messages.length]);
 
   // Submit a new doubt (optimistic)
   const handleSubmit = async (e: React.FormEvent) => {

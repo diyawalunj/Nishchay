@@ -87,8 +87,10 @@ const Contact: React.FC = () => {
           body: JSON.stringify(formData),
         });
 
-        if (!response.ok) {
-          throw new Error('Failed to submit form');
+        const data = await response.json().catch(() => ({}));
+
+        if (!response.ok || !data.success) {
+          throw new Error(data.error || 'Failed to submit form');
         }
 
         console.log('Form submitted successfully to Google Sheets');
@@ -103,7 +105,7 @@ const Contact: React.FC = () => {
         setTimeout(() => setIsSuccess(false), 5000);
       } catch (error: any) {
         console.error('Submission error:', error);
-        setErrorMessage('Failed to send message. Please try again later.');
+        setErrorMessage(error.message || 'Failed to send message. Please try again later.');
       } finally {
         setIsSubmitting(false);
       }

@@ -306,7 +306,7 @@ app.get('/api/doubts/:id/messages', authenticate as any, async (req: AuthRequest
         doubtId: row.get('DoubtID') || '',
         senderName: row.get('SenderName') || '',
         message: row.get('Message') || '',
-        isAdmin: row.get('IsAdmin') === 'true',
+        isAdmin: String(row.get('IsAdmin')).toLowerCase() === 'true',
         date: row.get('Date') || '',
       }))
       .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
