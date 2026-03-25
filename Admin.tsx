@@ -6,7 +6,7 @@ import {
 import { LayoutDashboard, MessageSquare, Mail, User, Clock, Send, ChevronLeft, RefreshCw, Trash2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useToast } from './Toast';
-import { supabase } from './supabase-frontend';
+import { supabase, isPlaceholder } from './supabase-frontend';
 
 interface Message {
   doubtId: string;
@@ -194,20 +194,29 @@ export default function Admin() {
     fetchDoubts();
 
     // REAL-TIME: Listen for any new doubts or status changes
-    const channel = supabase
-      .channel('admin_doubts_changes')
-      .on('postgres_changes', { 
-        event: '*', 
-        schema: 'public', 
-        table: 'doubts' 
-      }, () => {
-        fetchDoubts();
-      })
-      .subscribe();
+    try {
+      if (isPlaceholder) {
+        console.warn('⚠️ Supabase Realtime skipped: No URL configured');
+        return;
+      }
 
-    return () => {
-      supabase.removeChannel(channel);
-    };
+      const channel = supabase
+        .channel('admin_doubts_changes')
+        .on('postgres_changes', { 
+          event: '*', 
+          schema: 'public', 
+          table: 'doubts' 
+        }, () => {
+          fetchDoubts();
+        })
+        .subscribe();
+
+      return () => {
+        supabase.removeChannel(channel);
+      };
+    } catch (err) {
+      console.error('❌ Supabase Realtime Error (Admin Doubts):', err);
+    }
   }, [isAdmin, fetchDoubts]);
 
   // Filter doubts
@@ -237,31 +246,37 @@ export default function Admin() {
     fetchMessages();
 
     // REAL-TIME: Listen for new messages in THIS specific doubt
-    const channel = supabase
-      .channel(`admin_doubt_messages_${selectedDoubt.id}`)
-      .on('postgres_changes', { 
-        event: 'INSERT', 
-        schema: 'public', 
-        table: 'messages',
-        filter: `doubt_id=eq.${selectedDoubt.id}`
-      }, (payload) => {
-        const newMessage = payload.new as any;
-        setMessages(prev => {
-          if (prev.some(m => m.date === newMessage.created_at && m.message === newMessage.message)) return prev;
-          return [...prev, {
-            doubtId: newMessage.doubt_id,
-            senderName: newMessage.sender_name,
-            message: newMessage.message,
-            isAdmin: newMessage.is_admin,
-            date: newMessage.created_at
-          }];
-        });
-      })
-      .subscribe();
+    try {
+      if (isPlaceholder) return;
 
-    return () => {
-      supabase.removeChannel(channel);
-    };
+      const channel = supabase
+        .channel(`admin_doubt_messages_${selectedDoubt.id}`)
+        .on('postgres_changes', { 
+          event: 'INSERT', 
+          schema: 'public', 
+          table: 'messages',
+          filter: `doubt_id=eq.${selectedDoubt.id}`
+        }, (payload) => {
+          const newMessage = payload.new as any;
+          setMessages(prev => {
+            if (prev.some(m => m.date === newMessage.created_at && m.message === newMessage.message)) return prev;
+            return [...prev, {
+              doubtId: newMessage.doubt_id,
+              senderName: newMessage.sender_name,
+              message: newMessage.message,
+              isAdmin: newMessage.is_admin,
+              date: newMessage.created_at
+            }];
+          });
+        })
+        .subscribe();
+
+      return () => {
+        supabase.removeChannel(channel);
+      };
+    } catch (err) {
+      console.error('❌ Supabase Realtime Error (Admin Messages):', err);
+    }
   }, [selectedDoubt, fetchMessages]);
 
   // Auto-scroll
@@ -312,8 +327,7 @@ export default function Admin() {
       if (!data.success) throw new Error(data.error);
 
       showToast('Reply sent and resolved!', 'success');
-      fetchMessages();
-      fetchDoubts();
+      // No need to fetchMessages/fetchDoubts — Supabase Realtime handles the update
     } catch (error) {
       console.error('Error sending reply:', error);
       // Revert optimistic

@@ -4,7 +4,7 @@ import { auth, signInWithGoogle, onAuthStateChanged, type User as FirebaseUser, 
 import { Lock, MessageSquare, Send, Clock, ChevronLeft, RefreshCw, HelpCircle, Trash2, X } from 'lucide-react';
 import { useToast } from './Toast';
 import { useNavigate } from 'react-router-dom';
-import { supabase } from './supabase-frontend';
+import { supabase, isPlaceholder } from './supabase-frontend';
 
 const CATEGORIES = [
   'General Inquiry',
@@ -200,21 +200,31 @@ export default function Doubts() {
     fetchMyDoubts();
 
     // REAL-TIME: Listen for any changes to the doubts table for this user
-    const channel = supabase
-      .channel('my_doubts_changes')
-      .on('postgres_changes', { 
-        event: '*', 
-        schema: 'public', 
-        table: 'doubts' 
-      }, () => {
-        // Refresh the list when anything changes
-        fetchMyDoubts();
-      })
-      .subscribe();
+    try {
+      // Skip if URL is placeholder
+      if (isPlaceholder) {
+        console.warn('⚠️ Supabase Realtime skipped: No URL configured');
+        return;
+      }
 
-    return () => {
-      supabase.removeChannel(channel);
-    };
+      const channel = supabase
+        .channel('my_doubts_changes')
+        .on('postgres_changes', { 
+          event: '*', 
+          schema: 'public', 
+          table: 'doubts' 
+        }, () => {
+          // Refresh the list when anything changes
+          fetchMyDoubts();
+        })
+        .subscribe();
+
+      return () => {
+        supabase.removeChannel(channel);
+      };
+    } catch (err) {
+      console.error('❌ Supabase Realtime Error (Doubts):', err);
+    }
   }, [user, fetchMyDoubts]);
 
   // Fetch messages for selected doubt
@@ -239,32 +249,39 @@ export default function Doubts() {
     fetchMessages();
 
     // REAL-TIME: Listen for new messages in THIS specific doubt
-    const channel = supabase
-      .channel(`doubt_messages_${selectedDoubt.id}`)
-      .on('postgres_changes', { 
-        event: 'INSERT', 
-        schema: 'public', 
-        table: 'messages',
-        filter: `doubt_id=eq.${selectedDoubt.id}`
-      }, (payload) => {
-        const newMessage = payload.new as any;
-        setMessages(prev => {
-          // Prevent duplicates if fetchMessages is running simultaneously
-          if (prev.some(m => m.date === newMessage.created_at && m.message === newMessage.message)) return prev;
-          return [...prev, {
-            doubtId: newMessage.doubt_id,
-            senderName: newMessage.sender_name,
-            message: newMessage.message,
-            isAdmin: newMessage.is_admin,
-            date: newMessage.created_at
-          }];
-        });
-      })
-      .subscribe();
+    try {
+      // Skip if URL is placeholder
+      if (isPlaceholder) return;
 
-    return () => {
-      supabase.removeChannel(channel);
-    };
+      const channel = supabase
+        .channel(`doubt_messages_${selectedDoubt.id}`)
+        .on('postgres_changes', { 
+          event: 'INSERT', 
+          schema: 'public', 
+          table: 'messages',
+          filter: `doubt_id=eq.${selectedDoubt.id}`
+        }, (payload) => {
+          const newMessage = payload.new as any;
+          setMessages(prev => {
+            // Prevent duplicates if fetchMessages is running simultaneously
+            if (prev.some(m => m.date === newMessage.created_at && m.message === newMessage.message)) return prev;
+            return [...prev, {
+              doubtId: newMessage.doubt_id,
+              senderName: newMessage.sender_name,
+              message: newMessage.message,
+              isAdmin: newMessage.is_admin,
+              date: newMessage.created_at
+            }];
+          });
+        })
+        .subscribe();
+
+      return () => {
+        supabase.removeChannel(channel);
+      };
+    } catch (err) {
+      console.error('❌ Supabase Realtime Error (Messages):', err);
+    }
   }, [selectedDoubt, fetchMessages]);
 
   useEffect(() => {
@@ -333,7 +350,7 @@ export default function Doubts() {
     const savedQuestion = formData.question;
     setFormData(prev => ({ ...prev, question: '' }));
     setErrors({});
-    showToast('Doubt submitted to Google Sheets!', 'success');
+    showToast('Doubt submitted', 'success');
 
     try {
       const headers = await getAuthHeaders();
@@ -401,8 +418,7 @@ export default function Doubts() {
       const data = await res.json();
       if (!data.success) throw new Error(data.error);
 
-      // Fetch actual data to true sync
-      fetchMessages();
+      // No need to fetchMessages — Supabase Realtime handles the update
     } catch (error) {
       console.error('Error sending message:', error);
       // Revert optimistic message
@@ -570,7 +586,7 @@ export default function Doubts() {
                         exit={{ opacity: 0, height: 0 }}
                         className="bg-green-50 text-green-700 p-5 rounded-2xl text-[10px] font-black tracking-[0.2em] uppercase border border-green-100 mb-6"
                       >
-                        Question submitted to Server!
+                        Doubt submitted
                       </motion.div>
                     )}
                   </AnimatePresence>

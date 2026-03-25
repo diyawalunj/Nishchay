@@ -17,9 +17,33 @@ const Gallery = lazy(() => import('./Gallery'));
 const Contact = lazy(() => import('./Contact'));
 const Admin = lazy(() => import('./Admin'));
 
-// Minimal loading spinner shown while a route chunk is downloading
+// Branded loading skeleton shown while a route chunk is downloading
 function PageLoader() {
-  return null;
+  return (
+    <div className="min-h-[60vh] flex flex-col items-center justify-center gap-6">
+      <motion.div
+        initial={{ opacity: 0, scale: 0.8 }}
+        animate={{ opacity: 1, scale: 1 }}
+        transition={{ duration: 0.3 }}
+        className="w-16 h-16 rounded-2xl bg-[#1B4332]/5 flex items-center justify-center"
+      >
+        <motion.div
+          animate={{ rotate: [0, 10, -10, 0] }}
+          transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
+        >
+          <ChevronUp size={28} className="text-[#1B4332]/30 rotate-0" />
+        </motion.div>
+      </motion.div>
+      <div className="w-48 h-1 rounded-full bg-gray-100 overflow-hidden">
+        <motion.div
+          className="h-full bg-[#1B4332]/20 rounded-full"
+          initial={{ x: "-100%" }}
+          animate={{ x: "200%" }}
+          transition={{ duration: 1.2, repeat: Infinity, ease: "easeInOut" }}
+        />
+      </div>
+    </div>
+  );
 }
 
 // ScrollToTop component to reset scroll position on route change
@@ -31,6 +55,37 @@ function ScrollToTop() {
   }, [pathname]);
   
   return null;
+}
+
+// Animated route wrapper for smooth page transitions
+function AnimatedRoutes() {
+  const location = useLocation();
+  
+  return (
+    <AnimatePresence mode="wait">
+      <motion.div
+        key={location.pathname}
+        initial={{ opacity: 0, y: 16 }}
+        animate={{ opacity: 1, y: 0 }}
+        exit={{ opacity: 0, y: -8 }}
+        transition={{ duration: 0.3, ease: "easeOut" }}
+      >
+        <Routes location={location}>
+          <Route path="/" element={<Home />} />
+          <Route path="/about" element={<About />} />
+          <Route path="/notes" element={<Notes />} />
+          <Route path="/doubts" element={<Doubts />} />
+          <Route path="/tests" element={<Tests />} />
+          <Route path="/ssb" element={<SSB />} />
+          <Route path="/gallery" element={<Gallery />} />
+          <Route path="/contact" element={<Contact />} />
+          <Route path="/admin" element={<Admin />} />
+          {/* Fallback for other routes */}
+          <Route path="*" element={<Home />} />
+        </Routes>
+      </motion.div>
+    </AnimatePresence>
+  );
 }
 
 function AppContent() {
@@ -56,19 +111,7 @@ function AppContent() {
       
       <main className={`flex-grow ${!isHome ? 'pt-20' : ''}`}>
         <Suspense fallback={<PageLoader />}>
-          <Routes>
-            <Route path="/" element={<Home />} />
-            <Route path="/about" element={<About />} />
-            <Route path="/notes" element={<Notes />} />
-            <Route path="/doubts" element={<Doubts />} />
-            <Route path="/tests" element={<Tests />} />
-            <Route path="/ssb" element={<SSB />} />
-            <Route path="/gallery" element={<Gallery />} />
-            <Route path="/contact" element={<Contact />} />
-            <Route path="/admin" element={<Admin />} />
-            {/* Fallback for other routes */}
-            <Route path="*" element={<Home />} />
-          </Routes>
+          <AnimatedRoutes />
         </Suspense>
       </main>
 
@@ -78,11 +121,13 @@ function AppContent() {
       <AnimatePresence>
         {showScrollTop && (
           <motion.button
-            initial={{ opacity: 0, scale: 0.5 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0 }}
+            initial={{ opacity: 0, scale: 0.5, y: 20 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.5, y: 20 }}
+            whileHover={{ scale: 1.1 }}
+            whileTap={{ scale: 0.9 }}
             onClick={scrollToTop}
-            className="fixed bottom-8 right-8 w-12 h-12 bg-[#1B4332] text-white rounded-full flex items-center justify-center shadow-lg hover:bg-[#2D6A4F] transition-colors z-50"
+            className="fixed bottom-8 right-8 w-14 h-14 bg-[#1B4332] text-white rounded-2xl flex items-center justify-center shadow-[0_8px_32px_rgba(27,67,50,0.3)] hover:bg-[#2D6A4F] transition-colors z-50 backdrop-blur-sm"
           >
             <ChevronUp size={24} />
           </motion.button>

@@ -270,7 +270,42 @@ app.get('/api/doubts', authenticate as any, async (req: AuthRequest, res) => {
 
     // Students only see their own doubts
     if (!req.user?.isAdmin) {
-      query = query.or(`email.ilike.${userEmail},uid.eq.${myUid}`);
+      // Use separate filters to avoid PostgREST syntax issues with special chars in emails
+      const { data: byEmail } = await supabase
+        .from('doubts')
+        .select('*')
+        .ilike('email', userEmail)
+        .order('created_at', { ascending: false });
+
+      const { data: byUid } = myUid ? await supabase
+        .from('doubts')
+        .select('*')
+        .eq('uid', myUid)
+        .order('created_at', { ascending: false }) : { data: [] };
+
+      // Merge and deduplicate
+      const merged = [...(byEmail || []), ...(byUid || [])];
+      const seen = new Set<string>();
+      const rows = merged.filter(d => {
+        if (seen.has(d.id)) return false;
+        seen.add(d.id);
+        return true;
+      });
+      rows.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
+      // Filter out doubts hidden for this user
+      const doubts = rows.filter(d => !(d.hidden_for || []).includes(myUid)).map(d => ({
+        id: d.id,
+        name: d.name,
+        email: d.email,
+        category: d.category,
+        question: d.question,
+        status: d.status,
+        date: d.created_at,
+        uid: d.uid || '',
+      }));
+
+      return res.json({ success: true, doubts });
     }
 
     const { data: rows, error } = await query;
@@ -575,16 +610,18 @@ async function setupServer() {
   const {
     GOOGLE_SERVICE_ACCOUNT_EMAIL,
     GOOGLE_PRIVATE_KEY,
-    GOOGLE_SHEET_ID_QNA,
     GOOGLE_SHEET_ID_CONTACT,
     SMTP_EMAIL,
+    SUPABASE_URL,
+    SUPABASE_SERVICE_ROLE_KEY,
   } = process.env;
 
   console.log('--- Environment Variable Check ---');
   console.log('GOOGLE_SERVICE_ACCOUNT_EMAIL:', GOOGLE_SERVICE_ACCOUNT_EMAIL ? '✅ Present' : '❌ Missing');
   console.log('GOOGLE_PRIVATE_KEY:', GOOGLE_PRIVATE_KEY ? '✅ Present' : '❌ Missing');
-  console.log('GOOGLE_SHEET_ID_QNA:', GOOGLE_SHEET_ID_QNA ? '✅ Present' : '❌ Missing');
   console.log('GOOGLE_SHEET_ID_CONTACT:', GOOGLE_SHEET_ID_CONTACT ? '✅ Present' : '❌ Missing');
+  console.log('SUPABASE_URL:', SUPABASE_URL ? '✅ Present' : '❌ Missing');
+  console.log('SUPABASE_SERVICE_ROLE_KEY:', SUPABASE_SERVICE_ROLE_KEY ? '✅ Present' : '❌ Missing');
   console.log('SMTP_EMAIL:', SMTP_EMAIL ? '✅ Present' : '❌ Missing');
   console.log('---------------------------------');
 

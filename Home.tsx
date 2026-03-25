@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
+import { useState, useEffect, useRef } from 'react';
+import { motion, AnimatePresence, useInView } from 'motion/react';
 import { Link } from 'react-router-dom';
 import { Quote, ArrowRight, Download, MessageCircle } from 'lucide-react';
 import { SERVICES } from './constants';
@@ -35,8 +35,47 @@ const quotes = [
   }
 ];
 
+// Animated counter hook — counts up from 0 to target when in viewport
+function useAnimatedCounter(target: number, duration: number = 2000, inView: boolean) {
+  const [count, setCount] = useState(0);
+  const hasAnimated = useRef(false);
+
+  useEffect(() => {
+    if (!inView || hasAnimated.current) return;
+    hasAnimated.current = true;
+
+    let start = 0;
+    const startTime = performance.now();
+
+    function animate(currentTime: number) {
+      const elapsed = currentTime - startTime;
+      const progress = Math.min(elapsed / duration, 1);
+      // Ease-out cubic for smooth deceleration
+      const eased = 1 - Math.pow(1 - progress, 3);
+      const current = Math.floor(eased * target);
+      
+      setCount(current);
+      if (progress < 1) {
+        requestAnimationFrame(animate);
+      } else {
+        setCount(target);
+      }
+    }
+
+    requestAnimationFrame(animate);
+  }, [inView, target, duration]);
+
+  return count;
+}
+
 export default function Home() {
   const [activeQuote, setActiveQuote] = useState(0);
+  const statsRef = useRef<HTMLDivElement>(null);
+  const statsInView = useInView(statsRef, { once: true, margin: "-100px" });
+
+  const stat1 = useAnimatedCounter(500, 2000, statsInView);
+  const stat2 = useAnimatedCounter(4, 1500, statsInView);
+  const stat3 = useAnimatedCounter(200, 2000, statsInView);
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -44,6 +83,12 @@ export default function Home() {
     }, 5000);
     return () => clearInterval(timer);
   }, []);
+
+  const stats = [
+    { label: 'STUDENTS GUIDED', value: stat1, suffix: '+' },
+    { label: 'NDA/CDS MENTORS', value: stat2, suffix: '' },
+    { label: 'FREE NOTES', value: stat3, suffix: '+' },
+  ];
 
   return (
     <main className="flex-grow">
@@ -61,6 +106,8 @@ export default function Home() {
           {/* Camouflage Pattern Overlay */}
           <div className="absolute inset-0 opacity-30 pointer-events-none bg-[url('https://www.transparenttextures.com/patterns/camouflage.png')]"></div>
           <div className="absolute top-0 left-0 right-0 h-40 bg-gradient-to-b from-[#1B4332]/60 to-transparent"></div>
+          {/* Grain texture for depth */}
+          <div className="grain-overlay absolute inset-0"></div>
         </div>
 
         <div className="relative z-10 max-w-5xl mx-auto px-4 text-center mt-10">
@@ -139,21 +186,21 @@ export default function Home() {
         </div>
 
         {/* Stats Section at bottom of Hero */}
-        <div className="relative z-10 w-full max-w-6xl mx-auto px-4 mt-24 md:mt-40 pb-16">
+        <div ref={statsRef} className="relative z-10 w-full max-w-6xl mx-auto px-4 mt-24 md:mt-40 pb-16">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-            {[
-              { label: 'STUDENTS GUIDED', value: '500+' },
-              { label: 'NDA/CDS MENTORS', value: '4' },
-              { label: 'FREE NOTES', value: '200+' },
-            ].map((stat, idx) => (
+            {stats.map((stat, idx) => (
               <motion.div
                 key={stat.label}
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.6, delay: 1.2 + idx * 0.1 }}
-                className="glass-card-dark p-10 text-center group hover:bg-white/10 transition-all duration-500"
+                transition={{ duration: 0.6, delay: 1.2 + idx * 0.15 }}
+                className="glass-card-dark rounded-[2rem] p-10 text-center group hover:bg-white/10 transition-all duration-500 relative overflow-hidden"
               >
-                <p className="text-5xl font-black text-white mb-3 tracking-tighter group-hover:scale-110 transition-transform duration-500">{stat.value}</p>
+                {/* Shimmer decorative strip */}
+                <div className="absolute inset-x-0 top-0 h-px animate-shimmer"></div>
+                <p className="text-5xl font-black text-white mb-3 tracking-tighter group-hover:scale-110 transition-transform duration-500 tabular-nums">
+                  {stat.value}{stat.suffix}
+                </p>
                 <p className="text-[10px] font-black tracking-[0.3em] text-white/40 uppercase">{stat.label}</p>
               </motion.div>
             ))}
@@ -173,10 +220,10 @@ export default function Home() {
             <AnimatePresence mode="wait">
               <motion.div
                 key={activeQuote}
-                initial={{ opacity: 0, scale: 0.95 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 1.05 }}
-                transition={{ duration: 0.6, ease: "circOut" }}
+                initial={{ opacity: 0, scale: 0.95, y: 10 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 1.02, y: -10 }}
+                transition={{ duration: 0.5, ease: "easeOut" }}
                 className="absolute inset-0 flex flex-col items-center justify-center"
               >
                 <p className="quote-text mb-8">"{quotes[activeQuote].text}"</p>
@@ -210,7 +257,7 @@ export default function Home() {
             initial={{ opacity: 0, y: 40 }}
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
-            className="max-w-5xl mx-auto bg-white p-16 md:p-28 rounded-[3rem] shadow-[0_40px_100px_rgba(0,0,0,0.03)] border border-gray-100 relative group"
+            className="max-w-5xl mx-auto bg-white p-16 md:p-28 rounded-[2rem] shadow-[0_40px_100px_rgba(0,0,0,0.03)] border border-gray-100 relative group"
           >
             <div className="absolute top-10 left-10 opacity-5 group-hover:opacity-10 transition-opacity">
               <Quote size={80} />
@@ -240,16 +287,18 @@ export default function Home() {
             {SERVICES.map((service, idx) => (
               <motion.div
                 key={service.title}
-                initial={{ opacity: 0, y: 20 }}
+                initial={{ opacity: 0, y: 30 }}
                 whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true }}
-                transition={{ delay: idx * 0.1 }}
-                className="bg-white p-10 rounded-[2rem] border border-gray-100 shadow-sm hover:shadow-[0_30px_60px_rgba(0,0,0,0.08)] transition-all duration-500 text-left group relative overflow-hidden"
+                viewport={{ once: true, margin: "-50px" }}
+                transition={{ delay: idx * 0.08, duration: 0.5, ease: "easeOut" }}
+                className="bg-white p-10 rounded-[2rem] border border-gray-100 shadow-sm card-hover-shadow text-left group relative overflow-hidden"
               >
                 <div className="absolute -right-8 -bottom-8 opacity-[0.03] group-hover:opacity-[0.08] transition-opacity duration-500">
                   <service.icon size={160} />
                 </div>
-                <div className={`w-14 h-14 ${service.color} rounded-2xl flex items-center justify-center mb-8 group-hover:rotate-6 transition-transform duration-500 shadow-lg shadow-current/10`}>
+                {/* Subtle top accent line */}
+                <div className="absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-[#1B4332]/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
+                <div className={`w-14 h-14 ${service.color} rounded-2xl flex items-center justify-center mb-8 group-hover:rotate-6 group-hover:scale-110 transition-transform duration-500 shadow-lg shadow-current/10`}>
                   <service.icon size={28} />
                 </div>
                 <h3 className="text-2xl font-black mb-4 text-[#1A1A1A] tracking-tight">{service.title}</h3>
@@ -264,3 +313,4 @@ export default function Home() {
     </main>
   );
 }
+

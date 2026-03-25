@@ -111,7 +111,7 @@ export default function About() {
             initial={{ opacity: 0, y: 40 }}
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
-            className="bg-white p-16 md:p-24 rounded-[3rem] shadow-[0_40px_100px_rgba(0,0,0,0.03)] border border-gray-100 relative group"
+            className="bg-white p-16 md:p-24 rounded-[2rem] shadow-[0_40px_100px_rgba(0,0,0,0.03)] border border-gray-100 relative group"
           >
             <div className="absolute -top-10 -left-10 opacity-[0.03] group-hover:opacity-[0.08] transition-opacity duration-500">
               <Shield size={200} />
@@ -152,8 +152,10 @@ export default function About() {
                 whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true }}
                 transition={{ delay: idx * 0.1 }}
-                className="bg-white p-10 rounded-[2.5rem] border border-gray-100 shadow-sm hover:shadow-[0_30px_60px_rgba(0,0,0,0.08)] transition-all duration-500 text-center group"
+                className="bg-white p-10 rounded-[2rem] border border-gray-100 shadow-sm card-hover-shadow text-center group relative overflow-hidden"
               >
+                {/* Gradient accent at top */}
+                <div className="absolute top-0 inset-x-0 h-1 bg-gradient-to-r from-[#1B4332] to-[#40916C] rounded-t-[2rem] opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
                 <div className="relative w-full aspect-[4/5] mb-8 overflow-hidden rounded-[2rem] group-hover:shadow-2xl transition-all duration-500">
                   <img
                     src={founder.image}
@@ -213,7 +215,7 @@ export default function About() {
                 whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true }}
                 transition={{ delay: idx * 0.1 }}
-                className="bg-white p-12 rounded-[3rem] border border-gray-100 shadow-sm hover:shadow-[0_40px_80px_rgba(0,0,0,0.06)] transition-all duration-500 group"
+                className="bg-white p-12 rounded-[2rem] border border-gray-100 shadow-sm card-hover-shadow group"
               >
                 <div className={`w-16 h-16 ${item.color} rounded-2xl flex items-center justify-center mb-10 group-hover:scale-110 transition-transform duration-500 shadow-lg shadow-current/10`}>
                   <item.icon size={32} />
@@ -255,8 +257,12 @@ export default function About() {
                 whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true }}
                 transition={{ delay: idx * 0.1 }}
-                className="bg-white p-10 rounded-3xl border border-gray-100 shadow-sm hover:shadow-xl transition-all group"
+                className="bg-white p-10 rounded-[2rem] border border-gray-100 shadow-sm card-hover-shadow group relative overflow-hidden"
               >
+                {/* Number badge */}
+                <div className="absolute top-6 right-6 text-[10px] font-black tracking-widest text-gray-200 uppercase">
+                  {String(idx + 1).padStart(2, '0')}
+                </div>
                 <div className="w-14 h-14 bg-green-50 text-[#1B4332] rounded-2xl flex items-center justify-center mb-8 group-hover:scale-110 transition-transform">
                   <advantage.icon size={28} />
                 </div>
