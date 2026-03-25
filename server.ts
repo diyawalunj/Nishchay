@@ -19,14 +19,16 @@ app.use(express.json());
 
 // Initialize Firebase Admin (project ID only — sufficient for verifyIdToken)
 try {
-  const { VITE_FIREBASE_PROJECT_ID } = process.env;
-  if (VITE_FIREBASE_PROJECT_ID) {
+  const firebaseConfigJson = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'firebase-applet-config.json'), 'utf-8'));
+  const projectId = process.env.VITE_FIREBASE_PROJECT_ID || firebaseConfigJson.projectId;
+  
+  if (projectId) {
     admin.initializeApp({
-      projectId: VITE_FIREBASE_PROJECT_ID,
+      projectId,
     });
-    console.log('✅ Firebase Admin initialized (projectId:', VITE_FIREBASE_PROJECT_ID, ')');
+    console.log('✅ Firebase Admin initialized (projectId:', projectId, ')');
   } else {
-    console.warn('⚠️ Firebase Admin NOT initialized (missing VITE_FIREBASE_PROJECT_ID)');
+    console.warn('⚠️ Firebase Admin NOT initialized (missing projectId)');
   }
 } catch (error: any) {
   console.error('❌ Firebase Admin initialization error:', error.message);

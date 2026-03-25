@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback, memo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { auth, signInWithGoogle, onAuthStateChanged, checkIfAdmin, type User as FirebaseUser } from './firebase';
-import { Lock, MessageSquare, Send, Clock, ChevronRight, ChevronLeft, RefreshCw, HelpCircle } from 'lucide-react';
+import { auth, signInWithGoogle, onAuthStateChanged, type User as FirebaseUser } from './firebase';
+import { Lock, MessageSquare, Send, Clock, ChevronLeft, RefreshCw, HelpCircle } from 'lucide-react';
 import { useToast } from './Toast';
 
 const CATEGORIES = [
@@ -35,6 +35,7 @@ interface Doubt {
 // ── Memoized sub-components ──
 
 const ChatMessage = memo(function ChatMessage({ msg }: { msg: Message }) {
+  const dateStr = msg.date ? new Date(msg.date).toLocaleString() : '';
   return (
     <div className={`max-w-[80%] flex flex-col ${msg.isAdmin ? 'self-start' : 'self-end'}`}>
       <span className={`text-[9px] font-black uppercase tracking-widest mb-1 ${msg.isAdmin ? 'text-[#1B4332]' : 'text-gray-400 text-right'}`}>
@@ -47,9 +48,11 @@ const ChatMessage = memo(function ChatMessage({ msg }: { msg: Message }) {
       }`}>
         {msg.message}
       </div>
-      <span className={`text-[8px] text-gray-300 mt-1 ${msg.isAdmin ? '' : 'text-right'}`}>
-        {msg.date ? new Date(msg.date).toLocaleString() : ''}
-      </span>
+      {dateStr && (
+        <span className={`text-[8px] text-gray-300 mt-1 ${msg.isAdmin ? '' : 'text-right'}`}>
+          {dateStr}
+        </span>
+      )}
     </div>
   );
 });
@@ -57,11 +60,12 @@ const ChatMessage = memo(function ChatMessage({ msg }: { msg: Message }) {
 const DoubtListItem = memo(function DoubtListItem({ doubt, isSelected, onSelect }: {
   doubt: Doubt;
   isSelected: boolean;
-  onSelect: (doubt: Doubt) => void;
+  onSelect: () => void;
 }) {
+  const dateStr = doubt.date ? new Date(doubt.date).toLocaleDateString() : 'Just now';
   return (
     <motion.button
-      onClick={() => onSelect(doubt)}
+      onClick={onSelect}
       whileHover={{ x: 4 }}
       className={`w-full p-6 rounded-[2rem] text-left transition-all border ${
         isSelected
@@ -78,7 +82,7 @@ const DoubtListItem = memo(function DoubtListItem({ doubt, isSelected, onSelect 
           {doubt.category}
         </span>
         <span className={`text-[8px] font-black uppercase tracking-widest ${isSelected ? 'text-white/40' : 'text-gray-300'}`}>
-          {doubt.date ? new Date(doubt.date).toLocaleDateString() : 'Today'}
+          {dateStr}
         </span>
       </div>
       <h4 className={`text-sm font-bold line-clamp-2 leading-relaxed mb-3 ${isSelected ? 'text-white' : 'text-gray-800'}`}>
@@ -94,7 +98,6 @@ const DoubtListItem = memo(function DoubtListItem({ doubt, isSelected, onSelect 
         }`}>
           {doubt.status}
         </span>
-        <ChevronRight size={14} className={isSelected ? 'text-white/40' : 'text-gray-300'} />
       </div>
     </motion.button>
   );
@@ -110,11 +113,14 @@ export default function Doubts() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
   const [errors, setErrors] = useState<{ [key: string]: string }>({});
+  
   const [doubts, setDoubts] = useState<Doubt[]>([]);
-  const [loadingDoubts, setLoadingDoubts] = useState(false);
+  const [loadingDoubts, setLoadingDoubts] = useState(true);
   const [selectedDoubt, setSelectedDoubt] = useState<Doubt | null>(null);
+  
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState('');
+  
   const { showToast } = useToast();
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -128,22 +134,24 @@ export default function Doubts() {
     };
   }, []);
 
-  // Sync user and pre-fill name
+  // Auth listener
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (u) => {
       setUser(u);
       if (u) {
         setFormData(prev => ({ ...prev, name: u.displayName || '' }));
+      } else {
+        setDoubts([]);
+        setLoadingDoubts(false);
       }
     });
     return () => unsubscribe();
   }, []);
 
-  // Fetch student's doubts
+  // Fetch all doubts for current user
   const fetchMyDoubts = useCallback(async () => {
     if (!user) return;
     try {
-      setLoadingDoubts(true);
       const headers = await getAuthHeaders();
       const res = await fetch('/api/doubts', { headers });
       const data = await res.json();
@@ -158,12 +166,17 @@ export default function Doubts() {
   }, [user, getAuthHeaders]);
 
   useEffect(() => {
-    if (user) fetchMyDoubts();
+    if (user) {
+      fetchMyDoubts();
+      // Poll every 30s
+      const interval = setInterval(fetchMyDoubts, 30000);
+      return () => clearInterval(interval);
+    }
   }, [user, fetchMyDoubts]);
 
   // Fetch messages for selected doubt
   const fetchMessages = useCallback(async () => {
-    if (!selectedDoubt) return;
+    if (!selectedDoubt || !user) return;
     try {
       const headers = await getAuthHeaders();
       const res = await fetch(`/api/doubts/${selectedDoubt.id}/messages`, { headers });
@@ -172,12 +185,16 @@ export default function Doubts() {
     } catch (error) {
       console.error('Error fetching messages:', error);
     }
-  }, [selectedDoubt, getAuthHeaders]);
+  }, [selectedDoubt, user, getAuthHeaders]);
 
   useEffect(() => {
-    if (!selectedDoubt) { setMessages([]); return; }
+    if (!selectedDoubt) {
+      setMessages([]);
+      return;
+    }
     fetchMessages();
-    const interval = setInterval(fetchMessages, 10000); // Poll every 10s
+    // Poll every 10s for new messages
+    const interval = setInterval(fetchMessages, 10000);
     return () => clearInterval(interval);
   }, [selectedDoubt, fetchMessages]);
 
@@ -185,6 +202,7 @@ export default function Doubts() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
+  // Submit a new doubt (optimistic)
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) return;
@@ -199,36 +217,79 @@ export default function Doubts() {
     }
 
     setIsSubmitting(true);
+
+    // Optimistic: Add doubt locally immediately
+    const tempId = 'temp-' + Date.now();
+    const newDoubt: Doubt = {
+      id: tempId,
+      name: formData.name.trim(),
+      email: user.email || '',
+      category: formData.category,
+      question: formData.question.trim(),
+      status: 'pending',
+      date: new Date().toISOString()
+    };
+
+    setDoubts(prev => [newDoubt, ...prev]);
+    setShowSuccess(true);
+    
+    // Clear form
+    const savedQuestion = formData.question;
+    setFormData(prev => ({ ...prev, question: '' }));
+    setErrors({});
+    showToast('Doubt submitted to Google Sheets!', 'success');
+
     try {
       const headers = await getAuthHeaders();
       const res = await fetch('/api/doubts', {
         method: 'POST',
         headers,
         body: JSON.stringify({
-          ...formData,
-          email: user.email,
+          name: newDoubt.name,
+          email: newDoubt.email,
+          category: newDoubt.category,
+          question: newDoubt.question,
         }),
       });
       const data = await res.json();
-      if (!data.success) throw new Error(data.error);
+      
+      if (!data.success) {
+        throw new Error(data.error || 'Failed to submit doubt');
+      }
 
-      setShowSuccess(true);
-      setFormData(prev => ({ ...prev, question: '' }));
-      setErrors({});
-      fetchMyDoubts();
-      setTimeout(() => setShowSuccess(false), 5000);
-      showToast('Doubt submitted successfully!', 'success');
+      // Replace temp ID with real ID
+      setDoubts(prev => prev.map(d => d.id === tempId ? { ...d, id: data.doubtId } : d));
+      
     } catch (error: any) {
-      console.error('Submission error:', error);
-      showToast(error.message || 'Failed to submit doubt', 'error');
+      console.error('Submit error:', error);
+      // Revert optimistic update on failure
+      setDoubts(prev => prev.filter(d => d.id !== tempId));
+      setFormData(prev => ({ ...prev, question: savedQuestion }));
+      showToast('API Error: ' + error.message, 'error');
     } finally {
       setIsSubmitting(false);
+      setTimeout(() => setShowSuccess(false), 4000);
     }
   };
 
+  // Send a follow-up message (optimistic)
   const handleSendMessage = useCallback(async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user || !selectedDoubt || !newMessage.trim()) return;
+
+    const msgText = newMessage.trim();
+    setNewMessage('');
+
+    // Optimistic Update
+    const tempMsg: Message = {
+      doubtId: selectedDoubt.id,
+      senderName: user.displayName || 'Student',
+      message: msgText,
+      isAdmin: false,
+      date: new Date().toISOString()
+    };
+    
+    setMessages(prev => [...prev, tempMsg]);
 
     try {
       const headers = await getAuthHeaders();
@@ -236,25 +297,29 @@ export default function Doubts() {
         method: 'POST',
         headers,
         body: JSON.stringify({
-          senderName: user.displayName || 'Student',
-          message: newMessage,
+          senderName: tempMsg.senderName,
+          message: tempMsg.message,
           isAdmin: false,
         }),
       });
       const data = await res.json();
       if (!data.success) throw new Error(data.error);
-      setNewMessage('');
+
+      // Fetch actual data to true sync
       fetchMessages();
     } catch (error) {
       console.error('Error sending message:', error);
-      showToast('Failed to send message. Please try again.', 'error');
+      // Revert optimistic message
+      setMessages(prev => prev.filter(m => m !== tempMsg));
+      setNewMessage(msgText);
+      showToast('Failed to send. Please try again.', 'error');
     }
   }, [user, selectedDoubt, newMessage, showToast, fetchMessages, getAuthHeaders]);
 
   return (
     <div className="min-h-screen bg-[#F8F9FA]">
       {/* Hero Section */}
-      <section className="relative py-48 pt-32 bg-[#050A0F] overflow-hidden">
+      <section className="relative py-40 pt-32 bg-[#050A0F] overflow-hidden">
         <div className="absolute inset-0 bg-gradient-to-b from-[#1B4332]/20 to-transparent" />
         <div className="absolute top-0 left-0 w-full h-full opacity-10 pointer-events-none">
           <div className="absolute top-20 left-10 w-64 h-64 bg-[#1B4332] rounded-full blur-[128px]" />
@@ -279,7 +344,8 @@ export default function Doubts() {
         </motion.div>
       </section>
 
-      <div className="max-w-4xl mx-auto px-4 pb-32 -mt-20 relative z-20 space-y-8">
+      {/* Content — NO overlap with hero */}
+      <div className="max-w-4xl mx-auto px-4 py-16 space-y-8 relative z-20">
         <AnimatePresence mode="wait">
           {selectedDoubt ? (
             /* ── Chat View ── */
@@ -290,44 +356,38 @@ export default function Doubts() {
               exit={{ opacity: 0, y: -20 }}
               className="space-y-6"
             >
-              {/* Back + History sidebar */}
-              <motion.div className="bg-white rounded-[2rem] p-6 shadow-xl border border-gray-100">
+              {/* Back nav + history */}
+              <div className="bg-white rounded-[2rem] p-6 shadow-xl border border-gray-100">
                 <button
                   onClick={() => setSelectedDoubt(null)}
-                  className="w-full py-3 bg-gray-50 text-gray-500 rounded-2xl font-black tracking-widest text-xs hover:bg-gray-100 transition-all flex items-center justify-center gap-2 mb-6"
+                  className="w-full py-3 bg-gray-50 text-gray-500 rounded-2xl font-black tracking-widest text-xs hover:bg-gray-100 transition-all flex items-center justify-center gap-2 mb-4"
                 >
                   <ChevronLeft size={16} />
                   BACK TO DOUBTS
                 </button>
                 {doubts.length > 1 && (
-                  <div className="space-y-3">
-                    <h3 className="text-[10px] font-black text-gray-300 uppercase tracking-[0.3em] ml-1">My History</h3>
-                    <div className="flex gap-3 overflow-x-auto pb-2 custom-scrollbar">
-                      {doubts.map(d => (
-                        <button
-                          key={d.id}
-                          onClick={() => setSelectedDoubt(d)}
-                          className={`flex-shrink-0 px-5 py-3 rounded-2xl text-left transition-all border ${
-                            selectedDoubt?.id === d.id
-                              ? 'bg-[#1B4332] border-[#1B4332] text-white shadow-lg shadow-[#1B4332]/10'
-                              : 'bg-gray-50 border-gray-100 text-gray-600 hover:border-[#1B4332]/30'
-                          }`}
-                        >
-                          <p className={`text-xs font-bold line-clamp-1 max-w-[200px] ${selectedDoubt?.id === d.id ? 'text-white' : 'text-gray-800'}`}>
-                            {d.question}
-                          </p>
-                          <span className={`text-[8px] font-black uppercase tracking-widest ${selectedDoubt?.id === d.id ? 'text-white/60' : 'text-gray-400'}`}>
-                            {d.status}
-                          </span>
-                        </button>
-                      ))}
-                    </div>
+                  <div className="flex gap-3 overflow-x-auto pb-2 custom-scrollbar">
+                    {doubts.map(d => (
+                      <button
+                        key={d.id}
+                        onClick={() => setSelectedDoubt(d)}
+                        className={`flex-shrink-0 px-5 py-3 rounded-2xl text-left transition-all border ${
+                          selectedDoubt?.id === d.id
+                            ? 'bg-[#1B4332] border-[#1B4332] text-white'
+                            : 'bg-gray-50 border-gray-100 text-gray-600 hover:border-[#1B4332]/30'
+                        }`}
+                      >
+                        <p className={`text-xs font-bold line-clamp-1 max-w-[200px] ${selectedDoubt?.id === d.id ? 'text-white' : 'text-gray-800'}`}>
+                          {d.question}
+                        </p>
+                      </button>
+                    ))}
                   </div>
                 )}
-              </motion.div>
+              </div>
 
               {/* Chat Panel */}
-              <div className="bg-white rounded-[2rem] shadow-2xl border border-[#1B4332]/10 overflow-hidden flex flex-col h-[600px]">
+              <div className="bg-white rounded-[2rem] shadow-2xl border border-gray-100 overflow-hidden flex flex-col h-[600px]">
                 <div className="p-6 bg-gray-50 border-b border-gray-100 flex items-center justify-between">
                   <div className="flex items-center gap-4">
                     <div className="w-10 h-10 rounded-xl bg-[#1B4332] flex items-center justify-center text-white">
@@ -349,13 +409,6 @@ export default function Doubts() {
                       </div>
                     </div>
                   </div>
-                  <button
-                    onClick={fetchMessages}
-                    className="p-2 hover:bg-gray-200 rounded-full transition-colors text-gray-400"
-                    title="Refresh"
-                  >
-                    <RefreshCw size={18} />
-                  </button>
                 </div>
 
                 <div className="flex-grow p-6 overflow-y-auto flex flex-col gap-4">
@@ -399,18 +452,16 @@ export default function Doubts() {
               className="space-y-8"
             >
               {/* Ask Doubt Card */}
-              <motion.div
-                initial={{ opacity: 0, scale: 0.95 }}
-                animate={{ opacity: 1, scale: 1 }}
-                className="bg-white rounded-[2rem] p-8 md:p-10 shadow-xl border border-gray-100"
-              >
-                <div className="flex items-center gap-4 mb-8">
-                  <div className="w-12 h-12 rounded-2xl bg-[#1B4332]/5 flex items-center justify-center text-[#1B4332]">
-                    <HelpCircle size={24} />
-                  </div>
-                  <div>
-                    <h2 className="text-2xl font-black text-gray-900 tracking-tight">Ask a Doubt</h2>
-                    <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest">Get a personal response from our founders</p>
+              <div className="bg-white rounded-[2rem] p-8 md:p-10 shadow-xl border border-gray-100">
+                <div className="flex items-center justify-between mb-8">
+                  <div className="flex items-center gap-4">
+                    <div className="w-12 h-12 rounded-2xl bg-[#1B4332]/5 flex items-center justify-center text-[#1B4332]">
+                      <HelpCircle size={24} />
+                    </div>
+                    <div>
+                      <h2 className="text-2xl font-black text-gray-900 tracking-tight">Ask a Doubt</h2>
+                      <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest">Get a personal response from our founders</p>
+                    </div>
                   </div>
                 </div>
 
@@ -423,7 +474,7 @@ export default function Doubts() {
                         exit={{ opacity: 0, height: 0 }}
                         className="bg-green-50 text-green-700 p-5 rounded-2xl text-[10px] font-black tracking-[0.2em] uppercase border border-green-100 mb-6"
                       >
-                        Question submitted! You'll be notified when a founder replies.
+                        Question submitted to Server!
                       </motion.div>
                     )}
                   </AnimatePresence>
@@ -492,7 +543,7 @@ export default function Doubts() {
                           whileTap={{ scale: 0.98 }}
                           disabled={isSubmitting}
                           type="submit"
-                          className="w-full py-5 bg-[#1B4332] text-white rounded-2xl font-black tracking-[0.3em] uppercase text-xs flex items-center justify-center gap-3 shadow-lg shadow-[#1B4332]/20"
+                          className={`w-full py-5 ${isSubmitting ? 'bg-gray-400' : 'bg-[#1B4332]'} text-white rounded-2xl font-black tracking-[0.3em] uppercase text-xs flex items-center justify-center gap-3 shadow-lg shadow-[#1B4332]/20`}
                         >
                           {isSubmitting ? (
                             <>
@@ -505,15 +556,10 @@ export default function Doubts() {
                     </div>
                   )}
                 </form>
-              </motion.div>
+              </div>
 
               {/* Recent Doubts Card */}
-              <motion.div
-                initial={{ opacity: 0, scale: 0.95 }}
-                animate={{ opacity: 1, scale: 1 }}
-                transition={{ delay: 0.1 }}
-                className="bg-white rounded-[2rem] p-8 md:p-10 shadow-xl border border-gray-100"
-              >
+              <div className="bg-white rounded-[2rem] p-8 md:p-10 shadow-xl border border-gray-100">
                 <div className="flex items-center justify-between mb-8">
                   <div className="flex items-center gap-4">
                     <div className="w-12 h-12 rounded-2xl bg-[#1B4332]/5 flex items-center justify-center text-[#1B4332]">
@@ -521,7 +567,7 @@ export default function Doubts() {
                     </div>
                     <div>
                       <h2 className="text-2xl font-black text-gray-900 tracking-tight">Recent Doubts</h2>
-                      <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest">Your private history across all sessions</p>
+                      <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest">Your private history on our servers</p>
                     </div>
                   </div>
                   <button
@@ -534,9 +580,13 @@ export default function Doubts() {
 
                 {loadingDoubts ? (
                   <div className="grid md:grid-cols-2 gap-4 animate-pulse">
-                    {[1, 2, 3, 4].map(i => (
+                    {[1, 2].map(i => (
                       <div key={i} className="h-40 bg-gray-50 border border-gray-100 rounded-2xl" />
                     ))}
+                  </div>
+                ) : !user ? (
+                  <div className="text-center py-8">
+                    <p className="text-gray-400 font-medium text-sm">Sign in to see your doubt history.</p>
                   </div>
                 ) : doubts.length > 0 ? (
                   <div className="grid md:grid-cols-2 gap-4">
@@ -558,7 +608,7 @@ export default function Doubts() {
                     <p className="text-gray-400 font-medium text-sm max-w-xs mx-auto">Ask your first question using the form above. We're here to help!</p>
                   </div>
                 )}
-              </motion.div>
+              </div>
             </motion.div>
           )}
         </AnimatePresence>
