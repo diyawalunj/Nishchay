@@ -192,7 +192,7 @@ export default function About() {
             {[
               {
                 title: 'Mission',
-                description: 'Provide genuine, affordable defence exam preparation to every aspirant across India.',
+                description: 'Provide genuine material for defence exam preparation to every aspirant across India.',
                 icon: Target,
                 color: 'bg-green-50 text-green-600'
               },
