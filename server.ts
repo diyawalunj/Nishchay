@@ -8,6 +8,10 @@ import { GoogleSpreadsheet } from 'google-spreadsheet';
 import { JWT } from 'google-auth-library';
 import crypto from 'crypto';
 import admin from 'firebase-admin';
+import { createRequire } from 'module';
+
+const require = createRequire(import.meta.url);
+const firebaseConfigJson = require('./firebase-applet-config.json');
 
 dotenv.config();
 
@@ -19,7 +23,6 @@ app.use(express.json());
 
 // Initialize Firebase Admin (project ID only — sufficient for verifyIdToken)
 try {
-  const firebaseConfigJson = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'firebase-applet-config.json'), 'utf-8'));
   const projectId = process.env.VITE_FIREBASE_PROJECT_ID || firebaseConfigJson.projectId;
   
   if (projectId) {

@@ -36,20 +36,25 @@ interface Doubt {
 
 const ChatMessage = memo(function ChatMessage({ msg }: { msg: Message }) {
   const dateStr = msg.date ? new Date(msg.date).toLocaleString() : '';
+  
+  // Is this message sent by the currently logged-in student?
+  // Only the student sees this page, so if msg.isAdmin is true, it's from the founder.
+  const isMe = !msg.isAdmin;
+
   return (
-    <div className={`max-w-[80%] flex flex-col ${msg.isAdmin ? 'self-start' : 'self-end'}`}>
-      <span className={`text-[9px] font-black uppercase tracking-widest mb-1 ${msg.isAdmin ? 'text-[#1B4332]' : 'text-gray-400 text-right'}`}>
-        {msg.isAdmin ? msg.senderName.toUpperCase() : 'YOU'}
+    <div className={`max-w-[80%] flex flex-col ${isMe ? 'self-end' : 'self-start'}`}>
+      <span className={`text-[9px] font-black uppercase tracking-widest mb-1 ${isMe ? 'text-gray-400 text-right' : 'text-[#1B4332] text-left'}`}>
+        {isMe ? 'YOU' : msg.senderName.toUpperCase()}
       </span>
       <div className={`px-5 py-3 rounded-2xl text-sm font-medium shadow-sm ${
-        msg.isAdmin
-          ? 'bg-white text-gray-800 rounded-tl-none border border-gray-100'
-          : 'bg-[#1B4332] text-white rounded-tr-none'
+        isMe
+          ? 'bg-[#1B4332] text-white rounded-tr-none'
+          : 'bg-white text-gray-800 rounded-tl-none border border-gray-100'
       }`}>
         {msg.message}
       </div>
       {dateStr && (
-        <span className={`text-[8px] text-gray-300 mt-1 ${msg.isAdmin ? '' : 'text-right'}`}>
+        <span className={`text-[8px] text-gray-300 mt-1 ${isMe ? 'text-right' : 'text-left'}`}>
           {dateStr}
         </span>
       )}
