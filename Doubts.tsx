@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef, useCallback, memo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { auth, signInWithGoogle, onAuthStateChanged, type User as FirebaseUser } from './firebase';
-import { Lock, MessageSquare, Send, Clock, ChevronLeft, RefreshCw, HelpCircle } from 'lucide-react';
+import { Lock, MessageSquare, Send, Clock, ChevronLeft, RefreshCw, HelpCircle, Trash2, X } from 'lucide-react';
 import { useToast } from './Toast';
+import { useNavigate } from 'react-router-dom';
 
 const CATEGORIES = [
   'General Inquiry',
@@ -62,10 +63,11 @@ const ChatMessage = memo(function ChatMessage({ msg }: { msg: Message }) {
   );
 });
 
-const DoubtListItem = memo(function DoubtListItem({ doubt, isSelected, onSelect }: {
+const DoubtListItem = memo(function DoubtListItem({ doubt, isSelected, onSelect, onDelete }: {
   doubt: Doubt;
   isSelected: boolean;
   onSelect: () => void;
+  onDelete: (e: React.MouseEvent) => void;
 }) {
   const dateStr = doubt.date ? new Date(doubt.date).toLocaleDateString() : 'Just now';
   return (
@@ -79,16 +81,31 @@ const DoubtListItem = memo(function DoubtListItem({ doubt, isSelected, onSelect 
       }`}
     >
       <div className="flex justify-between items-start mb-3">
-        <span className={`px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-widest border ${
-          isSelected
-            ? 'bg-white/10 text-white border-white/20'
-            : 'bg-amber-50 text-amber-600 border-amber-100'
-        }`}>
-          {doubt.category}
-        </span>
-        <span className={`text-[8px] font-black uppercase tracking-widest ${isSelected ? 'text-white/40' : 'text-gray-300'}`}>
-          {dateStr}
-        </span>
+        <div className="flex flex-col gap-2">
+          <span className={`px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-widest border w-fit ${
+            isSelected
+              ? 'bg-white/10 text-white border-white/20'
+              : 'bg-amber-50 text-amber-600 border-amber-100'
+          }`}>
+            {doubt.category}
+          </span>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className={`text-[8px] font-black uppercase tracking-widest ${isSelected ? 'text-white/40' : 'text-gray-300'}`}>
+            {dateStr}
+          </span>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onDelete(e);
+            }}
+            className={`p-1.5 rounded-lg transition-colors ${
+              isSelected ? 'hover:bg-white/10 text-white/40 hover:text-white' : 'hover:bg-red-50 text-gray-300 hover:text-red-500'
+            }`}
+          >
+            <Trash2 size={14} />
+          </button>
+        </div>
       </div>
       <h4 className={`text-sm font-bold line-clamp-2 leading-relaxed mb-3 ${isSelected ? 'text-white' : 'text-gray-800'}`}>
         {doubt.question}
@@ -130,6 +147,8 @@ export default function Doubts() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // Helper to get authenticated headers
+  const [showDeleteModal, setShowDeleteModal] = useState<string | null>(null);
+
   const getAuthHeaders = useCallback(async () => {
     if (!auth.currentUser) return {};
     const token = await auth.currentUser.getIdToken();
@@ -211,6 +230,28 @@ export default function Doubts() {
       });
     }
   }, [messages.length]);
+
+  const handleDelete = async (doubtId: string, mode: 'me' | 'everyone') => {
+    try {
+      const headers = await getAuthHeaders();
+      const res = await fetch(`/api/doubts/${doubtId}?mode=${mode}`, {
+        method: 'DELETE',
+        headers
+      });
+      const data = await res.json();
+      if (data.success) {
+        setDoubts(prev => prev.filter(d => d.id !== doubtId));
+        if (selectedDoubt?.id === doubtId) setSelectedDoubt(null);
+        showToast(mode === 'me' ? 'Deleted for you' : 'Deleted for everyone', 'success');
+      } else {
+        throw new Error(data.error);
+      }
+    } catch (error: any) {
+      showToast(error.message || 'Failed to delete', 'error');
+    } finally {
+      setShowDeleteModal(null);
+    }
+  };
 
   // Submit a new doubt (optimistic)
   const handleSubmit = async (e: React.FormEvent) => {
@@ -606,6 +647,7 @@ export default function Doubts() {
                         doubt={d}
                         isSelected={selectedDoubt?.id === d.id}
                         onSelect={() => setSelectedDoubt(d)}
+                        onDelete={() => setShowDeleteModal(d.id)}
                       />
                     ))}
                   </div>
@@ -622,7 +664,47 @@ export default function Doubts() {
             </motion.div>
           )}
         </AnimatePresence>
-      </div>
+      <AnimatePresence>
+        {showDeleteModal && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-white rounded-[2.5rem] p-10 max-w-md w-full shadow-2xl text-center"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="w-20 h-20 rounded-full bg-red-50 flex items-center justify-center mx-auto text-red-500 mb-6">
+                <Trash2 size={40} />
+              </div>
+              <h3 className="text-2xl font-black text-gray-900 mb-2">Delete Chat?</h3>
+              <p className="text-gray-500 font-medium mb-8">Choose how you want to delete this conversation.</p>
+              
+              <div className="flex flex-col gap-3">
+                <button
+                  onClick={() => handleDelete(showDeleteModal, 'me')}
+                  className="w-full py-4 bg-gray-100 text-gray-700 rounded-2xl font-black tracking-widest text-xs hover:bg-gray-200 transition-all uppercase"
+                >
+                  Delete for me
+                </button>
+                <button
+                  onClick={() => handleDelete(showDeleteModal, 'everyone')}
+                  className="w-full py-4 bg-red-50 text-red-600 rounded-2xl font-black tracking-widest text-xs hover:bg-red-100 transition-all uppercase"
+                >
+                  Delete for everyone
+                </button>
+                <button
+                  onClick={() => setShowDeleteModal(null)}
+                  className="w-full py-4 text-gray-400 font-black tracking-widest text-xs hover:text-gray-600 transition-all uppercase mt-2"
+                >
+                  Cancel
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
-  );
+  </div>
+);
 }

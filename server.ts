@@ -105,7 +105,21 @@ async function getSheet(sheetId: string, tabName: string, defaultHeaders: string
   const doc = new GoogleSpreadsheet(sheetId, auth);
   await doc.loadInfo();
 
+  // Try exact match first
   let sheet = doc.sheetsByTitle[tabName];
+  
+  // If not found, look for common names if it's the contact form
+  if (!sheet && tabName === 'contactform') {
+    const commonNames = ['contactform', 'responses', 'Sheet1', 'Form Responses 1', 'contact'];
+    for (const name of commonNames) {
+      if (doc.sheetsByTitle[name]) {
+        sheet = doc.sheetsByTitle[name];
+        console.log(`ℹ️ Found existing tab: "${name}" instead of "${tabName}"`);
+        break;
+      }
+    }
+  }
+
   if (!sheet) {
     // Create the tab if it doesn't exist
     sheet = await doc.addSheet({ title: tabName, headerValues: defaultHeaders });
@@ -197,8 +211,8 @@ async function sendReplyEmail(
    DOUBT API ROUTES
 ========================= */
 
-const DOUBT_HEADERS = ['ID', 'Name', 'Email', 'Category', 'Question', 'Status', 'Date', 'UID'];
-const MESSAGE_HEADERS = ['DoubtID', 'SenderName', 'Message', 'IsAdmin', 'Date'];
+const DOUBT_HEADERS = ['ID', 'Name', 'Email', 'Category', 'Question', 'Status', 'Date', 'UID', 'HiddenFor'];
+const MESSAGE_HEADERS = ['DoubtID', 'SenderName', 'Message', 'IsAdmin', 'Date', 'HiddenFor'];
 
 // POST /api/doubts — Submit a new doubt (Authenticated)
 app.post('/api/doubts', authenticate as any, async (req: AuthRequest, res) => {
@@ -229,6 +243,7 @@ app.post('/api/doubts', authenticate as any, async (req: AuthRequest, res) => {
       Status: 'pending',
       Date: now,
       UID: req.user?.uid || '',
+      HiddenFor: '',
     });
 
     await messagesSheet.addRow({
@@ -237,6 +252,7 @@ app.post('/api/doubts', authenticate as any, async (req: AuthRequest, res) => {
       Message: question,
       IsAdmin: 'false',
       Date: now,
+      HiddenFor: '',
     });
 
     res.json({ success: true, doubtId });
@@ -262,7 +278,11 @@ app.get('/api/doubts', authenticate as any, async (req: AuthRequest, res) => {
       status: row.get('Status') || 'pending',
       date: row.get('Date') || '',
       uid: row.get('UID') || '',
+      hiddenFor: row.get('HiddenFor') || '',
     })).filter(d => d.id);
+
+    const myUid = req.user?.uid || '';
+    doubts = doubts.filter(d => !d.hiddenFor.split(',').includes(myUid));
 
     // Visibility Security
     if (!req.user?.isAdmin) {
@@ -308,7 +328,9 @@ app.get('/api/doubts/:id/messages', authenticate as any, async (req: AuthRequest
         message: row.get('Message') || '',
         isAdmin: String(row.get('IsAdmin')).toLowerCase() === 'true',
         date: row.get('Date') || '',
+        hiddenFor: row.get('HiddenFor') || '',
       }))
+      .filter(m => !m.hiddenFor.split(',').includes(req.user?.uid || ''))
       .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
     res.json({ success: true, messages });
@@ -352,6 +374,7 @@ app.post('/api/doubts/:id/reply', authenticate as any, async (req: AuthRequest, 
       Message: message,
       IsAdmin: isAdmin ? 'true' : 'false',
       Date: now,
+      HiddenFor: '',
     });
 
     // Admin reply logic
@@ -402,26 +425,46 @@ app.patch('/api/doubts/:id/status', authenticate as any, async (req: AuthRequest
   }
 });
 
-// DELETE /api/doubts/:id — Delete (Admin Only)
+// DELETE /api/doubts/:id — Delete Doubt (Admin or Owner)
 app.delete('/api/doubts/:id', authenticate as any, async (req: AuthRequest, res) => {
   try {
-    if (!req.user?.isAdmin) return res.status(403).json({ success: false, error: 'Admin only' });
-
     const doubtId = req.params.id;
+    const { mode } = req.query; // 'me' or 'everyone'
+    const myUid = req.user?.uid || '';
     const sheetId = await getQnaSheetId();
     
-    // Delete from doubts tab
     const doubtsSheet = await getSheet(sheetId, 'doubts', DOUBT_HEADERS);
     const doubtRows = await doubtsSheet.getRows();
     const doubtRow = doubtRows.find(r => r.get('ID') === doubtId);
-    if (doubtRow) await doubtRow.delete();
 
-    // Delete messages from messages tab
-    const messagesSheet = await getSheet(sheetId, 'messages', MESSAGE_HEADERS);
-    const messageRows = await messagesSheet.getRows();
-    for (const row of messageRows) {
-      if (row.get('DoubtID') === doubtId) {
-        await row.delete();
+    if (!doubtRow) return res.status(404).json({ success: false, error: 'Doubt not found' });
+
+    // Security: Check if user owns the doubt or is admin
+    const isOwner = (doubtRow.get('Email').toLowerCase() === req.user?.email?.toLowerCase() || doubtRow.get('UID') === myUid);
+    if (!req.user?.isAdmin && !isOwner) {
+      return res.status(403).json({ success: false, error: 'Forbidden' });
+    }
+
+    if (mode === 'everyone') {
+      // Must be admin or owner to delete for everyone
+      await doubtRow.delete();
+
+      // Also delete messages
+      const messagesSheet = await getSheet(sheetId, 'messages', MESSAGE_HEADERS);
+      const messageRows = await messagesSheet.getRows();
+      for (const row of messageRows) {
+        if (row.get('DoubtID') === doubtId) {
+          await row.delete();
+        }
+      }
+    } else {
+      // Delete for me: add UID to HiddenFor
+      const currentHidden = doubtRow.get('HiddenFor') || '';
+      const hiddenList = currentHidden ? currentHidden.split(',') : [];
+      if (!hiddenList.includes(myUid)) {
+        hiddenList.push(myUid);
+        doubtRow.set('HiddenFor', hiddenList.join(','));
+        await doubtRow.save();
       }
     }
 
@@ -438,25 +481,80 @@ app.delete('/api/doubts/:id', authenticate as any, async (req: AuthRequest, res)
 
 async function saveToGoogleSheet(data: any, type: 'qna' | 'contact') {
   const sheetId = type === 'contact' ? process.env.GOOGLE_SHEET_ID_CONTACT : await getQnaSheetId();
-  if (!sheetId) throw new Error(`Missing Google Sheet ID for ${type}`);
+  if (!sheetId) {
+    console.error(`❌ [${type}] Missing Sheet ID in environment variables`);
+    throw new Error(`Technical Error: Sheet ID for ${type} is not configured.`);
+  }
+
+  // Debug: Log a snippet of the ID (Safe for Vercel logs)
+  console.log(`[${type}] Using Sheet ID: ${sheetId.substring(0, 5)}...${sheetId.substring(sheetId.length - 4)}`);
 
   const tabName = type === 'qna' ? 'doubts' : 'contactform';
   const headers = type === 'qna'
-    ? ['Name', 'Phone', 'Category', 'Question']
-    : ['Full Name', 'Email', 'Message'];
-  const sheet = await getSheet(sheetId, tabName, headers);
+    ? ['ID', 'Name', 'Phone', 'Category', 'Question', 'Status', 'Date', 'UID']
+    : ['Date', 'Full Name', 'Email', 'Message'];
 
-  const rowData = type === 'qna'
-    ? { Name: data.name || '', Phone: data.phone || '', Category: data.category || '', Question: data.question || '' }
-    : { 'Full Name': data.fullName || '', Email: data.email || '', Message: data.message || '' };
+  try {
+    const sheet = await getSheet(sheetId, tabName, headers);
+    const now = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
 
-  await sheet.addRow(rowData);
-  console.log(`✅ ${type} saved to Google Sheet: ${sheet.title}`);
+    // Flexible mapping: find which column headers exist in the sheet
+    const existingHeaders = sheet.headerValues.map(h => h.toLowerCase().trim());
+    
+    let rowData: any = {};
+    if (type === 'qna') {
+      rowData = { 
+        ID: crypto.randomUUID(),
+        Name: data.name || '', 
+        Phone: data.phone || '', 
+        Category: data.category || 'General', 
+        Question: data.question || '',
+        Status: 'pending',
+        Date: now,
+        UID: data.uid || ''
+      };
+    } else {
+      // Find matching keys for contact form
+      const mappings = [
+        { key: 'Date', value: now },
+        { key: 'Full Name', value: data.fullName || '', aliases: ['name', 'full name', 'fullname'] },
+        { key: 'Email', value: data.email || '', aliases: ['email', 'email address'] },
+        { key: 'Message', value: data.message || '', aliases: ['message', 'question', 'msg', 'body'] }
+      ];
+
+      mappings.forEach(m => {
+        // Try exact match or alias
+        const match = sheet.headerValues.find(h => 
+          h.toLowerCase().trim() === m.key.toLowerCase() || 
+          (m.aliases && m.aliases.includes(h.toLowerCase().trim()))
+        );
+        if (match) {
+          rowData[match] = m.value;
+        } else {
+          // Fallback to default header name if sheet is new/empty
+          rowData[m.key] = m.value;
+        }
+      });
+    }
+
+    await sheet.addRow(rowData);
+    console.log(`✅ [${type}] Row added successfully to "${tabName}"`);
+  } catch (error: any) {
+    console.error(`❌ [${type}] Google Sheet Error:`, error.message);
+    if (error.message.includes('403') || error.message.includes('permission')) {
+      throw new Error(`Permission Denied: Ensure you have shared the Google Sheet with the Service Account email: ${process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL}`);
+    }
+    if (error.message.includes('404')) {
+      throw new Error(`Sheet Not Found: Ensure the Sheet ID "${sheetId.substring(0, 5)}..." is correct and the tab exists.`);
+    }
+    throw error;
+  }
 }
 
 app.get('/api/health', (req, res) => {
   res.json({
     status: 'ok',
+    serviceAccountEmail: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
     env: {
       email: !!process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
       key: !!process.env.GOOGLE_PRIVATE_KEY,

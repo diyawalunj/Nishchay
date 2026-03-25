@@ -316,8 +316,7 @@ export default function Admin() {
     }
   }, [selectedDoubt, showToast, getAuthHeaders]);
 
-  // Delete doubt (optimistic)
-  const handleDeleteDoubt = useCallback(async (doubtId: string) => {
+  const handleDeleteDoubt = useCallback(async (doubtId: string, mode: 'me' | 'everyone') => {
     const doubtToRemove = doubts.find(d => d.id === doubtId);
     
     // Optimistic Delete
@@ -327,7 +326,7 @@ export default function Admin() {
 
     try {
       const headers = await getAuthHeaders();
-      const res = await fetch(`/api/doubts/${doubtId}`, {
+      const res = await fetch(`/api/doubts/${doubtId}?mode=${mode}`, {
         method: 'DELETE',
         headers,
       });
@@ -516,24 +515,29 @@ export default function Admin() {
               onClick={(e) => e.stopPropagation()}
             >
               <div className="w-20 h-20 rounded-full bg-red-50 flex items-center justify-center mx-auto text-red-500 mb-6">
-                <Trash2 size={48} />
+                <Trash2 size={40} />
               </div>
-              <h3 className="text-2xl font-black text-gray-900 mb-2">Are you sure?</h3>
-              <p className="text-gray-500 font-medium mb-8">This will permanently delete this doubt and all its messages. This action cannot be undone.</p>
-              <div className="flex gap-4">
+              <h3 className="text-2xl font-black text-gray-900 mb-2">Delete Chat?</h3>
+              <p className="text-gray-500 font-medium mb-8">Choose how you want to delete this conversation.</p>
+              
+              <div className="flex flex-col gap-3">
                 <button
-                  type="button"
-                  onClick={() => setShowDeleteConfirm(null)}
-                  className="flex-1 py-4 bg-gray-100 text-gray-500 rounded-2xl font-black tracking-widest text-xs hover:bg-gray-200 transition-all"
+                  onClick={() => handleDeleteDoubt(showDeleteConfirm, 'me')}
+                  className="w-full py-4 bg-gray-100 text-gray-700 rounded-2xl font-black tracking-widest text-xs hover:bg-gray-200 transition-all uppercase"
                 >
-                  CANCEL
+                  Delete for me
                 </button>
                 <button
-                  type="button"
-                  onClick={() => handleDeleteDoubt(showDeleteConfirm)}
-                  className="flex-1 py-4 bg-red-500 text-white rounded-2xl font-black tracking-widest text-xs shadow-lg shadow-red-500/20 hover:bg-red-600 transition-all"
+                  onClick={() => handleDeleteDoubt(showDeleteConfirm, 'everyone')}
+                  className="w-full py-4 bg-red-50 text-red-600 rounded-2xl font-black tracking-widest text-xs hover:bg-red-100 transition-all uppercase"
                 >
-                  DELETE
+                  Delete for everyone
+                </button>
+                <button
+                  onClick={() => setShowDeleteConfirm(null)}
+                  className="w-full py-4 text-gray-400 font-black tracking-widest text-xs hover:text-gray-600 transition-all uppercase mt-2"
+                >
+                  Cancel
                 </button>
               </div>
             </motion.div>

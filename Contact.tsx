@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { motion } from 'motion/react';
-import { Mail, Phone, MapPin, Send } from 'lucide-react';
-import { auth, onAuthStateChanged, signInWithGoogle, type User as FirebaseUser } from './firebase';
+import { motion, AnimatePresence } from 'motion/react';
+import { Mail, Phone, MapPin, Send, Instagram, Youtube, Send as Telegram, MessageCircle } from 'lucide-react';
+import { auth, onAuthStateChanged, type User as FirebaseUser } from './firebase';
 
 interface FormData {
   fullName: string;
@@ -184,12 +184,18 @@ const Contact: React.FC = () => {
 
             {/* Social Links */}
             <div className="flex flex-wrap gap-4 pt-8">
-              {['INSTAGRAM', 'YOUTUBE', 'TELEGRAM', 'WHATSAPP'].map((social) => (
+              {[
+                { name: 'INSTAGRAM', icon: <Instagram size={14} /> },
+                { name: 'YOUTUBE', icon: <Youtube size={14} /> },
+                { name: 'TELEGRAM', icon: <Telegram size={14} /> },
+                { name: 'WHATSAPP', icon: <MessageCircle size={14} /> }
+              ].map((social) => (
                 <button 
-                  key={social}
-                  className="px-8 py-4 bg-white rounded-2xl text-[10px] font-black tracking-[0.2em] text-gray-400 border border-gray-100 shadow-sm hover:border-[#1B4332]/30 hover:text-[#1B4332] hover:scale-105 transition-all duration-300"
+                  key={social.name}
+                  className="px-8 py-4 bg-white rounded-2xl text-[10px] font-black tracking-[0.2em] text-gray-400 border border-gray-100 shadow-sm hover:border-[#1B4332]/30 hover:text-[#1B4332] hover:scale-105 transition-all duration-300 flex items-center gap-2"
                 >
-                  {social}
+                  {social.icon}
+                  {social.name}
                 </button>
               ))}
             </div>
@@ -276,7 +282,7 @@ const Contact: React.FC = () => {
                   <motion.div 
                     initial={{ opacity: 0, height: 0 }}
                     animate={{ opacity: 1, height: 'auto' }}
-                    className="bg-red-50 text-red-700 p-5 rounded-2xl text-[10px] font-black tracking-[0.2em] uppercase border border-red-100"
+                    className="bg-red-50 text-red-700 p-5 rounded-2xl text-[10px] font-black tracking-[0.2em] uppercase border border-red-100 mt-4"
                   >
                     {errorMessage}
                   </motion.div>
