@@ -36,14 +36,6 @@ const SUBJECTS = [
     hoverColor: 'hover:bg-[#606B7A]',
   },
   {
-    id: 'practice',
-    title: 'Practice Papers',
-    count: '30+ Papers',
-    icon: ClipboardList,
-    color: 'bg-[#2D5A27]',
-    hoverColor: 'hover:bg-[#366B2F]',
-  },
-  {
     id: 'strategy',
     title: 'Strategy Guides',
     count: '10+ Guides',
