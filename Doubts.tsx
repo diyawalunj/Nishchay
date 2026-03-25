@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useRef, useCallback, memo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { auth, signInWithGoogle, onAuthStateChanged, type User as FirebaseUser } from './firebase';
+import { auth, signInWithGoogle, onAuthStateChanged, type User as FirebaseUser, checkIfAdmin } from './firebase';
 import { Lock, MessageSquare, Send, Clock, ChevronLeft, RefreshCw, HelpCircle, Trash2, X } from 'lucide-react';
 import { useToast } from './Toast';
 import { useNavigate } from 'react-router-dom';
+import { supabase } from './supabase-frontend';
 
 const CATEGORIES = [
   'General Inquiry',
@@ -137,6 +138,7 @@ export default function Doubts() {
   const [errors, setErrors] = useState<{ [key: string]: string }>({});
   
   const [doubts, setDoubts] = useState<Doubt[]>([]);
+  const [isAdmin, setIsAdmin] = useState(false);
   const [loadingDoubts, setLoadingDoubts] = useState(true);
   const [selectedDoubt, setSelectedDoubt] = useState<Doubt | null>(null);
   
@@ -160,11 +162,14 @@ export default function Doubts() {
 
   // Auth listener
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (u) => {
+    const unsubscribe = onAuthStateChanged(auth, async (u) => {
       setUser(u);
       if (u) {
         setFormData(prev => ({ ...prev, name: u.displayName || '' }));
+        // Check if user is admin
+        setIsAdmin(checkIfAdmin(u));
       } else {
+        setIsAdmin(false);
         setDoubts([]);
         setLoadingDoubts(false);
       }
@@ -190,12 +195,26 @@ export default function Doubts() {
   }, [user, getAuthHeaders]);
 
   useEffect(() => {
-    if (user) {
-      fetchMyDoubts();
-      // Poll every 30s
-      const interval = setInterval(fetchMyDoubts, 30000);
-      return () => clearInterval(interval);
-    }
+    if (!user) return;
+    
+    fetchMyDoubts();
+
+    // REAL-TIME: Listen for any changes to the doubts table for this user
+    const channel = supabase
+      .channel('my_doubts_changes')
+      .on('postgres_changes', { 
+        event: '*', 
+        schema: 'public', 
+        table: 'doubts' 
+      }, () => {
+        // Refresh the list when anything changes
+        fetchMyDoubts();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [user, fetchMyDoubts]);
 
   // Fetch messages for selected doubt
@@ -216,10 +235,36 @@ export default function Doubts() {
       setMessages([]);
       return;
     }
+    
     fetchMessages();
-    // Poll every 10s for new messages
-    const interval = setInterval(fetchMessages, 10000);
-    return () => clearInterval(interval);
+
+    // REAL-TIME: Listen for new messages in THIS specific doubt
+    const channel = supabase
+      .channel(`doubt_messages_${selectedDoubt.id}`)
+      .on('postgres_changes', { 
+        event: 'INSERT', 
+        schema: 'public', 
+        table: 'messages',
+        filter: `doubt_id=eq.${selectedDoubt.id}`
+      }, (payload) => {
+        const newMessage = payload.new as any;
+        setMessages(prev => {
+          // Prevent duplicates if fetchMessages is running simultaneously
+          if (prev.some(m => m.date === newMessage.created_at && m.message === newMessage.message)) return prev;
+          return [...prev, {
+            doubtId: newMessage.doubt_id,
+            senderName: newMessage.sender_name,
+            message: newMessage.message,
+            isAdmin: newMessage.is_admin,
+            date: newMessage.created_at
+          }];
+        });
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [selectedDoubt, fetchMessages]);
 
   useEffect(() => {
@@ -687,12 +732,14 @@ export default function Doubts() {
                 >
                   Delete for me
                 </button>
-                <button
-                  onClick={() => handleDelete(showDeleteModal, 'everyone')}
-                  className="w-full py-4 bg-red-50 text-red-600 rounded-2xl font-black tracking-widest text-xs hover:bg-red-100 transition-all uppercase"
-                >
-                  Delete for everyone
-                </button>
+                {isAdmin && (
+                  <button
+                    onClick={() => handleDelete(showDeleteModal, 'everyone')}
+                    className="w-full py-4 bg-red-50 text-red-600 rounded-2xl font-black tracking-widest text-xs hover:bg-red-100 transition-all uppercase"
+                  >
+                    Delete for everyone
+                  </button>
+                )}
                 <button
                   onClick={() => setShowDeleteModal(null)}
                   className="w-full py-4 text-gray-400 font-black tracking-widest text-xs hover:text-gray-600 transition-all uppercase mt-2"

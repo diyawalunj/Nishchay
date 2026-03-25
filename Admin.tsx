@@ -6,6 +6,7 @@ import {
 import { LayoutDashboard, MessageSquare, Mail, User, Clock, Send, ChevronLeft, RefreshCw, Trash2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useToast } from './Toast';
+import { supabase } from './supabase-frontend';
 
 interface Message {
   doubtId: string;
@@ -188,12 +189,25 @@ export default function Admin() {
   }, [isAdmin, getAuthHeaders, showToast]);
 
   useEffect(() => {
+    if (!isAdmin) return;
+    
     fetchDoubts();
-    if (isAdmin) {
-      // Poll every 30s
-      const id = setInterval(fetchDoubts, 30000);
-      return () => clearInterval(id);
-    }
+
+    // REAL-TIME: Listen for any new doubts or status changes
+    const channel = supabase
+      .channel('admin_doubts_changes')
+      .on('postgres_changes', { 
+        event: '*', 
+        schema: 'public', 
+        table: 'doubts' 
+      }, () => {
+        fetchDoubts();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [isAdmin, fetchDoubts]);
 
   // Filter doubts
@@ -219,9 +233,35 @@ export default function Admin() {
       setMessages([]);
       return;
     }
+
     fetchMessages();
-    const id = setInterval(fetchMessages, 10000);
-    return () => clearInterval(id);
+
+    // REAL-TIME: Listen for new messages in THIS specific doubt
+    const channel = supabase
+      .channel(`admin_doubt_messages_${selectedDoubt.id}`)
+      .on('postgres_changes', { 
+        event: 'INSERT', 
+        schema: 'public', 
+        table: 'messages',
+        filter: `doubt_id=eq.${selectedDoubt.id}`
+      }, (payload) => {
+        const newMessage = payload.new as any;
+        setMessages(prev => {
+          if (prev.some(m => m.date === newMessage.created_at && m.message === newMessage.message)) return prev;
+          return [...prev, {
+            doubtId: newMessage.doubt_id,
+            senderName: newMessage.sender_name,
+            message: newMessage.message,
+            isAdmin: newMessage.is_admin,
+            date: newMessage.created_at
+          }];
+        });
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [selectedDoubt, fetchMessages]);
 
   // Auto-scroll
@@ -447,20 +487,8 @@ export default function Admin() {
                   </div>
                 </div>
 
-                {/* Original question as first message equivalent */}
+                {/* Conversation History */}
                 <div className="flex-grow p-6 overflow-y-auto flex flex-col gap-4">
-                  <div className="max-w-[70%] flex flex-col self-start">
-                    <span className="text-[9px] font-black uppercase tracking-widest mb-1 text-gray-400">
-                      {selectedDoubt.name} · Original Question
-                    </span>
-                    <div className="px-5 py-3 rounded-2xl text-sm font-medium shadow-sm bg-gray-100 text-gray-800 rounded-tl-none border border-gray-200">
-                      {selectedDoubt.question}
-                    </div>
-                    <span className="text-[8px] text-gray-300 mt-1">
-                      {selectedDoubt.date ? new Date(selectedDoubt.date).toLocaleString() : ''}
-                    </span>
-                  </div>
-
                   {messages.map((msg, i) => (
                     <AdminChatMessage key={i} msg={msg} />
                   ))}

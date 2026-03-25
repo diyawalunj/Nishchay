@@ -4,9 +4,10 @@ import { motion, AnimatePresence } from 'motion/react';
 import { ChevronUp } from 'lucide-react';
 import Header from './Header';
 import Footer from './Footer';
+import Home from './Home';
 
 // Lazy-loaded route components — each page is code-split into its own chunk
-const Home = lazy(() => import('./Home'));
+// Home is imported normally above to prevent layout flickering on initial load
 const About = lazy(() => import('./About'));
 const Notes = lazy(() => import('./Notes'));
 const Doubts = lazy(() => import('./Doubts'));

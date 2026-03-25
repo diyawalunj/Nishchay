@@ -9,6 +9,7 @@ import { JWT } from 'google-auth-library';
 import crypto from 'crypto';
 import admin from 'firebase-admin';
 import { createRequire } from 'module';
+import { supabase } from './supabase-client.js';
 
 const require = createRequire(import.meta.url);
 const firebaseConfigJson = require('./firebase-applet-config.json');
@@ -136,11 +137,6 @@ async function getSheet(sheetId: string, tabName: string, defaultHeaders: string
   return sheet;
 }
 
-async function getQnaSheetId() {
-  const id = process.env.GOOGLE_SHEET_ID_QNA;
-  if (!id) throw new Error('Missing GOOGLE_SHEET_ID_QNA');
-  return id;
-}
 
 /* =========================
    EMAIL HELPER
@@ -210,11 +206,8 @@ async function sendReplyEmail(
 }
 
 /* =========================
-   DOUBT API ROUTES
+   DOUBT API ROUTES (Supabase)
 ========================= */
-
-const DOUBT_HEADERS = ['ID', 'Name', 'Email', 'Category', 'Question', 'Status', 'Date', 'UID', 'HiddenFor'];
-const MESSAGE_HEADERS = ['DoubtID', 'SenderName', 'Message', 'IsAdmin', 'Date', 'HiddenFor'];
 
 // POST /api/doubts — Submit a new doubt (Authenticated)
 app.post('/api/doubts', authenticate as any, async (req: AuthRequest, res) => {
@@ -229,35 +222,35 @@ app.post('/api/doubts', authenticate as any, async (req: AuthRequest, res) => {
       return res.status(403).json({ success: false, error: 'Forbidden: Email mismatch' });
     }
 
-    const sheetId = await getQnaSheetId();
-    const doubtsSheet = await getSheet(sheetId, 'doubts', DOUBT_HEADERS);
-    const messagesSheet = await getSheet(sheetId, 'messages', MESSAGE_HEADERS);
+    // Insert doubt
+    const { data: doubt, error: doubtError } = await supabase
+      .from('doubts')
+      .insert({
+        name,
+        email,
+        category: category || 'General',
+        question,
+        status: 'pending',
+        uid: req.user?.uid || '',
+      })
+      .select('id')
+      .single();
 
-    const doubtId = crypto.randomUUID();
-    const now = new Date().toISOString();
+    if (doubtError) throw doubtError;
 
-    await doubtsSheet.addRow({
-      ID: doubtId,
-      Name: name,
-      Email: email,
-      Category: category || 'General',
-      Question: question,
-      Status: 'pending',
-      Date: now,
-      UID: req.user?.uid || '',
-      HiddenFor: '',
-    });
+    // Insert initial message
+    const { error: msgError } = await supabase
+      .from('messages')
+      .insert({
+        doubt_id: doubt.id,
+        sender_name: name,
+        message: question,
+        is_admin: false,
+      });
 
-    await messagesSheet.addRow({
-      DoubtID: doubtId,
-      SenderName: name,
-      Message: question,
-      IsAdmin: 'false',
-      Date: now,
-      HiddenFor: '',
-    });
+    if (msgError) throw msgError;
 
-    res.json({ success: true, doubtId });
+    res.json({ success: true, doubtId: doubt.id });
   } catch (error: any) {
     console.error('❌ POST /api/doubts error:', error.message);
     res.status(500).json({ success: false, error: error.message });
@@ -267,34 +260,33 @@ app.post('/api/doubts', authenticate as any, async (req: AuthRequest, res) => {
 // GET /api/doubts — Fetch doubts (Authenticated)
 app.get('/api/doubts', authenticate as any, async (req: AuthRequest, res) => {
   try {
-    const sheetId = await getQnaSheetId();
-    const doubtsSheet = await getSheet(sheetId, 'doubts', DOUBT_HEADERS);
-    const rows = await doubtsSheet.getRows();
-
-    let doubts = rows.map((row) => ({
-      id: row.get('ID') || '',
-      name: row.get('Name') || '',
-      email: row.get('Email') || '',
-      category: row.get('Category') || '',
-      question: row.get('Question') || '',
-      status: row.get('Status') || 'pending',
-      date: row.get('Date') || '',
-      uid: row.get('UID') || '',
-      hiddenFor: row.get('HiddenFor') || '',
-    })).filter(d => d.id);
-
     const myUid = req.user?.uid || '';
-    doubts = doubts.filter(d => !d.hiddenFor.split(',').includes(myUid));
+    const userEmail = req.user?.email?.toLowerCase() || '';
 
-    // Visibility Security
+    let query = supabase
+      .from('doubts')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    // Students only see their own doubts
     if (!req.user?.isAdmin) {
-      // Students only see their own doubts (by email or UID)
-      const userEmail = req.user?.email?.toLowerCase();
-      doubts = doubts.filter(d => d.email.toLowerCase() === userEmail || (req.user?.uid && d.uid === req.user.uid));
+      query = query.or(`email.ilike.${userEmail},uid.eq.${myUid}`);
     }
 
-    // Sort: newest first
-    doubts.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    const { data: rows, error } = await query;
+    if (error) throw error;
+
+    // Filter out doubts hidden for this user
+    const doubts = (rows || []).filter(d => !(d.hidden_for || []).includes(myUid)).map(d => ({
+      id: d.id,
+      name: d.name,
+      email: d.email,
+      category: d.category,
+      question: d.question,
+      status: d.status,
+      date: d.created_at,
+      uid: d.uid || '',
+    }));
 
     res.json({ success: true, doubts });
   } catch (error: any) {
@@ -307,33 +299,36 @@ app.get('/api/doubts', authenticate as any, async (req: AuthRequest, res) => {
 app.get('/api/doubts/:id/messages', authenticate as any, async (req: AuthRequest, res) => {
   try {
     const doubtId = req.params.id;
-    const sheetId = await getQnaSheetId();
-    
+
     // Security: Verify user can access this doubt
     if (!req.user?.isAdmin) {
-      const doubtsSheet = await getSheet(sheetId, 'doubts', DOUBT_HEADERS);
-      const rows = await doubtsSheet.getRows();
-      const doubt = rows.find(r => r.get('ID') === doubtId);
-      if (!doubt || (doubt.get('Email').toLowerCase() !== req.user?.email?.toLowerCase() && doubt.get('UID') !== req.user?.uid)) {
+      const { data: doubt } = await supabase
+        .from('doubts')
+        .select('email, uid')
+        .eq('id', doubtId)
+        .single();
+
+      if (!doubt || (doubt.email.toLowerCase() !== req.user?.email?.toLowerCase() && doubt.uid !== req.user?.uid)) {
         return res.status(403).json({ success: false, error: 'Forbidden: Access denied' });
       }
     }
 
-    const messagesSheet = await getSheet(sheetId, 'messages', MESSAGE_HEADERS);
-    const rows = await messagesSheet.getRows();
+    const { data: rows, error } = await supabase
+      .from('messages')
+      .select('*')
+      .eq('doubt_id', doubtId)
+      .order('created_at', { ascending: true });
 
-    const messages = rows
-      .filter(row => row.get('DoubtID') === doubtId)
-      .map(row => ({
-        doubtId: row.get('DoubtID') || '',
-        senderName: row.get('SenderName') || '',
-        message: row.get('Message') || '',
-        isAdmin: String(row.get('IsAdmin')).toLowerCase() === 'true',
-        date: row.get('Date') || '',
-        hiddenFor: row.get('HiddenFor') || '',
-      }))
-      .filter(m => !m.hiddenFor.split(',').includes(req.user?.uid || ''))
-      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    if (error) throw error;
+
+    const myUid = req.user?.uid || '';
+    const messages = (rows || []).filter(m => !(m.hidden_for || []).includes(myUid)).map(m => ({
+      doubtId: m.doubt_id,
+      senderName: m.sender_name,
+      message: m.message,
+      isAdmin: m.is_admin,
+      date: m.created_at,
+    }));
 
     res.json({ success: true, messages });
   } catch (error: any) {
@@ -355,41 +350,44 @@ app.post('/api/doubts/:id/reply', authenticate as any, async (req: AuthRequest, 
       return res.status(403).json({ success: false, error: 'Forbidden: Admin access required' });
     }
 
-    const sheetId = await getQnaSheetId();
-    
+    const doubtId = req.params.id;
+
     // Security: Verify student owns the doubt
     if (!isAdmin) {
-      const doubtsSheet = await getSheet(sheetId, 'doubts', DOUBT_HEADERS);
-      const doubtRows = await doubtsSheet.getRows();
-      const doubtRow = doubtRows.find(row => row.get('ID') === req.params.id);
-      if (!doubtRow || (doubtRow.get('Email').toLowerCase() !== req.user?.email?.toLowerCase() && doubtRow.get('UID') !== req.user?.uid)) {
+      const { data: doubt } = await supabase
+        .from('doubts')
+        .select('email, uid')
+        .eq('id', doubtId)
+        .single();
+
+      if (!doubt || (doubt.email.toLowerCase() !== req.user?.email?.toLowerCase() && doubt.uid !== req.user?.uid)) {
         return res.status(403).json({ success: false, error: 'Forbidden: Access denied' });
       }
     }
 
-    const messagesSheet = await getSheet(sheetId, 'messages', MESSAGE_HEADERS);
-    const now = new Date().toISOString();
+    // Insert message
+    const { error: msgError } = await supabase
+      .from('messages')
+      .insert({
+        doubt_id: doubtId,
+        sender_name: senderName,
+        message,
+        is_admin: isAdmin || false,
+      });
 
-    await messagesSheet.addRow({
-      DoubtID: req.params.id,
-      SenderName: senderName,
-      Message: message,
-      IsAdmin: isAdmin ? 'true' : 'false',
-      Date: now,
-      HiddenFor: '',
-    });
+    if (msgError) throw msgError;
 
-    // Admin reply logic
+    // Admin reply: mark as resolved + send email
     if (isAdmin) {
-      const doubtsSheet = await getSheet(sheetId, 'doubts', DOUBT_HEADERS);
-      const doubtRows = await doubtsSheet.getRows();
-      const doubtRow = doubtRows.find(row => row.get('ID') === req.params.id);
+      const { data: doubt } = await supabase
+        .from('doubts')
+        .update({ status: 'resolved' })
+        .eq('id', doubtId)
+        .select('email, name, question, category')
+        .single();
 
-      if (doubtRow) {
-        doubtRow.set('Status', 'resolved');
-        await doubtRow.save();
-
-        sendReplyEmail(doubtRow.get('Email'), doubtRow.get('Name'), senderName, doubtRow.get('Question'), doubtRow.get('Category'), message)
+      if (doubt) {
+        sendReplyEmail(doubt.email, doubt.name, senderName, doubt.question, doubt.category, message)
           .catch(err => console.error('Email send failed:', err));
       }
     }
@@ -411,15 +409,12 @@ app.patch('/api/doubts/:id/status', authenticate as any, async (req: AuthRequest
       return res.status(400).json({ success: false, error: 'Invalid status' });
     }
 
-    const sheetId = await getQnaSheetId();
-    const doubtsSheet = await getSheet(sheetId, 'doubts', DOUBT_HEADERS);
-    const rows = await doubtsSheet.getRows();
-    const row = rows.find(r => r.get('ID') === req.params.id);
+    const { error } = await supabase
+      .from('doubts')
+      .update({ status })
+      .eq('id', req.params.id);
 
-    if (!row) return res.status(404).json({ success: false, error: 'Not found' });
-
-    row.set('Status', status);
-    await row.save();
+    if (error) throw error;
     res.json({ success: true });
   } catch (error: any) {
     console.error('❌ PATCH /api/doubts/:id/status error:', error.message);
@@ -433,40 +428,45 @@ app.delete('/api/doubts/:id', authenticate as any, async (req: AuthRequest, res)
     const doubtId = req.params.id;
     const { mode } = req.query; // 'me' or 'everyone'
     const myUid = req.user?.uid || '';
-    const sheetId = await getQnaSheetId();
-    
-    const doubtsSheet = await getSheet(sheetId, 'doubts', DOUBT_HEADERS);
-    const doubtRows = await doubtsSheet.getRows();
-    const doubtRow = doubtRows.find(r => r.get('ID') === doubtId);
 
-    if (!doubtRow) return res.status(404).json({ success: false, error: 'Doubt not found' });
+    // Fetch the doubt
+    const { data: doubt } = await supabase
+      .from('doubts')
+      .select('email, uid')
+      .eq('id', doubtId)
+      .single();
+
+    if (!doubt) return res.status(404).json({ success: false, error: 'Doubt not found' });
 
     // Security: Check if user owns the doubt or is admin
-    const isOwner = (doubtRow.get('Email').toLowerCase() === req.user?.email?.toLowerCase() || doubtRow.get('UID') === myUid);
+    const isOwner = (doubt.email.toLowerCase() === req.user?.email?.toLowerCase() || doubt.uid === myUid);
     if (!req.user?.isAdmin && !isOwner) {
       return res.status(403).json({ success: false, error: 'Forbidden' });
     }
 
     if (mode === 'everyone') {
-      // Must be admin or owner to delete for everyone
-      await doubtRow.delete();
-
-      // Also delete messages
-      const messagesSheet = await getSheet(sheetId, 'messages', MESSAGE_HEADERS);
-      const messageRows = await messagesSheet.getRows();
-      for (const row of messageRows) {
-        if (row.get('DoubtID') === doubtId) {
-          await row.delete();
-        }
+      // ONLY admins can delete for everyone
+      if (!req.user?.isAdmin) {
+        return res.status(403).json({ success: false, error: 'Forbidden: Only admins can delete for everyone' });
       }
+      // CASCADE will auto-delete messages
+      const { error } = await supabase.from('doubts').delete().eq('id', doubtId);
+      if (error) throw error;
     } else {
-      // Delete for me: add UID to HiddenFor
-      const currentHidden = doubtRow.get('HiddenFor') || '';
-      const hiddenList = currentHidden ? currentHidden.split(',') : [];
-      if (!hiddenList.includes(myUid)) {
-        hiddenList.push(myUid);
-        doubtRow.set('HiddenFor', hiddenList.join(','));
-        await doubtRow.save();
+      // Delete for me: add UID to hidden_for array
+      const { data: current } = await supabase
+        .from('doubts')
+        .select('hidden_for')
+        .eq('id', doubtId)
+        .single();
+
+      const hiddenFor = current?.hidden_for || [];
+      if (!hiddenFor.includes(myUid)) {
+        const { error } = await supabase
+          .from('doubts')
+          .update({ hidden_for: [...hiddenFor, myUid] })
+          .eq('id', doubtId);
+        if (error) throw error;
       }
     }
 
@@ -481,20 +481,18 @@ app.delete('/api/doubts/:id', authenticate as any, async (req: AuthRequest, res)
    LEGACY API ROUTES
 ========================= */
 
-async function saveToGoogleSheet(data: any, type: 'qna' | 'contact') {
-  const sheetId = type === 'contact' ? process.env.GOOGLE_SHEET_ID_CONTACT : await getQnaSheetId();
+async function saveToGoogleSheet(data: any) {
+  const sheetId = process.env.GOOGLE_SHEET_ID_CONTACT;
   if (!sheetId) {
-    console.error(`❌ [${type}] Missing Sheet ID in environment variables`);
-    throw new Error(`Technical Error: Sheet ID for ${type} is not configured.`);
+    console.error('❌ [contact] Missing Sheet ID in environment variables');
+    throw new Error('Technical Error: Sheet ID for contact is not configured.');
   }
 
   // Debug: Log a snippet of the ID (Safe for Vercel logs)
-  console.log(`[${type}] Using Sheet ID: ${sheetId.substring(0, 5)}...${sheetId.substring(sheetId.length - 4)}`);
+  console.log(`[contact] Using Sheet ID: ${sheetId.substring(0, 5)}...${sheetId.substring(sheetId.length - 4)}`);
 
-  const tabName = type === 'qna' ? 'doubts' : 'contactform';
-  const headers = type === 'qna'
-    ? ['ID', 'Name', 'Phone', 'Category', 'Question', 'Status', 'Date', 'UID']
-    : ['Date', 'Full Name', 'Email', 'Message'];
+  const tabName = 'contactform';
+  const headers = ['Date', 'Full Name', 'Email', 'Message'];
 
   try {
     const sheet = await getSheet(sheetId, tabName, headers);
@@ -504,55 +502,39 @@ async function saveToGoogleSheet(data: any, type: 'qna' | 'contact') {
     const existingHeaders = sheet.headerValues.map(h => h.toLowerCase().trim());
     
     let rowData: any = {};
-    if (type === 'qna') {
-      rowData = { 
-        ID: crypto.randomUUID(),
-        Name: data.name || '', 
-        Phone: data.phone || '', 
-        Category: data.category || 'General', 
-        Question: data.question || '',
-        Status: 'pending',
-        Date: now,
-        UID: data.uid || ''
-      };
-    } else {
-      // Find matching keys for contact form
-      const mappings = [
-        { key: 'Date', value: now },
-        { key: 'Full Name', value: data.fullName || data.name || '(No Name)', aliases: ['name', 'full name', 'fullname', 'fullname', 'full_name', 'names'] },
-        { key: 'Email', value: data.email || data.emailAddress || '(No Email)', aliases: ['email', 'email address', 'email_address', 'emailaddress', 'emails'] },
-        { key: 'Message', value: data.message || data.msg || data.body || data.question || '(No Message)', aliases: ['message', 'question', 'msg', 'body', 'messages', 'queries', 'query'] }
-      ];
+    // Find matching keys for contact form
+    const mappings = [
+      { key: 'Date', value: now },
+      { key: 'Full Name', value: data.fullName || data.name || '(No Name)', aliases: ['name', 'full name', 'fullname', 'full_name', 'names'] },
+      { key: 'Email', value: data.email || data.emailAddress || '(No Email)', aliases: ['email', 'email address', 'email_address', 'emailaddress', 'emails'] },
+      { key: 'Message', value: data.message || data.msg || data.body || data.question || '(No Message)', aliases: ['message', 'question', 'msg', 'body', 'messages', 'queries', 'query'] }
+    ];
 
-      console.log(`ℹ️ [${type}] Mapping data:`, JSON.stringify(data));
+    console.log('ℹ️ [contact] Mapping data:', JSON.stringify(data));
 
-      mappings.forEach(m => {
-        // Try exact match or alias
-        const match = sheet.headerValues.find(h => 
-          h.toLowerCase().trim() === m.key.toLowerCase() || 
-          (m.aliases && m.aliases.includes(h.toLowerCase().trim()))
-        );
-        if (match) {
-          rowData[match] = m.value;
-        } else {
-          // Fallback to default header name if sheet is new/empty
-          // NOTE: addRow only writes to columns that exist in headerValues
-          rowData[m.key] = m.value;
-        }
-      });
-      
-      console.log(`ℹ️ [${type}] Final rowData to add:`, JSON.stringify(rowData));
-    }
+    mappings.forEach(m => {
+      const match = sheet.headerValues.find(h => 
+        h.toLowerCase().trim() === m.key.toLowerCase() || 
+        (m.aliases && m.aliases.includes(h.toLowerCase().trim()))
+      );
+      if (match) {
+        rowData[match] = m.value;
+      } else {
+        rowData[m.key] = m.value;
+      }
+    });
+    
+    console.log('ℹ️ [contact] Final rowData to add:', JSON.stringify(rowData));
 
     await sheet.addRow(rowData);
-    console.log(`✅ [${type}] Row added successfully to "${tabName}"`);
+    console.log('✅ [contact] Row added successfully to "contactform"');
   } catch (error: any) {
-    console.error(`❌ [${type}] Google Sheet Error:`, error.message);
+    console.error('❌ [contact] Google Sheet Error:', error.message);
     if (error.message.includes('403') || error.message.includes('permission')) {
       throw new Error(`Permission Denied: Ensure you have shared the Google Sheet with the Service Account email: ${process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL}`);
     }
     if (error.message.includes('404')) {
-      throw new Error(`Sheet Not Found: Ensure the Sheet ID "${sheetId.substring(0, 5)}..." is correct and the tab exists.`);
+      throw new Error(`Sheet Not Found: Ensure the Sheet ID is correct and the tab exists.`);
     }
     throw error;
   }
@@ -565,8 +547,9 @@ app.get('/api/health', (req, res) => {
     env: {
       email: !!process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
       key: !!process.env.GOOGLE_PRIVATE_KEY,
-      sheetQna: !!process.env.GOOGLE_SHEET_ID_QNA,
       sheetContact: !!process.env.GOOGLE_SHEET_ID_CONTACT,
+      supabaseUrl: !!process.env.SUPABASE_URL,
+      supabaseKey: !!process.env.SUPABASE_SERVICE_ROLE_KEY,
       smtp: !!process.env.SMTP_EMAIL,
       firebase: !!admin.apps.length,
     }
@@ -576,7 +559,7 @@ app.get('/api/health', (req, res) => {
 app.post('/api/contact', async (req, res) => {
   console.log('📬 Received contact form submission:', JSON.stringify(req.body));
   try {
-    await saveToGoogleSheet(req.body, 'contact');
+    await saveToGoogleSheet(req.body);
     res.json({ success: true });
   } catch (error: any) {
     console.error('❌ Contact error:', error);
