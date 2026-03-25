@@ -123,11 +123,13 @@ async function getSheet(sheetId: string, tabName: string, defaultHeaders: string
   if (!sheet) {
     // Create the tab if it doesn't exist
     sheet = await doc.addSheet({ title: tabName, headerValues: defaultHeaders });
-    console.log(`✅ Created new sheet tab: ${tabName}`);
+    console.log(`✅ Created new sheet tab: "${tabName}"`);
   } else {
     try {
       await sheet.loadHeaderRow();
-    } catch {
+      console.log(`ℹ️ Loaded header row for tab: "${sheet.title}" (${sheet.headerValues.join(', ')})`);
+    } catch (error) {
+      console.warn(`⚠️ Could not load headers for "${sheet.title}", setting defaults...`);
       await sheet.setHeaderRow(defaultHeaders);
     }
   }
@@ -517,10 +519,12 @@ async function saveToGoogleSheet(data: any, type: 'qna' | 'contact') {
       // Find matching keys for contact form
       const mappings = [
         { key: 'Date', value: now },
-        { key: 'Full Name', value: data.fullName || '', aliases: ['name', 'full name', 'fullname'] },
-        { key: 'Email', value: data.email || '', aliases: ['email', 'email address'] },
-        { key: 'Message', value: data.message || '', aliases: ['message', 'question', 'msg', 'body'] }
+        { key: 'Full Name', value: data.fullName || data.name || '(No Name)', aliases: ['name', 'full name', 'fullname', 'fullname', 'full_name', 'names'] },
+        { key: 'Email', value: data.email || data.emailAddress || '(No Email)', aliases: ['email', 'email address', 'email_address', 'emailaddress', 'emails'] },
+        { key: 'Message', value: data.message || data.msg || data.body || data.question || '(No Message)', aliases: ['message', 'question', 'msg', 'body', 'messages', 'queries', 'query'] }
       ];
+
+      console.log(`ℹ️ [${type}] Mapping data:`, JSON.stringify(data));
 
       mappings.forEach(m => {
         // Try exact match or alias
@@ -532,9 +536,12 @@ async function saveToGoogleSheet(data: any, type: 'qna' | 'contact') {
           rowData[match] = m.value;
         } else {
           // Fallback to default header name if sheet is new/empty
+          // NOTE: addRow only writes to columns that exist in headerValues
           rowData[m.key] = m.value;
         }
       });
+      
+      console.log(`ℹ️ [${type}] Final rowData to add:`, JSON.stringify(rowData));
     }
 
     await sheet.addRow(rowData);
@@ -567,6 +574,7 @@ app.get('/api/health', (req, res) => {
 });
 
 app.post('/api/contact', async (req, res) => {
+  console.log('📬 Received contact form submission:', JSON.stringify(req.body));
   try {
     await saveToGoogleSheet(req.body, 'contact');
     res.json({ success: true });
