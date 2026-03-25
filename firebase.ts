@@ -193,15 +193,19 @@ export const signInWithGoogle = async () => {
     return user;
   } catch (error: any) {
     // Handle specific Firebase Auth errors
-    if (error.code === 'auth/popup-blocked') {
+    if (error.code === 'auth/popup-closed-by-user' || error.code === 'auth/cancelled-popup-request') {
+      // User closed the popup or clicked sign-in twice — not an error, just ignore
+      return null;
+    } else if (error.code === 'auth/popup-blocked') {
       throw new Error("Sign-in popup was blocked by your browser. Please allow popups for this site.");
     } else if (error.code === 'auth/configuration-not-found') {
-      throw new Error("Google Sign-In is not enabled in the Firebase Console. Please enable it under Authentication > Sign-in method.");
-    } else if (error.code === 'auth/cancelled-popup-request') {
-      // This happens if user clicks twice quickly, we can ignore the second one
-      return null;
+      throw new Error("Google Sign-In is not enabled. Please contact the administrator.");
+    } else if (error.code === 'auth/network-request-failed') {
+      throw new Error("Network error. Please check your internet connection and try again.");
     }
-    throw error;
+    // Generic fallback — never show raw Firebase errors to the user
+    console.error('Sign-in error:', error.code, error.message);
+    throw new Error("Something went wrong during sign-in. Please try again.");
   }
 };
 

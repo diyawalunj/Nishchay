@@ -17,25 +17,16 @@ const PORT = 3000;
 app.use(cors());
 app.use(express.json());
 
-// Initialize Firebase Admin
+// Initialize Firebase Admin (project ID only — sufficient for verifyIdToken)
 try {
-  const { GOOGLE_SERVICE_ACCOUNT_EMAIL, GOOGLE_PRIVATE_KEY, VITE_FIREBASE_PROJECT_ID } = process.env;
-  if (GOOGLE_SERVICE_ACCOUNT_EMAIL && GOOGLE_PRIVATE_KEY) {
-    const privateKey = GOOGLE_PRIVATE_KEY
-      .replace(/\\n/g, '\n')
-      .replace(/^"(.*)"$/, '$1')
-      .trim();
-
+  const { VITE_FIREBASE_PROJECT_ID } = process.env;
+  if (VITE_FIREBASE_PROJECT_ID) {
     admin.initializeApp({
-      credential: admin.credential.cert({
-        projectId: VITE_FIREBASE_PROJECT_ID,
-        clientEmail: GOOGLE_SERVICE_ACCOUNT_EMAIL,
-        privateKey: privateKey,
-      }),
+      projectId: VITE_FIREBASE_PROJECT_ID,
     });
-    console.log('✅ Firebase Admin initialized');
+    console.log('✅ Firebase Admin initialized (projectId:', VITE_FIREBASE_PROJECT_ID, ')');
   } else {
-    console.warn('⚠️ Firebase Admin NOT initialized (missing credentials)');
+    console.warn('⚠️ Firebase Admin NOT initialized (missing VITE_FIREBASE_PROJECT_ID)');
   }
 } catch (error: any) {
   console.error('❌ Firebase Admin initialization error:', error.message);
