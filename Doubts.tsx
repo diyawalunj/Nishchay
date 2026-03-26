@@ -49,10 +49,10 @@ const ChatMessage = memo(function ChatMessage({ msg, onReply }: { msg: Message; 
   return (
     <motion.div 
       drag="x"
-      dragConstraints={{ left: 0, right: 100 }}
+      dragConstraints={{ left: isMe ? -100 : 0, right: isMe ? 0 : 100 }}
       dragElastic={0.2}
       onDragEnd={(_, info) => {
-        if (info.offset.x > 80) {
+        if ((!isMe && info.offset.x > 80) || (isMe && info.offset.x < -80)) {
           onReply(msg);
         }
       }}

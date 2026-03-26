@@ -40,10 +40,10 @@ const AdminChatMessage = memo(function AdminChatMessage({ msg, onReply }: { msg:
   return (
     <motion.div 
       drag="x"
-      dragConstraints={{ left: -100, right: 0 }}
+      dragConstraints={{ left: msg.isAdmin ? -100 : 0, right: msg.isAdmin ? 0 : 100 }}
       dragElastic={0.2}
       onDragEnd={(_, info) => {
-        if (info.offset.x < -80) {
+        if ((!msg.isAdmin && info.offset.x > 80) || (msg.isAdmin && info.offset.x < -80)) {
           onReply(msg);
         }
       }}

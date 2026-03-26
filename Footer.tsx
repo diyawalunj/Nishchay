@@ -43,7 +43,7 @@ export default function Footer() {
               <span className="w-4 h-px bg-white/20"></span>
               Quick Links
             </h4>
-            <ul className="space-y-4">
+            <ul className="space-y-4 stagger-children">
               {FOOTER_LINKS.quickLinks.map((link) => (
                 <li key={link.name}>
                   <Link to={link.href} className="text-gray-400 hover:text-white transition-all duration-300 text-sm font-medium hover:translate-x-1 inline-block">{link.name}</Link>
@@ -57,7 +57,7 @@ export default function Footer() {
               <span className="w-4 h-px bg-white/20"></span>
               Resources
             </h4>
-            <ul className="space-y-4">
+            <ul className="space-y-4 stagger-children">
               {FOOTER_LINKS.resources.map((link) => (
                 <li key={link.name}>
                   <Link to={link.href} className="text-gray-400 hover:text-white transition-all duration-300 text-sm font-medium hover:translate-x-1 inline-block">{link.name}</Link>

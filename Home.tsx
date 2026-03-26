@@ -210,7 +210,7 @@ export default function Home() {
 
       {/* Hero Quote Section */}
       <section className="py-32 md:py-48 bg-white overflow-hidden relative">
-        <div className="absolute top-0 left-0 w-full h-px bg-gradient-to-r from-transparent via-gray-200 to-transparent"></div>
+        <div className="section-divider w-full absolute top-0"></div>
         <div className="max-w-5xl mx-auto px-4 text-center">
           <div className="flex justify-center mb-12">
             <Quote className="text-[#1B4332]/10 animate-float" size={64} />
@@ -291,7 +291,7 @@ export default function Home() {
                 whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true, margin: "-50px" }}
                 transition={{ delay: idx * 0.08, duration: 0.5, ease: "easeOut" }}
-                className="bg-white p-10 rounded-[2rem] border border-gray-100 shadow-sm card-hover-shadow text-left group relative overflow-hidden"
+                className="bg-white p-10 rounded-[2rem] border border-gray-100 shadow-sm card-hover-shadow card-lift text-left group relative overflow-hidden"
               >
                 <div className="absolute -right-8 -bottom-8 opacity-[0.03] group-hover:opacity-[0.08] transition-opacity duration-500">
                   <service.icon size={160} />

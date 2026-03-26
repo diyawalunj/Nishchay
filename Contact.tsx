@@ -152,7 +152,7 @@ const Contact: React.FC = () => {
             className="space-y-8"
           >
             {/* Contact Cards */}
-            <div className="bg-white p-10 rounded-[2rem] shadow-[0_40px_100px_rgba(0,0,0,0.03)] flex items-center gap-8 border border-gray-100 group hover:border-[#1B4332]/20 transition-all duration-500">
+            <div className="bg-white p-10 rounded-[2rem] shadow-[0_40px_100px_rgba(0,0,0,0.03)] flex items-center gap-8 border border-gray-100 group hover:border-[#1B4332]/20 transition-all duration-500 card-lift">
               <div className="w-16 h-16 rounded-2xl bg-[#1B4332]/5 flex items-center justify-center text-[#1B4332] group-hover:bg-[#1B4332] group-hover:text-white transition-all duration-500 shadow-inner">
                 <Mail size={28} />
               </div>
@@ -162,7 +162,7 @@ const Contact: React.FC = () => {
               </div>
             </div>
 
-            <div className="bg-white p-10 rounded-[2rem] shadow-[0_40px_100px_rgba(0,0,0,0.03)] flex items-center gap-8 border border-gray-100 group hover:border-[#1B4332]/20 transition-all duration-500">
+            <div className="bg-white p-10 rounded-[2rem] shadow-[0_40px_100px_rgba(0,0,0,0.03)] flex items-center gap-8 border border-gray-100 group hover:border-[#1B4332]/20 transition-all duration-500 card-lift">
               <div className="w-16 h-16 rounded-2xl bg-[#1B4332]/5 flex items-center justify-center text-[#1B4332] group-hover:bg-[#1B4332] group-hover:text-white transition-all duration-500 shadow-inner">
                 <Phone size={28} />
               </div>
@@ -172,7 +172,7 @@ const Contact: React.FC = () => {
               </div>
             </div>
 
-            <div className="bg-white p-10 rounded-[2.5rem] shadow-[0_40px_100px_rgba(0,0,0,0.03)] flex items-center gap-8 border border-gray-100 group hover:border-[#1B4332]/20 transition-all duration-500">
+            <div className="bg-white p-10 rounded-[2.5rem] shadow-[0_40px_100px_rgba(0,0,0,0.03)] flex items-center gap-8 border border-gray-100 group hover:border-[#1B4332]/20 transition-all duration-500 card-lift">
               <div className="w-16 h-16 rounded-2xl bg-[#1B4332]/5 flex items-center justify-center text-[#1B4332] group-hover:bg-[#1B4332] group-hover:text-white transition-all duration-500 shadow-inner">
                 <MapPin size={28} />
               </div>

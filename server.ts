@@ -179,47 +179,53 @@ async function sendAdminNotification(
   const color = isDoubt ? '#1B4332' : '#050A0F';
 
   const html = `
-    <div style="font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; background-color: #fcfcfc; padding: 40px 20px;">
-      <!-- Header -->
-      <div style="background: linear-gradient(135deg, ${color} 0%, #1a1a1a 100%); border-radius: 24px 24px 0 0; padding: 48px 32px; text-align: center; box-shadow: 0 10px 25px rgba(0,0,0,0.1);">
-        <h1 style="color: white; font-size: 28px; font-weight: 900; margin: 0; letter-spacing: 4px; text-transform: uppercase;">NISHCHAY DEFENCE</h1>
-        <div style="height: 2px; width: 40px; background: #2D6A4F; margin: 16px auto;"></div>
-        <p style="color: rgba(255,255,255,0.7); font-size: 11px; font-weight: 800; margin: 0; letter-spacing: 3px; text-transform: uppercase;">${title}</p>
-      </div>
+    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; margin: 0; padding: 0; width: 100%; background-color: #fcfcfc;">
+      <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="max-width: 560px; margin: 0 auto; padding: 20px 12px;">
+        <tr><td>
+          <!-- Header -->
+          <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="background: linear-gradient(135deg, ${color} 0%, #1a1a1a 100%); border-radius: 20px 20px 0 0;">
+            <tr><td style="padding: 36px 24px; text-align: center;">
+              <h1 style="color: white; font-size: 22px; font-weight: 900; margin: 0; letter-spacing: 3px; text-transform: uppercase;">NISHCHAY DEFENCE</h1>
+              <div style="height: 2px; width: 32px; background: #2D6A4F; margin: 12px auto;"></div>
+              <p style="color: rgba(255,255,255,0.7); font-size: 10px; font-weight: 800; margin: 0; letter-spacing: 2px; text-transform: uppercase;">${title}</p>
+            </td></tr>
+          </table>
+          <!-- Content -->
+          <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="background: white; border-radius: 0 0 20px 20px; border: 1px solid #f0f0f0; border-top: none;">
+            <tr><td style="padding: 28px 20px;">
+              <p style="color: #9ca3af; font-size: 10px; font-weight: 800; letter-spacing: 2px; text-transform: uppercase; margin: 0 0 10px;">SUBMITTED BY</p>
+              <table role="presentation" cellpadding="0" cellspacing="0"><tr>
+                <td style="width: 36px; height: 36px; border-radius: 10px; background: #f3f4f6; text-align: center; vertical-align: middle; font-weight: 900; color: ${color}; font-size: 16px;">${data.name.charAt(0)}</td>
+                <td style="padding-left: 10px; vertical-align: middle;">
+                  <p style="color: #1a1a1a; font-size: 15px; font-weight: 700; margin: 0;">${data.name}</p>
+                  <p style="color: #6b7280; font-size: 12px; margin: 2px 0 0;">${data.email}</p>
+                </td>
+              </tr></table>
 
-      <!-- Content -->
-      <div style="background: white; border-radius: 0 0 24px 24px; padding: 40px 32px; border: 1px solid #f0f0f0; border-top: none; box-shadow: 0 4px 6px rgba(0,0,0,0.02);">
-        <div style="margin-bottom: 32px;">
-          <p style="color: #9ca3af; font-size: 10px; font-weight: 800; letter-spacing: 2px; text-transform: uppercase; margin: 0 0 12px;">SUBMITTED BY</p>
-          <div style="display: flex; align-items: center; gap: 12px;">
-            <div style="width: 40px; height: 40px; border-radius: 12px; background: #f3f4f6; display: flex; align-items: center; justify-content: center; font-weight: 900; color: ${color}; font-size: 18px;">${data.name.charAt(0)}</div>
-            <div>
-              <p style="color: #1a1a1a; font-size: 16px; font-weight: 700; margin: 0;">${data.name}</p>
-              <p style="color: #6b7280; font-size: 13px; margin: 2px 0 0;">${data.email}</p>
-            </div>
-          </div>
-        </div>
+              ${isDoubt ? `
+              <div style="margin-top: 24px;">
+                <p style="color: #9ca3af; font-size: 10px; font-weight: 800; letter-spacing: 2px; text-transform: uppercase; margin: 0 0 8px;">CATEGORY</p>
+                <span style="background: #f0fdf4; color: #166534; padding: 5px 10px; border-radius: 6px; font-size: 11px; font-weight: 700; border: 1px solid #bbf7d0;">${data.category}</span>
+              </div>` : ''}
 
-        ${isDoubt ? `
-        <div style="margin-bottom: 32px;">
-          <p style="color: #9ca3af; font-size: 10px; font-weight: 800; letter-spacing: 2px; text-transform: uppercase; margin: 0 0 12px;">CATEGORY</p>
-          <span style="background: #f0fdf4; color: #166534; padding: 6px 12px; border-radius: 8px; font-size: 12px; font-weight: 700; border: 1px solid #bbf7d0;">${data.category}</span>
-        </div>` : ''}
+              <div style="background: #f8fafc; border-radius: 16px; padding: 18px; border: 1px solid #e2e8f0; margin-top: 24px;">
+                <p style="color: #9ca3af; font-size: 10px; font-weight: 800; letter-spacing: 2px; text-transform: uppercase; margin: 0 0 8px;">${isDoubt ? 'QUESTION' : 'MESSAGE'}</p>
+                <p style="color: #334155; font-size: 14px; line-height: 1.6; margin: 0; white-space: pre-wrap; word-break: break-word;">${data.message}</p>
+              </div>
 
-        <div style="background: #f8fafc; border-radius: 20px; padding: 24px; border: 1px solid #e2e8f0;">
-          <p style="color: #9ca3af; font-size: 10px; font-weight: 800; letter-spacing: 2px; text-transform: uppercase; margin: 0 0 12px;">${isDoubt ? 'QUESTION' : 'MESSAGE'}</p>
-          <p style="color: #334155; font-size: 15px; line-height: 1.6; margin: 0; white-space: pre-wrap;">${data.message}</p>
-        </div>
-
-        <div style="text-align: center; margin-top: 40px;">
-          <a href="https://nishchay-defence.vercel.app/admin" style="background: ${color}; color: white; padding: 18px 36px; border-radius: 16px; text-decoration: none; font-weight: 900; font-size: 13px; letter-spacing: 2px; text-transform: uppercase; display: inline-block; transition: all 0.3s ease; box-shadow: 0 10px 20px rgba(0,0,0,0.1);">ACCESS ADMIN PANEL</a>
-        </div>
-      </div>
-
-      <!-- Footer -->
-      <div style="text-align: center; padding-top: 32px;">
-        <p style="color: #cbd5e1; font-size: 11px; font-weight: 600; letter-spacing: 1px; margin: 0;">&copy; 2024 NISHCHAY DEFENCE ACADEMY</p>
-      </div>
+              <div style="text-align: center; margin-top: 32px;">
+                <a href="https://nishchay-gules.vercel.app/admin" style="background: ${color}; color: white; padding: 14px 28px; border-radius: 12px; text-decoration: none; font-weight: 900; font-size: 12px; letter-spacing: 2px; text-transform: uppercase; display: inline-block;">ACCESS ADMIN PANEL</a>
+              </div>
+            </td></tr>
+          </table>
+          <!-- Footer -->
+          <table role="presentation" cellpadding="0" cellspacing="0" width="100%">
+            <tr><td style="text-align: center; padding: 24px 0;">
+              <p style="color: #cbd5e1; font-size: 10px; font-weight: 600; letter-spacing: 1px; margin: 0;">&copy; 2025 NISHCHAY DEFENCE ACADEMY</p>
+            </td></tr>
+          </table>
+        </td></tr>
+      </table>
     </div>
   `;
 
@@ -247,43 +253,48 @@ async function sendReplyEmail(
   if (!emailTransporter) return;
 
   const html = `
-    <div style="font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; background-color: #fcfcfc; padding: 40px 20px;">
-      <!-- Header -->
-      <div style="background: linear-gradient(135deg, #1B4332 0%, #081C15 100%); border-radius: 24px 24px 0 0; padding: 48px 32px; text-align: center; box-shadow: 0 10px 25px rgba(0,0,0,0.1);">
-        <h1 style="color: white; font-size: 28px; font-weight: 900; margin: 0; letter-spacing: 4px; text-transform: uppercase;">NISHCHAY DEFENCE</h1>
-        <div style="height: 2px; width: 40px; background: #40916c; margin: 16px auto;"></div>
-        <p style="color: rgba(255,255,255,0.7); font-size: 11px; font-weight: 800; margin: 0; letter-spacing: 3px; text-transform: uppercase;">FOUNDER'S RESPONSE</p>
-      </div>
+    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; margin: 0; padding: 0; width: 100%; background-color: #fcfcfc;">
+      <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="max-width: 560px; margin: 0 auto; padding: 20px 12px;">
+        <tr><td>
+          <!-- Header -->
+          <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="background: linear-gradient(135deg, #1B4332 0%, #081C15 100%); border-radius: 20px 20px 0 0;">
+            <tr><td style="padding: 36px 24px; text-align: center;">
+              <h1 style="color: white; font-size: 22px; font-weight: 900; margin: 0; letter-spacing: 3px; text-transform: uppercase;">NISHCHAY DEFENCE</h1>
+              <div style="height: 2px; width: 32px; background: #40916c; margin: 12px auto;"></div>
+              <p style="color: rgba(255,255,255,0.7); font-size: 10px; font-weight: 800; margin: 0; letter-spacing: 2px; text-transform: uppercase;">FOUNDER'S RESPONSE</p>
+            </td></tr>
+          </table>
+          <!-- Content -->
+          <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="background: white; border-radius: 0 0 20px 20px; border: 1px solid #f0f0f0; border-top: none;">
+            <tr><td style="padding: 28px 20px;">
+              <p style="color: #6b7280; font-size: 14px; margin: 0 0 20px;">Hi <strong>${studentName}</strong>,</p>
+              <p style="color: #1a1a1a; font-size: 16px; font-weight: 800; margin: 0 0 24px;">
+                <span style="color: #1B4332;">${founderName}</span> just replied to your doubt!
+              </p>
 
-      <!-- Content -->
-      <div style="background: white; border-radius: 0 0 24px 24px; padding: 40px 32px; border: 1px solid #f0f0f0; border-top: none; box-shadow: 0 4px 6px rgba(0,0,0,0.02);">
-        <p style="color: #6b7280; font-size: 15px; margin: 0 0 24px;">Hi <strong>${studentName}</strong>,</p>
-        
-        <p style="color: #1a1a1a; font-size: 18px; font-weight: 800; margin: 0 0 32px; tracking-tight: -0.02em;">
-          <span style="color: #1B4332;">${founderName}</span> just replied to your doubt!
-        </p>
+              <div style="background: #f0fdf4; border-radius: 16px; padding: 18px; border: 1px solid #dcfce7; margin-bottom: 20px;">
+                <p style="color: #15803d; font-size: 10px; font-weight: 800; letter-spacing: 2px; text-transform: uppercase; margin: 0 0 8px;">&#9679; RESPONSE</p>
+                <p style="color: #166534; font-size: 14px; font-weight: 600; line-height: 1.6; margin: 0; word-break: break-word;">${adminReply}</p>
+              </div>
 
-        <div style="background: #f0fdf4; border-radius: 20px; padding: 24px; border: 1px solid #dcfce7; margin-bottom: 24px;">
-          <p style="color: #15803d; font-size: 10px; font-weight: 800; letter-spacing: 2px; text-transform: uppercase; margin: 0 0 12px; display: flex; align-items: center;">
-            <span style="margin-right: 8px;">●</span> RESPONSE
-          </p>
-          <p style="color: #166534; font-size: 15px; font-weight: 600; line-height: 1.6; margin: 0;">${adminReply}</p>
-        </div>
+              <div style="background: #f8fafc; border-radius: 16px; padding: 18px; border: 1px solid #f1f5f9;">
+                <p style="color: #94a3b8; font-size: 10px; font-weight: 800; letter-spacing: 2px; text-transform: uppercase; margin: 0 0 8px;">YOUR DOUBT &middot; ${category}</p>
+                <p style="color: #475569; font-size: 13px; line-height: 1.6; margin: 0; font-style: italic; word-break: break-word;">&quot;${originalDoubt}&quot;</p>
+              </div>
 
-        <div style="background: #f8fafc; border-radius: 20px; padding: 24px; border: 1px solid #f1f5f9;">
-          <p style="color: #94a3b8; font-size: 10px; font-weight: 800; letter-spacing: 2px; text-transform: uppercase; margin: 0 0 12px;">YOUR DOUBT · ${category}</p>
-          <p style="color: #475569; font-size: 14px; line-height: 1.6; margin: 0; font-style: italic;">"${originalDoubt}"</p>
-        </div>
-
-        <div style="text-align: center; margin-top: 40px;">
-          <a href="https://nishchay-defence.vercel.app/doubts" style="background: #1B4332; color: white; padding: 18px 36px; border-radius: 16px; text-decoration: none; font-weight: 900; font-size: 13px; letter-spacing: 2px; text-transform: uppercase; display: inline-block; transition: all 0.3s ease; box-shadow: 0 10px 20px rgba(27,67,50,0.15);">VIEW CONVERSATION</a>
-        </div>
-      </div>
-
-      <!-- Footer -->
-      <div style="text-align: center; padding-top: 32px;">
-        <p style="color: #cbd5e1; font-size: 11px; font-weight: 600; letter-spacing: 1px; margin: 0;">&copy; 2024 NISHCHAY DEFENCE ACADEMY</p>
-      </div>
+              <div style="text-align: center; margin-top: 32px;">
+                <a href="https://nishchay-gules.vercel.app/doubts" style="background: #1B4332; color: white; padding: 14px 28px; border-radius: 12px; text-decoration: none; font-weight: 900; font-size: 12px; letter-spacing: 2px; text-transform: uppercase; display: inline-block;">VIEW CONVERSATION</a>
+              </div>
+            </td></tr>
+          </table>
+          <!-- Footer -->
+          <table role="presentation" cellpadding="0" cellspacing="0" width="100%">
+            <tr><td style="text-align: center; padding: 24px 0;">
+              <p style="color: #cbd5e1; font-size: 10px; font-weight: 600; letter-spacing: 1px; margin: 0;">&copy; 2025 NISHCHAY DEFENCE ACADEMY</p>
+            </td></tr>
+          </table>
+        </td></tr>
+      </table>
     </div>
   `;
 
