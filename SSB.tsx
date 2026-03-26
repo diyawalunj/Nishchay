@@ -1,10 +1,10 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { 
-  Megaphone, 
-  Brain, 
-  Users, 
-  UserCheck, 
+import {
+  Megaphone,
+  Brain,
+  Users,
+  UserCheck,
   CheckCircle,
   Check,
   ExternalLink,
@@ -45,7 +45,7 @@ const ssbProcess = [
 ];
 
 const ssbTips = [
-  "Be genuine — SSB tests your personality, not acting skills.",
+  "Be genuine; SSB tests your personality, not acting skills.",
   "Read newspapers daily — stay updated on defence and national affairs.",
   "Practice group discussions with friends regularly.",
   "Work on physical fitness — it reflects in your body language.",
@@ -80,10 +80,10 @@ const SSB: React.FC = () => {
                 <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')] opacity-10"></div>
                 <div className="absolute -top-24 -left-24 w-48 h-48 bg-[#1B4332]/20 blur-[80px] rounded-full"></div>
                 <div className="absolute -bottom-24 -right-24 w-48 h-48 bg-[#1B4332]/10 blur-[80px] rounded-full"></div>
-                
+
                 <div className="relative z-10 flex items-center gap-6">
-                  <motion.div 
-                    animate={{ 
+                  <motion.div
+                    animate={{
                       boxShadow: ["0 0 20px rgba(27,67,50,0.3)", "0 0 40px rgba(27,67,50,0.6)", "0 0 20px rgba(27,67,50,0.3)"]
                     }}
                     transition={{ duration: 3, repeat: Infinity }}
@@ -101,15 +101,15 @@ const SSB: React.FC = () => {
                     </div>
                   </div>
                 </div>
-                
-                <button 
+
+                <button
                   onClick={() => setShowOLQEngine(false)}
                   className="relative z-10 w-12 h-12 flex items-center justify-center hover:bg-white/10 rounded-2xl transition-all duration-300 group"
                 >
                   <X size={32} className="text-white/30 group-hover:text-white group-hover:rotate-90 transition-all duration-500" />
                 </button>
               </div>
-              
+
               {/* Content */}
               <div className="flex-grow relative bg-white">
                 <div className="absolute inset-0 flex items-center justify-center bg-[#0A0F14]">
@@ -118,8 +118,8 @@ const SSB: React.FC = () => {
                     <p className="text-[#1B4332] font-black text-[10px] tracking-[0.3em] uppercase">Initializing Engine...</p>
                   </div>
                 </div>
-                <iframe 
-                  src="https://olq-engine.vercel.app/" 
+                <iframe
+                  src="https://olq-engine.vercel.app/"
                   className="absolute inset-0 w-full h-full border-none z-10"
                   title="OLQ Engine"
                 />
@@ -135,8 +135,8 @@ const SSB: React.FC = () => {
           <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/camouflage.png')]"></div>
           <div className="absolute top-0 left-0 right-0 h-64 bg-gradient-to-b from-[#1B4332]/60 to-transparent"></div>
         </div>
-        
-        <motion.div 
+
+        <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           className="relative z-10 max-w-7xl mx-auto px-4 text-center"
@@ -156,7 +156,7 @@ const SSB: React.FC = () => {
       {/* The 5-Day Process Section */}
       <section className="max-w-4xl mx-auto px-4 py-32 relative">
         <div className="absolute top-0 left-0 w-full h-px bg-gradient-to-r from-transparent via-gray-100 to-transparent"></div>
-        
+
         <div className="text-center mb-24">
           <span className="inline-block px-4 py-1.5 bg-gray-100 rounded-full text-gray-400 text-[10px] font-black tracking-[0.3em] uppercase mb-6">
             THE TIMELINE
@@ -165,7 +165,7 @@ const SSB: React.FC = () => {
             5-Day Process
           </h2>
         </div>
-        
+
         <div className="space-y-6">
           {ssbProcess.map((step, index) => (
             <motion.div
@@ -220,7 +220,7 @@ const SSB: React.FC = () => {
             Tips & Guidance
           </h2>
         </div>
-        
+
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {ssbTips.map((tip, index) => (
             <motion.div
