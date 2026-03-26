@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { motion, AnimatePresence, useScroll, useMotionValueEvent } from 'motion/react';
+import { motion, AnimatePresence } from 'motion/react';
 import { Shield, Menu, X, LogOut, User as UserIcon } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
 import { NAV_LINKS } from './constants';
@@ -8,9 +8,6 @@ import { LayoutDashboard } from 'lucide-react';
 
 export default function Header() {
   const [isScrolled, setIsScrolled] = useState(false);
-  const [scrollDirection, setScrollDirection] = useState<'up' | 'down' | null>(null);
-  const [lastScrollY, setLastScrollY] = useState(0);
-  const [isHovered, setIsHovered] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [user, setUser] = useState<User | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
@@ -41,16 +38,13 @@ export default function Header() {
     }
   };
 
-  const { scrollY } = useScroll();
-
-  useMotionValueEvent(scrollY, "change", (latest) => {
-    const diff = latest - lastScrollY;
-    if (Math.abs(diff) > 5) {
-      setScrollDirection(diff > 0 ? 'down' : 'up');
-      setLastScrollY(latest);
-    }
-    setIsScrolled(latest > 50);
-  });
+  useEffect(() => {
+    const handleScroll = () => {
+      setIsScrolled(window.scrollY > 50);
+    };
+    window.addEventListener('scroll', handleScroll);
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
 
   // Close mobile menu on route change
   useEffect(() => {
@@ -72,42 +66,61 @@ export default function Header() {
 
   const isHome = location.pathname === '/';
   const shouldBeSolid = isScrolled || !isHome;
-  const isExpanded = !isScrolled || isHovered || scrollDirection === 'up' || isMobileMenuOpen;
 
   return (
     <motion.header 
       initial={{ y: -100 }}
-      animate={{ 
-        y: isExpanded ? 0 : -100,
-        opacity: isExpanded ? 1 : 0
-      }}
-      onMouseEnter={() => setIsHovered(true)}
-      onMouseLeave={() => setIsHovered(false)}
-      className="fixed top-0 left-0 right-0 z-50 transition-all duration-500 ease-in-out"
+      animate={{ y: 0 }}
+      className="fixed top-0 left-0 right-0 z-50 pointer-events-none flex flex-col items-center"
     >
-      <div 
-        className={`w-full transition-all duration-500 border-b ${
-          shouldBeSolid 
-            ? 'bg-white/80 backdrop-blur-md border-gray-200 shadow-[0_4px_30px_rgba(0,0,0,0.03)]' 
-            : 'bg-transparent border-white/10'
-        } ${isScrolled && isExpanded ? 'py-2 md:py-3' : 'py-4 md:py-6'}`}
+      <motion.div 
+        layout
+        initial={false}
+        animate={{
+          marginTop: shouldBeSolid ? '1rem' : '0.5rem',
+          paddingTop: shouldBeSolid ? '0.5rem' : '1.25rem',
+          paddingBottom: shouldBeSolid ? '0.5rem' : '1.25rem',
+          backgroundColor: shouldBeSolid 
+            ? 'rgba(255, 255, 255, 0.95)' 
+            : 'rgba(255, 255, 255, 0)',
+          backdropFilter: shouldBeSolid ? 'blur(16px)' : 'blur(0px)',
+          boxShadow: shouldBeSolid 
+            ? '0 20px 40px -12px rgba(0, 0, 0, 0.15)' 
+            : '0 0 0 rgba(0, 0, 0, 0)',
+          borderWidth: shouldBeSolid ? '1px' : '0px',
+          borderColor: shouldBeSolid ? 'rgba(255, 255, 255, 0.2)' : 'rgba(255, 255, 255, 0)',
+          width: 'calc(100% - 2rem)',
+        }}
+        transition={{ 
+          type: 'spring', 
+          stiffness: 300, 
+          damping: 30,
+          backgroundColor: { duration: 0.3 },
+          backdropFilter: { duration: 0.3 }
+        }}
+        style={{ borderRadius: '9999px' }}
+        className="pointer-events-auto lg:max-w-6xl"
       >
         <motion.div 
           layout
-          className="max-w-7xl mx-auto px-6 md:px-10 flex items-center justify-between"
+          animate={{
+            paddingLeft: shouldBeSolid ? '2rem' : '1rem',
+            paddingRight: shouldBeSolid ? '2rem' : '1rem',
+          }}
+          className="max-w-7xl mx-auto flex items-center justify-between"
         >
           <Link to="/" className="flex items-center gap-3 cursor-pointer">
             <motion.div 
               whileHover={{ scale: 1.05 }}
               className={`w-10 h-10 rounded-full flex items-center justify-center transition-all duration-300 ${
-                shouldBeSolid ? 'bg-[#1B4332] text-white' : 'bg-white/10 backdrop-blur-md text-white border border-white/20'
+                shouldBeSolid ? 'bg-[#1B4332] text-white shadow-md' : 'bg-white/10 backdrop-blur-md text-white border border-white/20'
               }`}
             >
               <Shield size={22} />
             </motion.div>
             <div>
-              <h1 className={`text-lg md:text-xl font-black tracking-tighter transition-colors duration-300 ${shouldBeSolid ? 'text-[#1B4332]' : 'text-white'}`}>NISHCHAY</h1>
-              <p className={`text-[8px] md:text-[9px] uppercase tracking-[0.3em] font-bold transition-colors duration-300 ${shouldBeSolid ? 'text-gray-500' : 'text-white/70'}`}>Defence Preparation</p>
+              <h1 className={`text-xl font-black tracking-tighter transition-colors duration-300 ${shouldBeSolid ? 'text-[#1B4332]' : 'text-white'}`}>NISHCHAY</h1>
+              <p className={`text-[9px] uppercase tracking-[0.3em] font-bold transition-colors duration-300 ${shouldBeSolid ? 'text-gray-500' : 'text-white/70'}`}>Defence Preparation</p>
             </div>
           </Link>
 
@@ -191,7 +204,7 @@ export default function Header() {
                 whileHover={{ scale: 1.05, boxShadow: "0 10px 20px rgba(0,0,0,0.1)" }}
                 whileTap={{ scale: 0.95 }}
                 onClick={handleSignIn}
-                className={`px-5 md:px-7 py-2 md:py-2.5 rounded-full text-[10px] md:text-sm font-black tracking-widest transition-all duration-300 whitespace-nowrap relative ${
+                className={`px-7 py-2.5 rounded-full text-sm font-black tracking-widest transition-all duration-300 whitespace-nowrap relative ${
                   shouldBeSolid
                     ? 'bg-[#1B4332] text-white hover:bg-[#2D6A4F]' 
                     : 'bg-[#4CAF50] text-white hover:bg-[#45a049] shadow-[0_0_20px_rgba(76,175,80,0.3)]'
@@ -217,7 +230,7 @@ export default function Header() {
             </button>
           </div>
         </motion.div>
-      </div>
+      </motion.div>
 
       {/* Mobile Menu */}
       <AnimatePresence>
@@ -226,7 +239,7 @@ export default function Header() {
             initial={{ opacity: 0, y: -20 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0 }}
-            className="lg:hidden mt-[1px] w-full bg-white border-b border-gray-100 shadow-xl"
+            className="lg:hidden pointer-events-auto overflow-hidden transition-all duration-500 mt-2 w-[calc(100%-2rem)] bg-white/80 backdrop-blur-md rounded-3xl shadow-2xl border border-white/20"
           >
             <div className="px-4 py-6 space-y-2">
               {NAV_LINKS.map((link) => {
