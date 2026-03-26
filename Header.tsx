@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion, AnimatePresence, useScroll, useMotionValueEvent } from 'motion/react';
 import { Shield, Menu, X, LogOut, User as UserIcon } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
 import { NAV_LINKS } from './constants';
@@ -8,6 +8,9 @@ import { LayoutDashboard } from 'lucide-react';
 
 export default function Header() {
   const [isScrolled, setIsScrolled] = useState(false);
+  const [scrollDirection, setScrollDirection] = useState<'up' | 'down' | null>(null);
+  const [lastScrollY, setLastScrollY] = useState(0);
+  const [isHovered, setIsHovered] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [user, setUser] = useState<User | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
@@ -38,13 +41,16 @@ export default function Header() {
     }
   };
 
-  useEffect(() => {
-    const handleScroll = () => {
-      setIsScrolled(window.scrollY > 50);
-    };
-    window.addEventListener('scroll', handleScroll);
-    return () => window.removeEventListener('scroll', handleScroll);
-  }, []);
+  const { scrollY } = useScroll();
+
+  useMotionValueEvent(scrollY, "change", (latest) => {
+    const diff = latest - lastScrollY;
+    if (Math.abs(diff) > 5) {
+      setScrollDirection(diff > 0 ? 'down' : 'up');
+      setLastScrollY(latest);
+    }
+    setIsScrolled(latest > 50);
+  });
 
   // Close mobile menu on route change
   useEffect(() => {
@@ -66,19 +72,25 @@ export default function Header() {
 
   const isHome = location.pathname === '/';
   const shouldBeSolid = isScrolled || !isHome;
+  const isExpanded = !isScrolled || isHovered || scrollDirection === 'up' || isMobileMenuOpen;
 
   return (
     <motion.header 
       initial={{ y: -100 }}
-      animate={{ y: 0 }}
-      className="fixed top-0 left-0 right-0 z-50 transition-all duration-300"
+      animate={{ 
+        y: isExpanded ? 0 : -100,
+        opacity: isExpanded ? 1 : 0
+      }}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+      className="fixed top-0 left-0 right-0 z-50 transition-all duration-500 ease-in-out"
     >
       <div 
-        className={`w-full transition-all duration-300 border-b ${
+        className={`w-full transition-all duration-500 border-b ${
           shouldBeSolid 
-            ? 'bg-white/90 backdrop-blur-md border-gray-200' 
+            ? 'bg-white/80 backdrop-blur-md border-gray-200 shadow-[0_4px_30px_rgba(0,0,0,0.03)]' 
             : 'bg-transparent border-white/10'
-        }`}
+        } ${isScrolled && isExpanded ? 'py-2 md:py-3' : 'py-4 md:py-6'}`}
       >
         <motion.div 
           layout
