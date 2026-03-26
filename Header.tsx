@@ -77,14 +77,18 @@ export default function Header() {
   return (
     <motion.header 
       animate={{ 
-        y: 0,
-        opacity: 1
+        y: isExpanded ? 0 : -100,
+        opacity: isExpanded ? 1 : 0
+      }}
+      transition={{ 
+        duration: 0.5, 
+        ease: [0.16, 1, 0.3, 1] 
       }}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
-      className="fixed top-0 left-0 right-0 z-50 transition-all duration-500 ease-in-out"
+      className="fixed top-0 left-0 right-0 z-50 pointer-events-none"
     >
-      <div className={`w-full px-4 md:px-6 transition-all duration-700 ease-[cubic-bezier(0.16,1,0.3,1)] ${isScrolled ? 'pt-4' : 'pt-0'}`}>
+      <div className={`w-full px-4 md:px-6 pointer-events-auto transition-all duration-700 ease-[cubic-bezier(0.16,1,0.3,1)] ${isScrolled ? 'pt-4' : 'pt-0'}`}>
         <div 
           className={`mx-auto transition-all duration-700 ease-[cubic-bezier(0.16,1,0.3,1)] ${
             shouldBeSolid 
@@ -224,10 +228,11 @@ export default function Header() {
       <AnimatePresence>
         {isMobileMenuOpen && (
           <motion.div
-            initial={{ opacity: 0, y: -20 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0 }}
-            className="lg:hidden mt-[1px] w-full bg-white border-b border-gray-100 shadow-xl"
+            initial={{ opacity: 0, y: -20, height: 0 }}
+            animate={{ opacity: 1, y: 0, height: 'auto' }}
+            exit={{ opacity: 0, y: -20, height: 0 }}
+            transition={{ duration: 0.3, ease: "easeInOut" }}
+            className="lg:hidden mt-[1px] w-full bg-white/95 backdrop-blur-xl border-b border-gray-100 shadow-2xl overflow-hidden"
           >
             <div className="px-4 py-6 space-y-2">
               {NAV_LINKS.map((link) => {
