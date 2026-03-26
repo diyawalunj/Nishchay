@@ -127,6 +127,27 @@
   animation: shimmer 2.5s ease-in-out infinite;
 }
 
+@keyframes shimmer-text {
+  0% { background-position: 100% 0; }
+  100% { background-position: -100% 0; }
+}
+
+.shimmer-text {
+  background: linear-gradient(
+    90deg, 
+    #1B4332 0%, 
+    #40916C 25%, 
+    #1B4332 50%, 
+    #40916C 75%, 
+    #1B4332 100%
+  );
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: shimmer-text 5s linear infinite;
+}
+
 /* Gradient border glow on hover */
 .gradient-border {
   position: relative;

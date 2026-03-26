@@ -53,7 +53,7 @@ function useAnimatedCounter(target: number, duration: number = 2000, inView: boo
       // Ease-out cubic for smooth deceleration
       const eased = 1 - Math.pow(1 - progress, 3);
       const current = Math.floor(eased * target);
-      
+
       setCount(current);
       if (progress < 1) {
         requestAnimationFrame(animate);
@@ -96,9 +96,9 @@ export default function Home() {
       <section className="relative min-h-screen flex flex-col items-center justify-center pt-20 overflow-hidden">
         {/* Background Image with Overlay */}
         <div className="absolute inset-0 z-0">
-          <img 
-            src="/hero-bg-BtRLye3t.jpg" 
-            alt="Military Background" 
+          <img
+            src="/hero-bg-BtRLye3t.jpg"
+            alt="Military Background"
             className="w-full h-full object-cover"
             referrerPolicy="no-referrer"
           />
@@ -123,8 +123,8 @@ export default function Home() {
           <motion.h1
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
-            transition={{ duration: 0.8, delay: 0.2 }}
-            className="text-5xl md:text-[8rem] lg:text-[10rem] font-display text-white mb-6 tracking-tighter text-glow-white leading-none px-2"
+            transition={{ duration: 1, delay: 0.2, ease: [0.16, 1, 0.3, 1] }}
+            className="text-5xl md:text-[8rem] lg:text-[10rem] font-display mb-6 tracking-tighter text-glow-white leading-none px-2 shimmer-text"
           >
             NISHCHAY
           </motion.h1>
@@ -177,9 +177,9 @@ export default function Home() {
                 <Download size={18} /> NOTES
               </button>
             </Link>
-            <a 
-              href="https://chat.whatsapp.com/BjClfB1EydhBWBevGOmvbG" 
-              target="_blank" 
+            <a
+              href="https://chat.whatsapp.com/BjClfB1EydhBWBevGOmvbG"
+              target="_blank"
               rel="noopener noreferrer"
               className="w-full sm:w-auto"
             >
@@ -196,9 +196,9 @@ export default function Home() {
             {stats.map((stat, idx) => (
               <motion.div
                 key={stat.label}
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.6, delay: 1.2 + idx * 0.15 }}
+                initial={{ opacity: 0, filter: 'blur(10px)', y: 30 }}
+                animate={statsInView ? { opacity: 1, filter: 'blur(0px)', y: 0 } : {}}
+                transition={{ duration: 0.8, delay: 0.1 * idx, ease: [0.16, 1, 0.3, 1] }}
                 className="glass-card-dark rounded-[2rem] p-6 md:p-10 text-center group hover:bg-white/10 transition-all duration-500 relative overflow-hidden"
               >
                 {/* Shimmer decorative strip */}
@@ -220,7 +220,7 @@ export default function Home() {
           <div className="flex justify-center mb-12">
             <Quote className="text-[#1B4332]/10 animate-float" size={64} />
           </div>
-          
+
           <div className="relative h-64 md:h-48">
             <AnimatePresence mode="wait">
               <motion.div
@@ -242,9 +242,8 @@ export default function Home() {
               <button
                 key={idx}
                 onClick={() => setActiveQuote(idx)}
-                className={`h-1.5 rounded-full transition-all duration-500 ${
-                  activeQuote === idx ? 'bg-[#1B4332] w-8' : 'bg-gray-100 w-4 hover:bg-gray-200'
-                }`}
+                className={`h-1.5 rounded-full transition-all duration-500 ${activeQuote === idx ? 'bg-[#1B4332] w-8' : 'bg-gray-100 w-4 hover:bg-gray-200'
+                  }`}
               />
             ))}
           </div>
@@ -257,8 +256,8 @@ export default function Home() {
         <div className="max-w-7xl mx-auto px-4 text-center relative z-10">
           <span className="section-label">Our Purpose</span>
           <h2 className="text-5xl md:text-7xl font-black mb-20 text-[#1A1A1A] tracking-tighter">Our Mission</h2>
-          
-          <motion.div 
+
+          <motion.div
             initial={{ opacity: 0, y: 40 }}
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
@@ -318,4 +317,3 @@ export default function Home() {
     </main>
   );
 }
-

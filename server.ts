@@ -477,10 +477,6 @@ app.get('/api/doubts/:id/messages', authenticate as any, async (req: AuthRequest
       message: m.message,
       isAdmin: m.is_admin,
       date: m.created_at,
-      fileUrl: m.file_url,
-      fileType: m.file_type,
-      replyToId: m.reply_to_id,
-      replyToText: m.reply_to_text,
     }));
 
     res.json({ success: true, messages });
@@ -493,9 +489,9 @@ app.get('/api/doubts/:id/messages', authenticate as any, async (req: AuthRequest
 // POST /api/doubts/:id/reply — Reply (Authenticated)
 app.post('/api/doubts/:id/reply', authenticate as any, async (req: AuthRequest, res) => {
   try {
-    const { senderName, message, isAdmin, fileUrl, fileType, replyToId, replyToText } = req.body;
-    if (!senderName && !fileUrl) {
-      return res.status(400).json({ success: false, error: 'senderName and (message or fileUrl) are required' });
+    const { senderName, message, isAdmin } = req.body;
+    if (!senderName || !message) {
+      return res.status(400).json({ success: false, error: 'senderName and message are required' });
     }
 
     // Security: Only admins can send isAdmin: true
@@ -526,10 +522,6 @@ app.post('/api/doubts/:id/reply', authenticate as any, async (req: AuthRequest, 
         sender_name: senderName,
         message: message || '',
         is_admin: isAdmin || false,
-        file_url: fileUrl,
-        file_type: fileType,
-        reply_to_id: replyToId,
-        reply_to_text: replyToText,
       });
 
     if (msgError) throw msgError;
@@ -629,48 +621,6 @@ app.delete('/api/doubts/:id', authenticate as any, async (req: AuthRequest, res)
     res.json({ success: true });
   } catch (error: any) {
     console.error('❌ DELETE /api/doubts/:id error:', error.message);
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-/* =========================
-   FILE UPLOAD PROXY (bypasses Supabase Storage RLS)
-========================= */
-
-app.post('/api/upload', authenticate as any, async (req: AuthRequest, res) => {
-  try {
-    const { fileName, fileData, fileType, doubtId } = req.body;
-    if (!fileName || !fileData || !doubtId) {
-      return res.status(400).json({ success: false, error: 'fileName, fileData, and doubtId are required' });
-    }
-
-    // Decode base64 file data
-    const buffer = Buffer.from(fileData, 'base64');
-
-    // Limit file size to 5MB
-    if (buffer.length > 5 * 1024 * 1024) {
-      return res.status(400).json({ success: false, error: 'File too large (max 5MB)' });
-    }
-
-    const safeName = `${Date.now()}_${fileName.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
-    const filePath = `${doubtId}/${safeName}`;
-
-    const { data, error } = await supabase.storage
-      .from('attachments')
-      .upload(filePath, buffer, {
-        contentType: fileType || 'application/octet-stream',
-        upsert: false,
-      });
-
-    if (error) throw error;
-
-    const { data: { publicUrl } } = supabase.storage
-      .from('attachments')
-      .getPublicUrl(filePath);
-
-    res.json({ success: true, publicUrl, filePath });
-  } catch (error: any) {
-    console.error('❌ POST /api/upload error:', error.message);
     res.status(500).json({ success: false, error: error.message });
   }
 });

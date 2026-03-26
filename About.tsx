@@ -154,8 +154,6 @@ export default function About() {
                 transition={{ delay: idx * 0.1 }}
                 className="bg-white p-6 md:p-10 rounded-[2rem] border border-gray-100 shadow-sm card-hover-shadow text-center group relative overflow-hidden"
               >
-                {/* Gradient accent at top */}
-                <div className="absolute top-0 inset-x-0 h-1 bg-gradient-to-r from-[#1B4332] to-[#40916C] rounded-t-[2rem] opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
                 <div className="relative w-full aspect-[4/5] mb-8 overflow-hidden rounded-[2rem] group-hover:shadow-2xl transition-all duration-500">
                   <img
                     src={founder.image}

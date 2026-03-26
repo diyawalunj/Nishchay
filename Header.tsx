@@ -77,37 +77,30 @@ export default function Header() {
         layout
         initial={false}
         animate={{
-          marginTop: shouldBeSolid ? '1rem' : '0.5rem',
-          paddingTop: shouldBeSolid ? '0.5rem' : '1.25rem',
-          paddingBottom: shouldBeSolid ? '0.5rem' : '1.25rem',
+          marginTop: shouldBeSolid ? '1rem' : '0rem',
+          paddingTop: shouldBeSolid ? '0.5rem' : '1.5rem',
+          paddingBottom: shouldBeSolid ? '0.5rem' : '1.5rem',
           backgroundColor: shouldBeSolid 
-            ? 'rgba(255, 255, 255, 0.95)' 
+            ? 'rgba(255, 255, 255, 0.8)' 
             : 'rgba(255, 255, 255, 0)',
-          backdropFilter: shouldBeSolid ? 'blur(16px)' : 'blur(0px)',
+          backdropFilter: shouldBeSolid ? 'blur(20px) saturate(180%)' : 'blur(0px)',
           boxShadow: shouldBeSolid 
-            ? '0 20px 40px -12px rgba(0, 0, 0, 0.15)' 
+            ? '0 20px 40px -12px rgba(0, 0, 0, 0.1), inset 0 0 0 1px rgba(255, 255, 255, 0.5)' 
             : '0 0 0 rgba(0, 0, 0, 0)',
-          borderWidth: shouldBeSolid ? '1px' : '0px',
-          borderColor: shouldBeSolid ? 'rgba(255, 255, 255, 0.2)' : 'rgba(255, 255, 255, 0)',
-          width: 'calc(100% - 2rem)',
+          width: shouldBeSolid ? 'calc(100% - 3rem)' : '100%',
+          maxWidth: shouldBeSolid ? '1100px' : '100%',
         }}
         transition={{ 
           type: 'spring', 
-          stiffness: 300, 
-          damping: 30,
-          backgroundColor: { duration: 0.3 },
-          backdropFilter: { duration: 0.3 }
+          stiffness: 260, 
+          damping: 20,
         }}
-        style={{ borderRadius: '9999px' }}
-        className="pointer-events-auto lg:max-w-6xl"
+        style={{ borderRadius: shouldBeSolid ? '2rem' : '0px' }}
+        className="pointer-events-auto border-b border-white/10"
       >
         <motion.div 
           layout
-          animate={{
-            paddingLeft: shouldBeSolid ? '2rem' : '1rem',
-            paddingRight: shouldBeSolid ? '2rem' : '1rem',
-          }}
-          className="max-w-7xl mx-auto flex items-center justify-between"
+          className="max-w-7xl mx-auto px-6 md:px-10 flex items-center justify-between"
         >
           <Link to="/" className="flex items-center gap-3 cursor-pointer">
             <motion.div 

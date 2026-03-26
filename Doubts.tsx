@@ -40,68 +40,28 @@ interface Doubt {
 
 // ── Memoized sub-components ──
 
-const ChatMessage = memo(function ChatMessage({ msg, onReply }: { msg: Message; onReply: (msg: Message) => void }) {
+const ChatMessage = memo(function ChatMessage({ msg }: { msg: Message }) {
   const dateStr = msg.date ? new Date(msg.date).toLocaleString() : '';
   const isMe = !msg.isAdmin;
 
-  const isImage = msg.fileType?.startsWith('image/');
-
   return (
     <motion.div 
-      drag="x"
-      dragConstraints={{ left: isMe ? -100 : 0, right: isMe ? 0 : 100 }}
-      dragElastic={0.2}
-      onDragEnd={(_, info) => {
-        if ((!isMe && info.offset.x > 80) || (isMe && info.offset.x < -80)) {
-          onReply(msg);
-        }
-      }}
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
       className={`max-w-[85%] flex flex-col group relative ${isMe ? 'self-end' : 'self-start'}`}
     >
       <span className={`text-[9px] font-black uppercase tracking-widest mb-1 ${isMe ? 'text-gray-400 text-right' : 'text-[#1B4332] text-left'}`}>
         {isMe ? 'YOU' : msg.senderName.toUpperCase()}
       </span>
       
-      {/* Reply indicator (shows on hover/drag) */}
-      <div className="absolute -left-8 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity">
-        <RefreshCw size={14} className="text-gray-300 animate-spin-slow" />
-      </div>
-
       <div className={`rounded-2xl text-sm font-medium shadow-sm overflow-hidden ${isMe
         ? 'bg-[#1B4332] text-white rounded-tr-none'
         : 'bg-white text-gray-800 rounded-tl-none border border-gray-100'
         }`}>
         
-        {/* Render Quoted Message */}
-        {msg.replyToId && (
-          <div className={`p-3 text-[11px] border-l-4 mb-2 ${isMe ? 'bg-white/10 border-white/30 text-white/70' : 'bg-gray-50 border-[#1B4332]/30 text-gray-500'}`}>
-            <p className="font-bold mb-1 opacity-70">Replying to...</p>
-            <p className="line-clamp-2">{msg.replyToText}</p>
-          </div>
-        )}
-
-        {/* Render Image */}
-        {msg.fileUrl && isImage && (
-          <div className="mb-2">
-            <img src={msg.fileUrl} alt="attachment" className="w-full max-h-60 object-cover rounded-xl cursor-pointer hover:opacity-90 transition-opacity" onClick={() => window.open(msg.fileUrl, '_blank')} />
-          </div>
-        )}
-
-        {/* Render File/Description */}
+        {/* Render Message Text */}
         <div className="px-5 py-3">
           {msg.message && <p>{msg.message}</p>}
-          
-          {msg.fileUrl && !isImage && (
-            <a href={msg.fileUrl} target="_blank" rel="noopener noreferrer" className={`flex items-center gap-3 p-3 rounded-xl mt-2 transition-colors ${isMe ? 'bg-white/10 hover:bg-white/20' : 'bg-gray-50 hover:bg-gray-100'}`}>
-              <div className="p-2 bg-[#1B4332]/10 rounded-lg text-[#1B4332]">
-                <FileText size={16} />
-              </div>
-              <div className="flex-grow min-w-0">
-                <p className="text-xs font-bold truncate">Document Attachment</p>
-                <p className="text-[10px] opacity-60 uppercase font-black">Open File</p>
-              </div>
-            </a>
-          )}
         </div>
       </div>
 
@@ -190,9 +150,6 @@ export default function Doubts() {
 
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState('');
-  const [uploading, setUploading] = useState(false);
-  const [replyingTo, setReplyingTo] = useState<Message | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const { showToast } = useToast();
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -320,10 +277,6 @@ export default function Doubts() {
               message: newMessage.message,
               isAdmin: newMessage.is_admin,
               date: newMessage.created_at,
-              fileUrl: newMessage.file_url,
-              fileType: newMessage.file_type,
-              replyToId: newMessage.reply_to_id,
-              replyToText: newMessage.reply_to_text,
             }];
           });
         })
@@ -438,67 +391,15 @@ export default function Doubts() {
     }
   };
 
-  const handleFileUpload = async (file: File) => {
-    if (!user || !selectedDoubt) return;
-    
-    setUploading(true);
-
-    try {
-      // Read file as base64
-      const base64 = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => {
-          const result = reader.result as string;
-          resolve(result.split(',')[1]); // strip data:...;base64, prefix
-        };
-        reader.onerror = reject;
-        reader.readAsDataURL(file);
-      });
-
-      // Upload via server proxy (bypasses Supabase Storage RLS)
-      const headers = await getAuthHeaders();
-      const res = await fetch('/api/upload', {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({
-          fileName: file.name,
-          fileData: base64,
-          fileType: file.type,
-          doubtId: selectedDoubt.id,
-        }),
-      });
-      const data = await res.json();
-      if (!data.success) throw new Error(data.error);
-
-      // Send message automatically with the file
-      await handleSendMessage(null as any, { 
-        fileUrl: data.publicUrl, 
-        fileType: file.type,
-        message: `Sent an attachment: ${file.name}` 
-      });
-
-      showToast('File uploaded successfully', 'success');
-    } catch (error: any) {
-      console.error('Upload error:', error);
-      showToast('Upload failed: ' + error.message, 'error');
-    } finally {
-      setUploading(false);
-      if (fileInputRef.current) fileInputRef.current.value = '';
-    }
-  };
-
   // Send a follow-up message (optimistic)
-  const handleSendMessage = useCallback(async (e: React.FormEvent | null, fileData?: { fileUrl: string, fileType: string, message: string }) => {
+  const handleSendMessage = useCallback(async (e: React.FormEvent | null) => {
     if (e) e.preventDefault();
     if (!user || !selectedDoubt) return;
-    if (!newMessage.trim() && !fileData) return;
+    if (!newMessage.trim()) return;
 
-    const msgText = fileData ? fileData.message : newMessage.trim();
-    if (!fileData) setNewMessage('');
+    const msgText = newMessage.trim();
+    setNewMessage('');
     
-    const currentReplyTo = replyingTo;
-    setReplyingTo(null);
-
     // Optimistic Update
     const tempMsg: Message = {
       doubtId: selectedDoubt.id,
@@ -506,10 +407,6 @@ export default function Doubts() {
       message: msgText,
       isAdmin: false,
       date: new Date().toISOString(),
-      fileUrl: fileData?.fileUrl,
-      fileType: fileData?.fileType,
-      replyToId: currentReplyTo?.date, // Using date + text as temp reference
-      replyToText: currentReplyTo?.message
     };
 
     setMessages(prev => [...prev, tempMsg]);
@@ -523,10 +420,6 @@ export default function Doubts() {
           senderName: tempMsg.senderName,
           message: tempMsg.message,
           isAdmin: false,
-          fileUrl: tempMsg.fileUrl,
-          fileType: tempMsg.fileType,
-          replyToId: currentReplyTo?.date, // Ideally would be message ID
-          replyToText: currentReplyTo?.message
         }),
       });
       const data = await res.json();
@@ -540,7 +433,7 @@ export default function Doubts() {
       setNewMessage(msgText);
       showToast('Failed to send. Please try again.', 'error');
     }
-  }, [user, selectedDoubt, newMessage, showToast, fetchMessages, getAuthHeaders]);
+  }, [user, selectedDoubt, newMessage, showToast, getAuthHeaders]);
 
   return (
     <div className="min-h-screen bg-[#F8F9FA]">
@@ -637,7 +530,7 @@ export default function Doubts() {
 
                 <div className="flex-grow p-6 overflow-y-auto flex flex-col gap-4">
                   {messages.map((msg, i) => (
-                    <ChatMessage key={i} msg={msg} onReply={setReplyingTo} />
+                    <ChatMessage key={i} msg={msg} />
                   ))}
                   {messages.length === 0 && (
                     <div className="text-center text-gray-300 py-10">
@@ -648,37 +541,7 @@ export default function Doubts() {
                   <div ref={messagesEndRef} />
                 </div>
 
-                {/* Reply Preview */}
-                {replyingTo && (
-                  <div className="mx-6 mb-2 p-3 bg-gray-50 border-l-4 border-[#1B4332] rounded-lg flex justify-between items-center animate-in slide-in-from-bottom-2">
-                    <div className="min-w-0">
-                      <p className="text-[10px] font-black text-[#1B4332] uppercase tracking-widest mb-1">Replying to {replyingTo.senderName}</p>
-                      <p className="text-xs text-gray-500 line-clamp-1">{replyingTo.message}</p>
-                    </div>
-                    <button onClick={() => setReplyingTo(null)} className="p-1 hover:bg-gray-200 rounded-full transition-colors">
-                      <X size={14} />
-                    </button>
-                  </div>
-                )}
-
                 <form onSubmit={handleSendMessage} className="p-6 border-t border-gray-100 flex gap-3">
-                  <input
-                    type="file"
-                    ref={fileInputRef}
-                    className="hidden"
-                    onChange={(e) => {
-                      const file = e.target.files?.[0];
-                      if (file) handleFileUpload(file);
-                    }}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => fileInputRef.current?.click()}
-                    disabled={uploading}
-                    className="w-12 h-12 bg-gray-50 text-gray-400 rounded-2xl flex items-center justify-center hover:bg-gray-100 transition-all shrink-0"
-                  >
-                    {uploading ? <RefreshCw size={20} className="animate-spin" /> : <Paperclip size={20} />}
-                  </button>
                   <input
                     type="text"
                     value={newMessage}
@@ -688,7 +551,7 @@ export default function Doubts() {
                   />
                   <button
                     type="submit"
-                    disabled={!newMessage.trim() && !uploading}
+                    disabled={!newMessage.trim()}
                     className="w-14 h-14 bg-[#1B4332] text-white rounded-2xl flex items-center justify-center shadow-lg shadow-[#1B4332]/20 hover:bg-[#2D6A4F] transition-all disabled:opacity-50 shrink-0"
                   >
                     <Send size={20} />
