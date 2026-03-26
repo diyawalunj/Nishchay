@@ -20,7 +20,7 @@ const app = express();
 const PORT = 3000;
 
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '10mb' }));
 
 // Initialize Firebase Admin (project ID only — sufficient for verifyIdToken)
 try {
@@ -139,21 +139,29 @@ async function getSheet(sheetId: string, tabName: string, defaultHeaders: string
 
 
 /* =========================
-   EMAIL HELPER
+   EMAIL HELPER (Singleton — reuse connection to avoid SMTP cold-start delay)
 ========================= */
 
-function createEmailTransporter() {
+const emailTransporter = (() => {
   const email = process.env.SMTP_EMAIL;
   const password = process.env.SMTP_PASSWORD;
   if (!email || !password) {
     console.warn('⚠️ SMTP_EMAIL or SMTP_PASSWORD not set — emails will not be sent');
     return null;
   }
-  return nodemailer.createTransport({
+  const t = nodemailer.createTransport({
     service: 'gmail',
     auth: { user: email, pass: password },
+    pool: true,       // keep connection open for reuse
+    maxConnections: 3,
+    maxMessages: 100,
   });
-}
+  // Pre-warm: verify connection in the background
+  t.verify()
+    .then(() => console.log('✅ SMTP connection verified and ready'))
+    .catch((err: any) => console.warn('⚠️ SMTP verify failed (will retry on send):', err.message));
+  return t;
+})();
 
 async function sendAdminNotification(
   type: 'doubt' | 'contact',
@@ -164,8 +172,7 @@ async function sendAdminNotification(
     category?: string;
   }
 ) {
-  const transporter = createEmailTransporter();
-  if (!transporter) return;
+  if (!emailTransporter) return;
 
   const isDoubt = type === 'doubt';
   const title = isDoubt ? 'NEW DOUBT SUBMITTED' : 'NEW CONTACT FORM SUBMISSION';
@@ -217,7 +224,7 @@ async function sendAdminNotification(
   `;
 
   try {
-    await transporter.sendMail({
+    await emailTransporter.sendMail({
       from: `"Nishchay Notifications" <nishchay.defence@gmail.com>`,
       to: ADMIN_EMAILS.join(', '),
       subject: `[${type.toUpperCase()}] New submission from ${data.name}`,
@@ -237,8 +244,7 @@ async function sendReplyEmail(
   category: string,
   adminReply: string
 ) {
-  const transporter = createEmailTransporter();
-  if (!transporter) return;
+  if (!emailTransporter) return;
 
   const html = `
     <div style="font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; background-color: #fcfcfc; padding: 40px 20px;">
@@ -282,7 +288,7 @@ async function sendReplyEmail(
   `;
 
   try {
-    await transporter.sendMail({
+    await emailTransporter.sendMail({
       from: `"Nishchay Defence" <nishchay.defence@gmail.com>`,
       to: studentEmail,
       subject: `${founderName} responded to your doubt`,
@@ -613,6 +619,48 @@ app.delete('/api/doubts/:id', authenticate as any, async (req: AuthRequest, res)
     res.json({ success: true });
   } catch (error: any) {
     console.error('❌ DELETE /api/doubts/:id error:', error.message);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/* =========================
+   FILE UPLOAD PROXY (bypasses Supabase Storage RLS)
+========================= */
+
+app.post('/api/upload', authenticate as any, async (req: AuthRequest, res) => {
+  try {
+    const { fileName, fileData, fileType, doubtId } = req.body;
+    if (!fileName || !fileData || !doubtId) {
+      return res.status(400).json({ success: false, error: 'fileName, fileData, and doubtId are required' });
+    }
+
+    // Decode base64 file data
+    const buffer = Buffer.from(fileData, 'base64');
+
+    // Limit file size to 5MB
+    if (buffer.length > 5 * 1024 * 1024) {
+      return res.status(400).json({ success: false, error: 'File too large (max 5MB)' });
+    }
+
+    const safeName = `${Date.now()}_${fileName.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+    const filePath = `${doubtId}/${safeName}`;
+
+    const { data, error } = await supabase.storage
+      .from('attachments')
+      .upload(filePath, buffer, {
+        contentType: fileType || 'application/octet-stream',
+        upsert: false,
+      });
+
+    if (error) throw error;
+
+    const { data: { publicUrl } } = supabase.storage
+      .from('attachments')
+      .getPublicUrl(filePath);
+
+    res.json({ success: true, publicUrl, filePath });
+  } catch (error: any) {
+    console.error('❌ POST /api/upload error:', error.message);
     res.status(500).json({ success: false, error: error.message });
   }
 });

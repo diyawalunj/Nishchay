@@ -442,23 +442,37 @@ export default function Doubts() {
     if (!user || !selectedDoubt) return;
     
     setUploading(true);
-    const fileName = `${Date.now()}_${file.name}`;
-    const filePath = `${selectedDoubt.id}/${fileName}`;
 
     try {
-      const { data, error } = await supabase.storage
-        .from('attachments')
-        .upload(filePath, file);
+      // Read file as base64
+      const base64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const result = reader.result as string;
+          resolve(result.split(',')[1]); // strip data:...;base64, prefix
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
 
-      if (error) throw error;
-
-      const { data: { publicUrl } } = supabase.storage
-        .from('attachments')
-        .getPublicUrl(filePath);
+      // Upload via server proxy (bypasses Supabase Storage RLS)
+      const headers = await getAuthHeaders();
+      const res = await fetch('/api/upload', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          fileName: file.name,
+          fileData: base64,
+          fileType: file.type,
+          doubtId: selectedDoubt.id,
+        }),
+      });
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error);
 
       // Send message automatically with the file
       await handleSendMessage(null as any, { 
-        fileUrl: publicUrl, 
+        fileUrl: data.publicUrl, 
         fileType: file.type,
         message: `Sent an attachment: ${file.name}` 
       });
