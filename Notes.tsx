@@ -74,7 +74,7 @@ export default function Notes() {
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
             transition={{ duration: 0.8, delay: 0.1 }}
-            className="text-7xl md:text-[10rem] font-display text-white mb-8 tracking-tighter text-glow-white leading-none"
+            className="text-5xl md:text-[8rem] lg:text-[10rem] font-display text-white mb-8 tracking-tighter text-glow-white leading-none px-2"
           >
             NOTES
           </motion.h1>
@@ -116,7 +116,7 @@ export default function Notes() {
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: index * 0.05 }}
               whileHover={{ y: -12 }}
-              className={`${subject.color} p-12 rounded-[3rem] text-white transition-all duration-500 flex flex-col items-center text-center group cursor-pointer shadow-2xl relative overflow-hidden`}
+              className={`${subject.color} p-8 md:p-12 rounded-[2rem] md:rounded-[3rem] text-white transition-all duration-500 flex flex-col items-center text-center group cursor-pointer shadow-2xl relative overflow-hidden`}
             >
               <div className="absolute -right-8 -bottom-8 opacity-[0.05] group-hover:opacity-[0.15] transition-opacity duration-500">
                 <subject.icon size={160} />

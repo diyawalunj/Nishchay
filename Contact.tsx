@@ -130,7 +130,7 @@ const Contact: React.FC = () => {
           <span className="inline-block px-4 py-1.5 bg-white/10 backdrop-blur-md border border-white/20 rounded-full text-white text-[10px] font-black tracking-[0.4em] uppercase mb-8">
             GET IN TOUCH
           </span>
-          <h1 className="text-7xl md:text-[10rem] font-display text-white mb-8 tracking-tighter text-glow-white leading-none">
+          <h1 className="text-5xl md:text-[8rem] lg:text-[10rem] font-display text-white mb-8 tracking-tighter text-glow-white leading-none px-2">
             CONTACT
           </h1>
           <p className="text-white/60 max-w-2xl mx-auto text-lg md:text-2xl font-medium leading-relaxed tracking-tight">
@@ -152,7 +152,7 @@ const Contact: React.FC = () => {
             className="space-y-8"
           >
             {/* Contact Cards */}
-            <div className="bg-white p-10 rounded-[2rem] shadow-[0_40px_100px_rgba(0,0,0,0.03)] flex items-center gap-8 border border-gray-100 group hover:border-[#1B4332]/20 transition-all duration-500 card-lift">
+            <div className="bg-white p-6 md:p-10 rounded-[2rem] shadow-[0_40px_100px_rgba(0,0,0,0.03)] flex flex-col sm:flex-row items-center gap-6 sm:gap-8 border border-gray-100 group hover:border-[#1B4332]/20 transition-all duration-500 card-lift">
               <div className="w-16 h-16 rounded-2xl bg-[#1B4332]/5 flex items-center justify-center text-[#1B4332] group-hover:bg-[#1B4332] group-hover:text-white transition-all duration-500 shadow-inner">
                 <Mail size={28} />
               </div>
@@ -162,7 +162,7 @@ const Contact: React.FC = () => {
               </div>
             </div>
 
-            <div className="bg-white p-10 rounded-[2rem] shadow-[0_40px_100px_rgba(0,0,0,0.03)] flex items-center gap-8 border border-gray-100 group hover:border-[#1B4332]/20 transition-all duration-500 card-lift">
+            <div className="bg-white p-6 md:p-10 rounded-[2rem] shadow-[0_40px_100px_rgba(0,0,0,0.03)] flex flex-col sm:flex-row items-center gap-6 sm:gap-8 border border-gray-100 group hover:border-[#1B4332]/20 transition-all duration-500 card-lift">
               <div className="w-16 h-16 rounded-2xl bg-[#1B4332]/5 flex items-center justify-center text-[#1B4332] group-hover:bg-[#1B4332] group-hover:text-white transition-all duration-500 shadow-inner">
                 <Phone size={28} />
               </div>
@@ -182,23 +182,7 @@ const Contact: React.FC = () => {
               </div>
             </div>
 
-            {/* Social Links */}
-            <div className="flex flex-wrap gap-4 pt-8">
-              {[
-                { name: 'WHATSAPP', icon: <MessageCircle size={14} />, href: 'https://chat.whatsapp.com/BjClfB1EydhBWBevGOmvbG' }
-              ].map((social) => (
-                <a 
-                  key={social.name}
-                  href={social.href}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="px-8 py-4 bg-white rounded-2xl text-[10px] font-black tracking-[0.2em] text-gray-400 border border-gray-100 shadow-sm hover:border-[#1B4332]/30 hover:text-[#1B4332] hover:scale-105 transition-all duration-300 flex items-center gap-2"
-                >
-                  {social.icon}
-                  {social.name}
-                </a>
-              ))}
-            </div>
+            {/* Social Links removed as WhatsApp moved to Home page */}
           </motion.div>
 
           {/* Right Column: Form */}
@@ -206,7 +190,7 @@ const Contact: React.FC = () => {
             initial={{ opacity: 0, x: 20 }}
             animate={{ opacity: 1, x: 0 }}
             transition={{ delay: 0.3 }}
-            className="bg-white p-12 rounded-[3rem] shadow-[0_50px_120px_rgba(0,0,0,0.04)] border border-gray-100"
+            className="bg-white p-6 md:p-12 rounded-[2rem] md:rounded-[3rem] shadow-[0_50px_120px_rgba(0,0,0,0.04)] border border-gray-100"
           >
             {isSuccess ? (
               <motion.div 

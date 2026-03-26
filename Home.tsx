@@ -124,7 +124,7 @@ export default function Home() {
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
             transition={{ duration: 0.8, delay: 0.2 }}
-            className="text-8xl md:text-[12rem] font-display text-white mb-6 tracking-tighter text-glow-white leading-none"
+            className="text-5xl md:text-[8rem] lg:text-[10rem] font-display text-white mb-6 tracking-tighter text-glow-white leading-none px-2"
           >
             NISHCHAY
           </motion.h1>
@@ -177,11 +177,16 @@ export default function Home() {
                 <Download size={18} /> NOTES
               </button>
             </Link>
-            <Link to="/doubts" className="w-full sm:w-auto">
+            <a 
+              href="https://chat.whatsapp.com/BjClfB1EydhBWBevGOmvbG" 
+              target="_blank" 
+              rel="noopener noreferrer"
+              className="w-full sm:w-auto"
+            >
               <button className="btn-secondary w-full flex items-center justify-center gap-2">
-                <MessageCircle size={18} /> DOUBTS
+                <MessageCircle size={18} /> WHATSAPP
               </button>
-            </Link>
+            </a>
           </motion.div>
         </div>
 
@@ -194,7 +199,7 @@ export default function Home() {
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.6, delay: 1.2 + idx * 0.15 }}
-                className="glass-card-dark rounded-[2rem] p-10 text-center group hover:bg-white/10 transition-all duration-500 relative overflow-hidden"
+                className="glass-card-dark rounded-[2rem] p-6 md:p-10 text-center group hover:bg-white/10 transition-all duration-500 relative overflow-hidden"
               >
                 {/* Shimmer decorative strip */}
                 <div className="absolute inset-x-0 top-0 h-px animate-shimmer"></div>
@@ -257,7 +262,7 @@ export default function Home() {
             initial={{ opacity: 0, y: 40 }}
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
-            className="max-w-5xl mx-auto bg-white p-16 md:p-28 rounded-[2rem] shadow-[0_40px_100px_rgba(0,0,0,0.03)] border border-gray-100 relative group"
+            className="max-w-5xl mx-auto bg-white p-6 md:p-28 rounded-[2rem] shadow-[0_40px_100px_rgba(0,0,0,0.03)] border border-gray-100 relative group"
           >
             <div className="absolute top-10 left-10 opacity-5 group-hover:opacity-10 transition-opacity">
               <Quote size={80} />
@@ -291,7 +296,7 @@ export default function Home() {
                 whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true, margin: "-50px" }}
                 transition={{ delay: idx * 0.08, duration: 0.5, ease: "easeOut" }}
-                className="bg-white p-10 rounded-[2rem] border border-gray-100 shadow-sm card-hover-shadow card-lift text-left group relative overflow-hidden"
+                className="bg-white p-6 md:p-10 rounded-[2rem] border border-gray-100 shadow-sm card-hover-shadow card-lift text-left group relative overflow-hidden"
               >
                 <div className="absolute -right-8 -bottom-8 opacity-[0.03] group-hover:opacity-[0.08] transition-opacity duration-500">
                   <service.icon size={160} />

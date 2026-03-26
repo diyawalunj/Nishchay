@@ -113,7 +113,7 @@ const AdminDoubtCard = memo(function AdminDoubtCard({ doubt, onSelect }: {
     <motion.div
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
-      className="bg-white rounded-3xl p-8 shadow-lg border border-gray-100 hover:shadow-xl transition-all cursor-pointer"
+      className="bg-white rounded-2xl md:rounded-3xl p-6 md:p-8 shadow-lg border border-gray-100 hover:shadow-xl transition-all cursor-pointer"
       onClick={() => onSelect(doubt)}
     >
       <div className="flex flex-col md:flex-row justify-between gap-6">
@@ -161,7 +161,7 @@ function AdminSkeleton() {
   return (
     <div className="grid gap-6 animate-pulse">
       {[1, 2, 3].map((i) => (
-        <div key={i} className="bg-white rounded-3xl p-8 shadow-lg border border-gray-100">
+        <div key={i} className="bg-white rounded-2xl md:rounded-3xl p-6 md:p-8 shadow-lg border border-gray-100">
           <div className="flex flex-col md:flex-row justify-between gap-6">
             <div className="flex-grow space-y-4">
               <div className="flex items-center gap-2">
@@ -531,8 +531,8 @@ export default function Admin() {
                 <LayoutDashboard size={32} />
               </div>
               <div>
-                <h1 className="text-4xl font-black tracking-tight">Admin Dashboard</h1>
-                <p className="text-white/70 font-medium">Manage student inquiries and doubts</p>
+                <h1 className="text-2xl md:text-4xl font-black tracking-tight">Admin Dashboard</h1>
+                <p className="text-white/70 font-medium text-xs md:text-base">Manage inquiries and doubts</p>
               </div>
             </div>
             <button
@@ -580,7 +580,7 @@ export default function Admin() {
               <motion.div
                 initial={{ opacity: 0, x: 20 }}
                 animate={{ opacity: 1, x: 0 }}
-                className="bg-white rounded-[2.5rem] shadow-xl overflow-hidden flex flex-col h-[700px]"
+                className="bg-white rounded-2xl md:rounded-[2.5rem] shadow-xl overflow-hidden flex flex-col h-[600px] md:h-[700px]"
               >
                 <div className="p-6 bg-gray-50 border-b border-gray-100 flex items-center justify-between">
                   <div className="flex items-center gap-4">

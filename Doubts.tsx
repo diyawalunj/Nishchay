@@ -561,7 +561,7 @@ export default function Doubts() {
           <span className="inline-block px-4 py-1.5 bg-white/10 backdrop-blur-md border border-white/20 rounded-full text-white text-[10px] font-black tracking-[0.4em] uppercase mb-8">
             PRIVATE GUIDANCE
           </span>
-          <h1 className="text-7xl md:text-[10rem] font-display text-white mb-8 tracking-tighter text-glow-white leading-none">
+          <h1 className="text-5xl md:text-[8rem] lg:text-[10rem] font-display text-white mb-8 tracking-tighter text-glow-white leading-none px-2">
             DOUBTS
           </h1>
           <p className="text-white/60 max-w-2xl mx-auto text-lg md:text-2xl font-medium leading-relaxed tracking-tight">
@@ -612,7 +612,7 @@ export default function Doubts() {
               </div>
 
               {/* Chat Panel */}
-              <div className="bg-white rounded-[2rem] shadow-2xl border border-gray-100 overflow-hidden flex flex-col h-[600px]">
+              <div className="bg-white rounded-[2rem] shadow-2xl border border-gray-100 overflow-hidden flex flex-col h-[500px] md:h-[600px]">
                 <div className="p-6 bg-gray-50 border-b border-gray-100 flex items-center justify-between">
                   <div className="flex items-center gap-4">
                     <div className="w-10 h-10 rounded-xl bg-[#1B4332] flex items-center justify-center text-white">
@@ -676,7 +676,7 @@ export default function Doubts() {
               className="space-y-8"
             >
               {/* Ask Doubt Card */}
-              <div className="bg-white rounded-[2rem] p-8 md:p-10 shadow-xl border border-gray-100">
+              <div className="bg-white rounded-[2rem] p-6 md:p-10 shadow-xl border border-gray-100">
                 <div className="flex items-center justify-between mb-8">
                   <div className="flex items-center gap-4">
                     <div className="w-12 h-12 rounded-2xl bg-[#1B4332]/5 flex items-center justify-center text-[#1B4332]">
@@ -783,7 +783,7 @@ export default function Doubts() {
               </div>
 
               {/* Recent Doubts Card */}
-              <div className="bg-white rounded-[2rem] p-8 md:p-10 shadow-xl border border-gray-100">
+              <div className="bg-white rounded-[2rem] p-6 md:p-10 shadow-xl border border-gray-100">
                 <div className="flex items-center justify-between mb-8">
                   <div className="flex items-center gap-4">
                     <div className="w-12 h-12 rounded-2xl bg-[#1B4332]/5 flex items-center justify-center text-[#1B4332]">

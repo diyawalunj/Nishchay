@@ -119,8 +119,8 @@ export default function Header() {
               <Shield size={22} />
             </motion.div>
             <div>
-              <h1 className={`text-xl font-black tracking-tighter transition-colors duration-300 ${shouldBeSolid ? 'text-[#1B4332]' : 'text-white'}`}>NISHCHAY</h1>
-              <p className={`text-[9px] uppercase tracking-[0.3em] font-bold transition-colors duration-300 ${shouldBeSolid ? 'text-gray-500' : 'text-white/70'}`}>Defence Preparation</p>
+              <h1 className={`text-lg md:text-xl font-black tracking-tighter transition-colors duration-300 ${shouldBeSolid ? 'text-[#1B4332]' : 'text-white'}`}>NISHCHAY</h1>
+              <p className={`text-[8px] md:text-[9px] uppercase tracking-[0.3em] font-bold transition-colors duration-300 ${shouldBeSolid ? 'text-gray-500' : 'text-white/70'}`}>Defence Preparation</p>
             </div>
           </Link>
 
@@ -204,7 +204,7 @@ export default function Header() {
                 whileHover={{ scale: 1.05, boxShadow: "0 10px 20px rgba(0,0,0,0.1)" }}
                 whileTap={{ scale: 0.95 }}
                 onClick={handleSignIn}
-                className={`px-7 py-2.5 rounded-full text-sm font-black tracking-widest transition-all duration-300 whitespace-nowrap relative ${
+                className={`px-5 md:px-7 py-2 md:py-2.5 rounded-full text-[10px] md:text-sm font-black tracking-widest transition-all duration-300 whitespace-nowrap relative ${
                   shouldBeSolid
                     ? 'bg-[#1B4332] text-white hover:bg-[#2D6A4F]' 
                     : 'bg-[#4CAF50] text-white hover:bg-[#45a049] shadow-[0_0_20px_rgba(76,175,80,0.3)]'
