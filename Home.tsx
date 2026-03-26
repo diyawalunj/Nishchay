@@ -73,9 +73,9 @@ export default function Home() {
   const statsRef = useRef<HTMLDivElement>(null);
   const statsInView = useInView(statsRef, { once: true, margin: "-100px" });
 
-  const stat1 = useAnimatedCounter(500, 2000, statsInView);
+  const stat1 = useAnimatedCounter(10, 2000, statsInView);
   const stat2 = useAnimatedCounter(4, 1500, statsInView);
-  const stat3 = useAnimatedCounter(200, 2000, statsInView);
+  const stat3 = useAnimatedCounter(50, 2000, statsInView);
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -169,7 +169,7 @@ export default function Home() {
           >
             <Link to="/contact" className="w-full sm:w-auto">
               <button className="btn-white w-full flex items-center justify-center gap-2">
-                JOIN NOW <ArrowRight size={18} />
+                CONTACT US <ArrowRight size={18} />
               </button>
             </Link>
             <Link to="/notes" className="w-full sm:w-auto">
@@ -184,7 +184,7 @@ export default function Home() {
               className="w-full sm:w-auto"
             >
               <button className="btn-secondary w-full flex items-center justify-center gap-2">
-                <MessageCircle size={18} /> WHATSAPP
+                <MessageCircle size={18} /> WHATSAPP COMMUNITY
               </button>
             </a>
           </motion.div>
