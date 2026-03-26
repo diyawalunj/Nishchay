@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback, memo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { auth, signInWithGoogle, onAuthStateChanged, type User as FirebaseUser, checkIfAdmin } from './firebase';
-import { Lock, MessageSquare, Send, Clock, ChevronLeft, RefreshCw, HelpCircle, Trash2, X } from 'lucide-react';
+import { Lock, MessageSquare, Send, Clock, ChevronLeft, RefreshCw, HelpCircle, Trash2, X, Paperclip, Image as ImageIcon, FileText } from 'lucide-react';
 import { useToast } from './Toast';
 import { useNavigate } from 'react-router-dom';
 import { supabase, isPlaceholder } from './supabase-frontend';
@@ -22,6 +22,10 @@ interface Message {
   message: string;
   isAdmin: boolean;
   date: string;
+  fileUrl?: string;
+  fileType?: string;
+  replyToId?: string;
+  replyToText?: string;
 }
 
 interface Doubt {
@@ -36,30 +40,77 @@ interface Doubt {
 
 // ── Memoized sub-components ──
 
-const ChatMessage = memo(function ChatMessage({ msg }: { msg: Message }) {
+const ChatMessage = memo(function ChatMessage({ msg, onReply }: { msg: Message; onReply: (msg: Message) => void }) {
   const dateStr = msg.date ? new Date(msg.date).toLocaleString() : '';
-
-  // Is this message sent by the currently logged-in student?
-  // Only the student sees this page, so if msg.isAdmin is true, it's from the founder.
   const isMe = !msg.isAdmin;
 
+  const isImage = msg.fileType?.startsWith('image/');
+
   return (
-    <div className={`max-w-[80%] flex flex-col ${isMe ? 'self-end' : 'self-start'}`}>
+    <motion.div 
+      drag="x"
+      dragConstraints={{ left: 0, right: 100 }}
+      dragElastic={0.2}
+      onDragEnd={(_, info) => {
+        if (info.offset.x > 80) {
+          onReply(msg);
+        }
+      }}
+      className={`max-w-[85%] flex flex-col group relative ${isMe ? 'self-end' : 'self-start'}`}
+    >
       <span className={`text-[9px] font-black uppercase tracking-widest mb-1 ${isMe ? 'text-gray-400 text-right' : 'text-[#1B4332] text-left'}`}>
         {isMe ? 'YOU' : msg.senderName.toUpperCase()}
       </span>
-      <div className={`px-5 py-3 rounded-2xl text-sm font-medium shadow-sm ${isMe
+      
+      {/* Reply indicator (shows on hover/drag) */}
+      <div className="absolute -left-8 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity">
+        <RefreshCw size={14} className="text-gray-300 animate-spin-slow" />
+      </div>
+
+      <div className={`rounded-2xl text-sm font-medium shadow-sm overflow-hidden ${isMe
         ? 'bg-[#1B4332] text-white rounded-tr-none'
         : 'bg-white text-gray-800 rounded-tl-none border border-gray-100'
         }`}>
-        {msg.message}
+        
+        {/* Render Quoted Message */}
+        {msg.replyToId && (
+          <div className={`p-3 text-[11px] border-l-4 mb-2 ${isMe ? 'bg-white/10 border-white/30 text-white/70' : 'bg-gray-50 border-[#1B4332]/30 text-gray-500'}`}>
+            <p className="font-bold mb-1 opacity-70">Replying to...</p>
+            <p className="line-clamp-2">{msg.replyToText}</p>
+          </div>
+        )}
+
+        {/* Render Image */}
+        {msg.fileUrl && isImage && (
+          <div className="mb-2">
+            <img src={msg.fileUrl} alt="attachment" className="w-full max-h-60 object-cover rounded-xl cursor-pointer hover:opacity-90 transition-opacity" onClick={() => window.open(msg.fileUrl, '_blank')} />
+          </div>
+        )}
+
+        {/* Render File/Description */}
+        <div className="px-5 py-3">
+          {msg.message && <p>{msg.message}</p>}
+          
+          {msg.fileUrl && !isImage && (
+            <a href={msg.fileUrl} target="_blank" rel="noopener noreferrer" className={`flex items-center gap-3 p-3 rounded-xl mt-2 transition-colors ${isMe ? 'bg-white/10 hover:bg-white/20' : 'bg-gray-50 hover:bg-gray-100'}`}>
+              <div className="p-2 bg-[#1B4332]/10 rounded-lg text-[#1B4332]">
+                <FileText size={16} />
+              </div>
+              <div className="flex-grow min-w-0">
+                <p className="text-xs font-bold truncate">Document Attachment</p>
+                <p className="text-[10px] opacity-60 uppercase font-black">Open File</p>
+              </div>
+            </a>
+          )}
+        </div>
       </div>
+
       {dateStr && (
         <span className={`text-[8px] text-gray-300 mt-1 ${isMe ? 'text-right' : 'text-left'}`}>
           {dateStr}
         </span>
       )}
-    </div>
+    </motion.div>
   );
 });
 
@@ -139,6 +190,9 @@ export default function Doubts() {
 
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState('');
+  const [uploading, setUploading] = useState(false);
+  const [replyingTo, setReplyingTo] = useState<Message | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const { showToast } = useToast();
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -265,7 +319,11 @@ export default function Doubts() {
               senderName: newMessage.sender_name,
               message: newMessage.message,
               isAdmin: newMessage.is_admin,
-              date: newMessage.created_at
+              date: newMessage.created_at,
+              fileUrl: newMessage.file_url,
+              fileType: newMessage.file_type,
+              replyToId: newMessage.reply_to_id,
+              replyToText: newMessage.reply_to_text,
             }];
           });
         })
@@ -380,13 +438,52 @@ export default function Doubts() {
     }
   };
 
-  // Send a follow-up message (optimistic)
-  const handleSendMessage = useCallback(async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!user || !selectedDoubt || !newMessage.trim()) return;
+  const handleFileUpload = async (file: File) => {
+    if (!user || !selectedDoubt) return;
+    
+    setUploading(true);
+    const fileName = `${Date.now()}_${file.name}`;
+    const filePath = `${selectedDoubt.id}/${fileName}`;
 
-    const msgText = newMessage.trim();
-    setNewMessage('');
+    try {
+      const { data, error } = await supabase.storage
+        .from('attachments')
+        .upload(filePath, file);
+
+      if (error) throw error;
+
+      const { data: { publicUrl } } = supabase.storage
+        .from('attachments')
+        .getPublicUrl(filePath);
+
+      // Send message automatically with the file
+      await handleSendMessage(null as any, { 
+        fileUrl: publicUrl, 
+        fileType: file.type,
+        message: `Sent an attachment: ${file.name}` 
+      });
+
+      showToast('File uploaded successfully', 'success');
+    } catch (error: any) {
+      console.error('Upload error:', error);
+      showToast('Upload failed: ' + error.message, 'error');
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
+  // Send a follow-up message (optimistic)
+  const handleSendMessage = useCallback(async (e: React.FormEvent | null, fileData?: { fileUrl: string, fileType: string, message: string }) => {
+    if (e) e.preventDefault();
+    if (!user || !selectedDoubt) return;
+    if (!newMessage.trim() && !fileData) return;
+
+    const msgText = fileData ? fileData.message : newMessage.trim();
+    if (!fileData) setNewMessage('');
+    
+    const currentReplyTo = replyingTo;
+    setReplyingTo(null);
 
     // Optimistic Update
     const tempMsg: Message = {
@@ -394,7 +491,11 @@ export default function Doubts() {
       senderName: user.displayName || 'Student',
       message: msgText,
       isAdmin: false,
-      date: new Date().toISOString()
+      date: new Date().toISOString(),
+      fileUrl: fileData?.fileUrl,
+      fileType: fileData?.fileType,
+      replyToId: currentReplyTo?.date, // Using date + text as temp reference
+      replyToText: currentReplyTo?.message
     };
 
     setMessages(prev => [...prev, tempMsg]);
@@ -408,6 +509,10 @@ export default function Doubts() {
           senderName: tempMsg.senderName,
           message: tempMsg.message,
           isAdmin: false,
+          fileUrl: tempMsg.fileUrl,
+          fileType: tempMsg.fileType,
+          replyToId: currentReplyTo?.date, // Ideally would be message ID
+          replyToText: currentReplyTo?.message
         }),
       });
       const data = await res.json();
@@ -518,7 +623,7 @@ export default function Doubts() {
 
                 <div className="flex-grow p-6 overflow-y-auto flex flex-col gap-4">
                   {messages.map((msg, i) => (
-                    <ChatMessage key={i} msg={msg} />
+                    <ChatMessage key={i} msg={msg} onReply={setReplyingTo} />
                   ))}
                   {messages.length === 0 && (
                     <div className="text-center text-gray-300 py-10">

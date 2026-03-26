@@ -155,6 +155,80 @@ function createEmailTransporter() {
   });
 }
 
+async function sendAdminNotification(
+  type: 'doubt' | 'contact',
+  data: {
+    name: string;
+    email: string;
+    message: string;
+    category?: string;
+  }
+) {
+  const transporter = createEmailTransporter();
+  if (!transporter) return;
+
+  const isDoubt = type === 'doubt';
+  const title = isDoubt ? 'NEW DOUBT SUBMITTED' : 'NEW CONTACT FORM SUBMISSION';
+  const color = isDoubt ? '#1B4332' : '#050A0F';
+
+  const html = `
+    <div style="font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; background-color: #fcfcfc; padding: 40px 20px;">
+      <!-- Header -->
+      <div style="background: linear-gradient(135deg, ${color} 0%, #1a1a1a 100%); border-radius: 24px 24px 0 0; padding: 48px 32px; text-align: center; box-shadow: 0 10px 25px rgba(0,0,0,0.1);">
+        <h1 style="color: white; font-size: 28px; font-weight: 900; margin: 0; letter-spacing: 4px; text-transform: uppercase;">NISHCHAY DEFENCE</h1>
+        <div style="height: 2px; width: 40px; background: #2D6A4F; margin: 16px auto;"></div>
+        <p style="color: rgba(255,255,255,0.7); font-size: 11px; font-weight: 800; margin: 0; letter-spacing: 3px; text-transform: uppercase;">${title}</p>
+      </div>
+
+      <!-- Content -->
+      <div style="background: white; border-radius: 0 0 24px 24px; padding: 40px 32px; border: 1px solid #f0f0f0; border-top: none; box-shadow: 0 4px 6px rgba(0,0,0,0.02);">
+        <div style="margin-bottom: 32px;">
+          <p style="color: #9ca3af; font-size: 10px; font-weight: 800; letter-spacing: 2px; text-transform: uppercase; margin: 0 0 12px;">SUBMITTED BY</p>
+          <div style="display: flex; align-items: center; gap: 12px;">
+            <div style="width: 40px; height: 40px; border-radius: 12px; background: #f3f4f6; display: flex; align-items: center; justify-content: center; font-weight: 900; color: ${color}; font-size: 18px;">${data.name.charAt(0)}</div>
+            <div>
+              <p style="color: #1a1a1a; font-size: 16px; font-weight: 700; margin: 0;">${data.name}</p>
+              <p style="color: #6b7280; font-size: 13px; margin: 2px 0 0;">${data.email}</p>
+            </div>
+          </div>
+        </div>
+
+        ${isDoubt ? `
+        <div style="margin-bottom: 32px;">
+          <p style="color: #9ca3af; font-size: 10px; font-weight: 800; letter-spacing: 2px; text-transform: uppercase; margin: 0 0 12px;">CATEGORY</p>
+          <span style="background: #f0fdf4; color: #166534; padding: 6px 12px; border-radius: 8px; font-size: 12px; font-weight: 700; border: 1px solid #bbf7d0;">${data.category}</span>
+        </div>` : ''}
+
+        <div style="background: #f8fafc; border-radius: 20px; padding: 24px; border: 1px solid #e2e8f0;">
+          <p style="color: #9ca3af; font-size: 10px; font-weight: 800; letter-spacing: 2px; text-transform: uppercase; margin: 0 0 12px;">${isDoubt ? 'QUESTION' : 'MESSAGE'}</p>
+          <p style="color: #334155; font-size: 15px; line-height: 1.6; margin: 0; white-space: pre-wrap;">${data.message}</p>
+        </div>
+
+        <div style="text-align: center; margin-top: 40px;">
+          <a href="https://nishchay-defence.vercel.app/admin" style="background: ${color}; color: white; padding: 18px 36px; border-radius: 16px; text-decoration: none; font-weight: 900; font-size: 13px; letter-spacing: 2px; text-transform: uppercase; display: inline-block; transition: all 0.3s ease; box-shadow: 0 10px 20px rgba(0,0,0,0.1);">ACCESS ADMIN PANEL</a>
+        </div>
+      </div>
+
+      <!-- Footer -->
+      <div style="text-align: center; padding-top: 32px;">
+        <p style="color: #cbd5e1; font-size: 11px; font-weight: 600; letter-spacing: 1px; margin: 0;">&copy; 2024 NISHCHAY DEFENCE ACADEMY</p>
+      </div>
+    </div>
+  `;
+
+  try {
+    await transporter.sendMail({
+      from: `"Nishchay Notifications" <nishchay.defence@gmail.com>`,
+      to: ADMIN_EMAILS.join(', '),
+      subject: `[${type.toUpperCase()}] New submission from ${data.name}`,
+      html,
+    });
+    console.log(`📧 Admin notification sent for ${type} from ${data.email}`);
+  } catch (error: any) {
+    console.error(`❌ Failed to send admin notification for ${type}:`, error.message);
+  }
+}
+
 async function sendReplyEmail(
   studentEmail: string,
   studentName: string,
@@ -167,41 +241,56 @@ async function sendReplyEmail(
   if (!transporter) return;
 
   const html = `
-    <div style="font-family: 'Inter', Arial, sans-serif; max-width: 600px; margin: 0 auto; background: #f8f9fa; padding: 40px 20px;">
-      <div style="background: #1B4332; border-radius: 20px; padding: 32px; text-align: center; margin-bottom: 24px;">
-        <h1 style="color: white; font-size: 24px; margin: 0; letter-spacing: 2px;">NISHCHAY DEFENCE</h1>
-        <p style="color: rgba(255,255,255,0.7); font-size: 12px; margin-top: 8px; letter-spacing: 3px;">FOUNDER'S RESPONSE</p>
+    <div style="font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; background-color: #fcfcfc; padding: 40px 20px;">
+      <!-- Header -->
+      <div style="background: linear-gradient(135deg, #1B4332 0%, #081C15 100%); border-radius: 24px 24px 0 0; padding: 48px 32px; text-align: center; box-shadow: 0 10px 25px rgba(0,0,0,0.1);">
+        <h1 style="color: white; font-size: 28px; font-weight: 900; margin: 0; letter-spacing: 4px; text-transform: uppercase;">NISHCHAY DEFENCE</h1>
+        <div style="height: 2px; width: 40px; background: #40916c; margin: 16px auto;"></div>
+        <p style="color: rgba(255,255,255,0.7); font-size: 11px; font-weight: 800; margin: 0; letter-spacing: 3px; text-transform: uppercase;">FOUNDER'S RESPONSE</p>
       </div>
-      <div style="background: white; border-radius: 20px; padding: 32px; border: 1px solid #e5e7eb;">
-        <p style="color: #6b7280; font-size: 14px; margin: 0 0 16px;">Hi <strong>${studentName}</strong>,</p>
-        <p style="color: #1a1a1a; font-size: 16px; font-weight: 700; margin: 0 0 24px;">
-          <strong>${founderName}</strong> responded to your doubt!
+
+      <!-- Content -->
+      <div style="background: white; border-radius: 0 0 24px 24px; padding: 40px 32px; border: 1px solid #f0f0f0; border-top: none; box-shadow: 0 4px 6px rgba(0,0,0,0.02);">
+        <p style="color: #6b7280; font-size: 15px; margin: 0 0 24px;">Hi <strong>${studentName}</strong>,</p>
+        
+        <p style="color: #1a1a1a; font-size: 18px; font-weight: 800; margin: 0 0 32px; tracking-tight: -0.02em;">
+          <span style="color: #1B4332;">${founderName}</span> just replied to your doubt!
         </p>
-        <div style="background: #f3f4f6; border-radius: 16px; padding: 20px; margin-bottom: 16px;">
-          <p style="color: #9ca3af; font-size: 10px; font-weight: 800; letter-spacing: 2px; text-transform: uppercase; margin: 0 0 8px;">YOUR DOUBT · ${category}</p>
-          <p style="color: #374151; font-size: 14px; margin: 0;">${originalDoubt}</p>
+
+        <div style="background: #f0fdf4; border-radius: 20px; padding: 24px; border: 1px solid #dcfce7; margin-bottom: 24px;">
+          <p style="color: #15803d; font-size: 10px; font-weight: 800; letter-spacing: 2px; text-transform: uppercase; margin: 0 0 12px; display: flex; align-items: center;">
+            <span style="margin-right: 8px;">●</span> RESPONSE
+          </p>
+          <p style="color: #166534; font-size: 15px; font-weight: 600; line-height: 1.6; margin: 0;">${adminReply}</p>
         </div>
-        <div style="background: #f0fdf4; border-radius: 16px; padding: 20px; border: 1px solid #bbf7d0;">
-          <p style="color: #15803d; font-size: 10px; font-weight: 800; letter-spacing: 2px; text-transform: uppercase; margin: 0 0 8px;">FOUNDER'S RESPONSE</p>
-          <p style="color: #166534; font-size: 14px; margin: 0;">${adminReply}</p>
+
+        <div style="background: #f8fafc; border-radius: 20px; padding: 24px; border: 1px solid #f1f5f9;">
+          <p style="color: #94a3b8; font-size: 10px; font-weight: 800; letter-spacing: 2px; text-transform: uppercase; margin: 0 0 12px;">YOUR DOUBT · ${category}</p>
+          <p style="color: #475569; font-size: 14px; line-height: 1.6; margin: 0; font-style: italic;">"${originalDoubt}"</p>
         </div>
-        <p style="color: #9ca3af; font-size: 12px; margin-top: 24px; text-align: center;">
-          Visit the Doubts page on our website to continue the conversation.
-        </p>
+
+        <div style="text-align: center; margin-top: 40px;">
+          <a href="https://nishchay-defence.vercel.app/doubts" style="background: #1B4332; color: white; padding: 18px 36px; border-radius: 16px; text-decoration: none; font-weight: 900; font-size: 13px; letter-spacing: 2px; text-transform: uppercase; display: inline-block; transition: all 0.3s ease; box-shadow: 0 10px 20px rgba(27,67,50,0.15);">VIEW CONVERSATION</a>
+        </div>
+      </div>
+
+      <!-- Footer -->
+      <div style="text-align: center; padding-top: 32px;">
+        <p style="color: #cbd5e1; font-size: 11px; font-weight: 600; letter-spacing: 1px; margin: 0;">&copy; 2024 NISHCHAY DEFENCE ACADEMY</p>
       </div>
     </div>
   `;
 
   try {
     await transporter.sendMail({
-      from: `"Nishchay Defence" <${process.env.SMTP_EMAIL}>`,
+      from: `"Nishchay Defence" <nishchay.defence@gmail.com>`,
       to: studentEmail,
       subject: `${founderName} responded to your doubt`,
       html,
     });
-    console.log(`📧 Email sent to ${studentEmail}`);
+    console.log(`📧 Reply email sent to ${studentEmail} (from ${founderName})`);
   } catch (error: any) {
-    console.error(`❌ Failed to send email to ${studentEmail}:`, error.message);
+    console.error(`❌ Failed to send reply email to ${studentEmail}:`, error.message);
   }
 }
 
@@ -249,6 +338,14 @@ app.post('/api/doubts', authenticate as any, async (req: AuthRequest, res) => {
       });
 
     if (msgError) throw msgError;
+
+    // Notify admins
+    sendAdminNotification('doubt', {
+      name,
+      email,
+      message: question,
+      category: category || 'General'
+    }).catch(err => console.error('Admin notification failed:', err));
 
     res.json({ success: true, doubtId: doubt.id });
   } catch (error: any) {
@@ -363,6 +460,10 @@ app.get('/api/doubts/:id/messages', authenticate as any, async (req: AuthRequest
       message: m.message,
       isAdmin: m.is_admin,
       date: m.created_at,
+      fileUrl: m.file_url,
+      fileType: m.file_type,
+      replyToId: m.reply_to_id,
+      replyToText: m.reply_to_text,
     }));
 
     res.json({ success: true, messages });
@@ -375,9 +476,9 @@ app.get('/api/doubts/:id/messages', authenticate as any, async (req: AuthRequest
 // POST /api/doubts/:id/reply — Reply (Authenticated)
 app.post('/api/doubts/:id/reply', authenticate as any, async (req: AuthRequest, res) => {
   try {
-    const { senderName, message, isAdmin } = req.body;
-    if (!senderName || !message) {
-      return res.status(400).json({ success: false, error: 'senderName and message are required' });
+    const { senderName, message, isAdmin, fileUrl, fileType, replyToId, replyToText } = req.body;
+    if (!senderName && !fileUrl) {
+      return res.status(400).json({ success: false, error: 'senderName and (message or fileUrl) are required' });
     }
 
     // Security: Only admins can send isAdmin: true
@@ -406,8 +507,12 @@ app.post('/api/doubts/:id/reply', authenticate as any, async (req: AuthRequest, 
       .insert({
         doubt_id: doubtId,
         sender_name: senderName,
-        message,
+        message: message || '',
         is_admin: isAdmin || false,
+        file_url: fileUrl,
+        file_type: fileType,
+        reply_to_id: replyToId,
+        reply_to_text: replyToText,
       });
 
     if (msgError) throw msgError;
@@ -595,6 +700,15 @@ app.post('/api/contact', async (req, res) => {
   console.log('📬 Received contact form submission:', JSON.stringify(req.body));
   try {
     await saveToGoogleSheet(req.body);
+
+    // Notify admins
+    const { fullName, name, email, emailAddress, message, msg, body, question } = req.body;
+    sendAdminNotification('contact', {
+      name: fullName || name || 'Anonymous',
+      email: email || emailAddress || 'No Email',
+      message: message || msg || body || question || '(No Message)'
+    }).catch(err => console.error('Admin contact notification failed:', err));
+
     res.json({ success: true });
   } catch (error: any) {
     console.error('❌ Contact error:', error);

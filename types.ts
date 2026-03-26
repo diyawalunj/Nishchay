@@ -19,6 +19,10 @@ export interface Message {
   senderName: string;
   isAdmin: boolean;
   createdAt: any;
+  fileUrl?: string;
+  fileType?: string;
+  replyToId?: string;
+  replyToText?: string;
 }
 
 export interface ContactSubmission {

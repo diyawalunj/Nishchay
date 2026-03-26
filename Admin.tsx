@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import {
   auth, onAuthStateChanged, checkIfAdmin, type User as FirebaseUser
 } from './firebase';
-import { LayoutDashboard, MessageSquare, Mail, User, Clock, Send, ChevronLeft, RefreshCw, Trash2 } from 'lucide-react';
+import { LayoutDashboard, MessageSquare, Mail, User, Clock, Send, ChevronLeft, RefreshCw, Trash2, X, Paperclip, Image as ImageIcon, FileText } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useToast } from './Toast';
 import { supabase, isPlaceholder } from './supabase-frontend';
@@ -14,6 +14,10 @@ interface Message {
   message: string;
   isAdmin: boolean;
   date: string;
+  fileUrl?: string;
+  fileType?: string;
+  replyToId?: string;
+  replyToText?: string;
 }
 
 interface Doubt {
@@ -29,26 +33,74 @@ interface Doubt {
 
 // ── Memoized sub-components ──
 
-const AdminChatMessage = memo(function AdminChatMessage({ msg }: { msg: Message }) {
+const AdminChatMessage = memo(function AdminChatMessage({ msg, onReply }: { msg: Message; onReply: (msg: Message) => void }) {
   const dateStr = msg.date ? new Date(msg.date).toLocaleString() : '';
+  const isImage = msg.fileType?.startsWith('image/');
+
   return (
-    <div className={`max-w-[70%] flex flex-col ${msg.isAdmin ? 'self-end' : 'self-start'}`}>
+    <motion.div 
+      drag="x"
+      dragConstraints={{ left: -100, right: 0 }}
+      dragElastic={0.2}
+      onDragEnd={(_, info) => {
+        if (info.offset.x < -80) {
+          onReply(msg);
+        }
+      }}
+      className={`max-w-[75%] flex flex-col group relative ${msg.isAdmin ? 'self-end' : 'self-start'}`}
+    >
       <span className={`text-[9px] font-black uppercase tracking-widest mb-1 ${msg.isAdmin ? 'text-right text-[#1B4332]' : 'text-gray-400'}`}>
         {msg.isAdmin ? msg.senderName.toUpperCase() : msg.senderName}
       </span>
-      <div className={`px-5 py-3 rounded-2xl text-sm font-medium shadow-sm ${
+
+      {/* Reply indicator */}
+      <div className="absolute -right-8 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity">
+        <RefreshCw size={14} className="text-gray-300 animate-spin-slow" />
+      </div>
+
+      <div className={`rounded-2xl text-sm font-medium shadow-sm overflow-hidden ${
         msg.isAdmin
           ? 'bg-[#1B4332] text-white rounded-tr-none'
           : 'bg-gray-100 text-gray-800 rounded-tl-none'
       }`}>
-        {msg.message}
+        
+        {/* Render Quoted Message */}
+        {msg.replyToId && (
+          <div className={`p-3 text-[11px] border-l-4 mb-2 ${msg.isAdmin ? 'bg-white/10 border-white/30 text-white/70' : 'bg-white border-[#1B4332]/30 text-gray-500'}`}>
+            <p className="font-bold mb-1 opacity-70">Replying to...</p>
+            <p className="line-clamp-2">{msg.replyToText}</p>
+          </div>
+        )}
+
+        {/* Render Image */}
+        {msg.fileUrl && isImage && (
+          <div className="mb-2">
+            <img src={msg.fileUrl} alt="attachment" className="w-full max-h-60 object-cover rounded-xl cursor-pointer hover:opacity-90 transition-opacity" onClick={() => window.open(msg.fileUrl, '_blank')} />
+          </div>
+        )}
+
+        <div className="px-5 py-3">
+          {msg.message && <p>{msg.message}</p>}
+
+          {msg.fileUrl && !isImage && (
+            <a href={msg.fileUrl} target="_blank" rel="noopener noreferrer" className={`flex items-center gap-3 p-3 rounded-xl mt-2 transition-colors ${msg.isAdmin ? 'bg-white/10 hover:bg-white/20' : 'bg-white hover:bg-gray-50'}`}>
+              <div className="p-2 bg-[#1B4332]/10 rounded-lg text-[#1B4332]">
+                <FileText size={16} />
+              </div>
+              <div className="flex-grow min-w-0">
+                <p className="text-xs font-bold truncate">Document Attachment</p>
+                <p className="text-[10px] opacity-60 uppercase font-black">Open File</p>
+              </div>
+            </a>
+          )}
+        </div>
       </div>
       {dateStr && (
         <span className={`text-[8px] text-gray-300 mt-1 ${msg.isAdmin ? 'text-right' : ''}`}>
           {dateStr}
         </span>
       )}
-    </div>
+    </motion.div>
   );
 });
 
@@ -140,6 +192,9 @@ export default function Admin() {
   const [selectedDoubt, setSelectedDoubt] = useState<Doubt | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState('');
+  const [uploading, setUploading] = useState(false);
+  const [replyingTo, setReplyingTo] = useState<Message | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [adminUser, setAdminUser] = useState<FirebaseUser | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
   
@@ -265,7 +320,11 @@ export default function Admin() {
               senderName: newMessage.sender_name,
               message: newMessage.message,
               isAdmin: newMessage.is_admin,
-              date: newMessage.created_at
+              date: newMessage.created_at,
+              fileUrl: newMessage.file_url,
+              fileType: newMessage.file_type,
+              replyToId: newMessage.reply_to_id,
+              replyToText: newMessage.reply_to_text,
             }];
           });
         })
@@ -289,20 +348,63 @@ export default function Admin() {
     }
   }, [messages.length]);
 
-  // Send reply (optimistic)
-  const handleSendMessage = useCallback(async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!adminUser || !selectedDoubt || !newMessage.trim()) return;
+  const handleFileUpload = async (file: File) => {
+    if (!adminUser || !selectedDoubt) return;
+    
+    setUploading(true);
+    const fileName = `${Date.now()}_${file.name}`;
+    const filePath = `${selectedDoubt.id}/${fileName}`;
 
-    const msgText = newMessage.trim();
-    setNewMessage('');
+    try {
+      const { data, error } = await supabase.storage
+        .from('attachments')
+        .upload(filePath, file);
+
+      if (error) throw error;
+
+      const { data: { publicUrl } } = supabase.storage
+        .from('attachments')
+        .getPublicUrl(filePath);
+
+      // Send message automatically with the file
+      await handleSendMessage(null as any, { 
+        fileUrl: publicUrl, 
+        fileType: file.type,
+        message: `Sent an attachment: ${file.name}` 
+      });
+
+      showToast('File uploaded successfully', 'success');
+    } catch (error: any) {
+      console.error('Upload error:', error);
+      showToast('Upload failed: ' + error.message, 'error');
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
+  // Send reply (optimistic)
+  const handleSendMessage = useCallback(async (e: React.FormEvent | null, fileData?: { fileUrl: string, fileType: string, message: string }) => {
+    if (e) e.preventDefault();
+    if (!adminUser || !selectedDoubt) return;
+    if (!newMessage.trim() && !fileData) return;
+
+    const msgText = fileData ? fileData.message : newMessage.trim();
+    if (!fileData) setNewMessage('');
+    
+    const currentReplyTo = replyingTo;
+    setReplyingTo(null);
 
     const tempMsg: Message = {
       doubtId: selectedDoubt.id,
       senderName: adminUser.displayName || 'Admin',
       message: msgText,
       isAdmin: true,
-      date: new Date().toISOString()
+      date: new Date().toISOString(),
+      fileUrl: fileData?.fileUrl,
+      fileType: fileData?.fileType,
+      replyToId: currentReplyTo?.date,
+      replyToText: currentReplyTo?.message
     };
     
     // Optimistic UI updates
@@ -321,6 +423,10 @@ export default function Admin() {
           senderName: tempMsg.senderName,
           message: tempMsg.message,
           isAdmin: true,
+          fileUrl: tempMsg.fileUrl,
+          fileType: tempMsg.fileType,
+          replyToId: currentReplyTo?.date,
+          replyToText: currentReplyTo?.message
         }),
       });
       const data = await res.json();
@@ -504,26 +610,58 @@ export default function Admin() {
                 {/* Conversation History */}
                 <div className="flex-grow p-6 overflow-y-auto flex flex-col gap-4">
                   {messages.map((msg, i) => (
-                    <AdminChatMessage key={i} msg={msg} />
+                    <AdminChatMessage key={i} msg={msg} onReply={setReplyingTo} />
                   ))}
                   <div ref={messagesEndRef} />
                 </div>
 
-                <form onSubmit={handleSendMessage} className="p-6 border-t border-gray-100 flex gap-3">
-                  <input
-                    type="text"
-                    value={newMessage}
-                    onChange={(e) => setNewMessage(e.target.value)}
-                    placeholder="Type your reply to send an email to the student..."
-                    className="flex-grow px-6 py-4 rounded-2xl bg-gray-50 border border-gray-100 focus:border-[#1B4332] outline-none transition-all font-bold text-gray-700"
-                  />
-                  <button
-                    type="submit"
-                    disabled={!newMessage.trim()}
-                    className="w-14 h-14 bg-[#1B4332] text-white rounded-2xl flex items-center justify-center shadow-lg shadow-[#1B4332]/20 hover:bg-[#2D6A4F] transition-all disabled:opacity-50"
-                  >
-                    <Send size={20} />
-                  </button>
+                {/* Reply Preview */}
+                {replyingTo && (
+                  <div className="mx-6 mb-2 p-3 bg-gray-50 border-l-4 border-[#1B4332] rounded-lg flex justify-between items-center animate-in slide-in-from-bottom-2">
+                    <div className="min-w-0">
+                      <p className="text-[10px] font-black text-[#1B4332] uppercase tracking-widest mb-1">Replying to {replyingTo.senderName}</p>
+                      <p className="text-xs text-gray-500 line-clamp-1">{replyingTo.message}</p>
+                    </div>
+                    <button onClick={() => setReplyingTo(null)} className="p-1 hover:bg-gray-200 rounded-full transition-colors">
+                      <X size={14} />
+                    </button>
+                  </div>
+                )}
+
+                <form onSubmit={handleSendMessage} className="p-6 border-t border-gray-100 flex flex-col gap-3">
+                  <div className="flex gap-3 items-center">
+                    <input
+                      type="file"
+                      ref={fileInputRef}
+                      className="hidden"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) handleFileUpload(file);
+                      }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={uploading}
+                      className="w-12 h-12 bg-gray-50 text-gray-400 rounded-2xl flex items-center justify-center hover:bg-gray-100 transition-all"
+                    >
+                      {uploading ? <RefreshCw size={20} className="animate-spin" /> : <Paperclip size={20} />}
+                    </button>
+                    <input
+                      type="text"
+                      value={newMessage}
+                      onChange={(e) => setNewMessage(e.target.value)}
+                      placeholder="Type your reply to send an email to the student..."
+                      className="flex-grow px-6 py-4 rounded-2xl bg-gray-50 border border-gray-100 focus:border-[#1B4332] outline-none transition-all font-bold text-gray-700"
+                    />
+                    <button
+                      type="submit"
+                      disabled={!newMessage.trim() && !uploading}
+                      className="w-14 h-14 bg-[#1B4332] text-white rounded-2xl flex items-center justify-center shadow-lg shadow-[#1B4332]/20 hover:bg-[#2D6A4F] transition-all disabled:opacity-50"
+                    >
+                      <Send size={20} />
+                    </button>
+                  </div>
                 </form>
               </motion.div>
             ) : (
