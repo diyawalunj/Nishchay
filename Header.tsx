@@ -71,32 +71,14 @@ export default function Header() {
     <motion.header 
       initial={{ y: -100 }}
       animate={{ y: 0 }}
-      className="fixed top-0 left-0 right-0 z-50 pointer-events-none flex flex-col items-center"
+      className="fixed top-0 left-0 right-0 z-50 transition-all duration-300"
     >
-      <motion.div 
-        layout
-        initial={false}
-        animate={{
-          marginTop: shouldBeSolid ? '1rem' : '0rem',
-          paddingTop: shouldBeSolid ? '0.5rem' : '1.5rem',
-          paddingBottom: shouldBeSolid ? '0.5rem' : '1.5rem',
-          backgroundColor: shouldBeSolid 
-            ? 'rgba(255, 255, 255, 0.8)' 
-            : 'rgba(255, 255, 255, 0)',
-          backdropFilter: shouldBeSolid ? 'blur(20px) saturate(180%)' : 'blur(0px)',
-          boxShadow: shouldBeSolid 
-            ? '0 20px 40px -12px rgba(0, 0, 0, 0.1), inset 0 0 0 1px rgba(255, 255, 255, 0.5)' 
-            : '0 0 0 rgba(0, 0, 0, 0)',
-          width: shouldBeSolid ? 'calc(100% - 3rem)' : '100%',
-          maxWidth: shouldBeSolid ? '1100px' : '100%',
-        }}
-        transition={{ 
-          type: 'spring', 
-          stiffness: 260, 
-          damping: 20,
-        }}
-        style={{ borderRadius: shouldBeSolid ? '2rem' : '0px' }}
-        className="pointer-events-auto border-b border-white/10"
+      <div 
+        className={`w-full transition-all duration-300 border-b ${
+          shouldBeSolid 
+            ? 'bg-white/90 backdrop-blur-md border-gray-200' 
+            : 'bg-transparent border-white/10'
+        }`}
       >
         <motion.div 
           layout
@@ -106,7 +88,7 @@ export default function Header() {
             <motion.div 
               whileHover={{ scale: 1.05 }}
               className={`w-10 h-10 rounded-full flex items-center justify-center transition-all duration-300 ${
-                shouldBeSolid ? 'bg-[#1B4332] text-white shadow-md' : 'bg-white/10 backdrop-blur-md text-white border border-white/20'
+                shouldBeSolid ? 'bg-[#1B4332] text-white' : 'bg-white/10 backdrop-blur-md text-white border border-white/20'
               }`}
             >
               <Shield size={22} />
@@ -223,7 +205,7 @@ export default function Header() {
             </button>
           </div>
         </motion.div>
-      </motion.div>
+      </div>
 
       {/* Mobile Menu */}
       <AnimatePresence>
@@ -232,7 +214,7 @@ export default function Header() {
             initial={{ opacity: 0, y: -20 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0 }}
-            className="lg:hidden pointer-events-auto overflow-hidden transition-all duration-500 mt-2 w-[calc(100%-2rem)] bg-white/80 backdrop-blur-md rounded-3xl shadow-2xl border border-white/20"
+            className="lg:hidden mt-[1px] w-full bg-white border-b border-gray-100 shadow-xl"
           >
             <div className="px-4 py-6 space-y-2">
               {NAV_LINKS.map((link) => {

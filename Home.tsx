@@ -106,8 +106,6 @@ export default function Home() {
           {/* Camouflage Pattern Overlay */}
           <div className="absolute inset-0 opacity-30 pointer-events-none bg-[url('https://www.transparenttextures.com/patterns/camouflage.png')]"></div>
           <div className="absolute top-0 left-0 right-0 h-40 bg-gradient-to-b from-[#1B4332]/60 to-transparent"></div>
-          {/* Grain texture for depth */}
-          <div className="grain-overlay absolute inset-0"></div>
         </div>
 
         <div className="relative z-10 max-w-5xl mx-auto px-4 text-center mt-10">
@@ -124,7 +122,7 @@ export default function Home() {
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
             transition={{ duration: 1, delay: 0.2, ease: [0.16, 1, 0.3, 1] }}
-            className="text-5xl md:text-[8rem] lg:text-[10rem] font-display mb-6 tracking-tighter text-glow-white leading-none px-2 shimmer-text"
+            className="text-4xl md:text-[6rem] lg:text-[8rem] font-display mb-6 tracking-tighter text-glow-white leading-none px-2 text-white"
           >
             NISHCHAY
           </motion.h1>
@@ -201,8 +199,6 @@ export default function Home() {
                 transition={{ duration: 0.8, delay: 0.1 * idx, ease: [0.16, 1, 0.3, 1] }}
                 className="glass-card-dark rounded-[2rem] p-6 md:p-10 text-center group hover:bg-white/10 transition-all duration-500 relative overflow-hidden"
               >
-                {/* Shimmer decorative strip */}
-                <div className="absolute inset-x-0 top-0 h-px animate-shimmer"></div>
                 <p className="text-5xl font-black text-white mb-3 tracking-tighter group-hover:scale-110 transition-transform duration-500 tabular-nums">
                   {stat.value}{stat.suffix}
                 </p>
@@ -215,7 +211,6 @@ export default function Home() {
 
       {/* Hero Quote Section */}
       <section className="py-32 md:py-48 bg-white overflow-hidden relative">
-        <div className="section-divider w-full absolute top-0"></div>
         <div className="max-w-5xl mx-auto px-4 text-center">
           <div className="flex justify-center mb-12">
             <Quote className="text-[#1B4332]/10 animate-float" size={64} />
@@ -254,7 +249,6 @@ export default function Home() {
       <section className="py-32 bg-[#F8F9FA] relative overflow-hidden">
         <div className="absolute top-0 right-0 w-96 h-96 bg-[#1B4332]/5 rounded-full blur-[100px] -mr-48 -mt-48"></div>
         <div className="max-w-7xl mx-auto px-4 text-center relative z-10">
-          <span className="section-label">Our Purpose</span>
           <h2 className="text-5xl md:text-7xl font-black mb-20 text-[#1A1A1A] tracking-tighter">Our Mission</h2>
 
           <motion.div
@@ -281,7 +275,6 @@ export default function Home() {
       {/* Our Services Section */}
       <section className="py-32 bg-white">
         <div className="max-w-7xl mx-auto px-4 text-center">
-          <span className="section-label">What We Offer</span>
           <h2 className="text-5xl md:text-7xl font-black mb-6 text-[#1A1A1A] tracking-tighter">Our Services</h2>
           <p className="text-gray-400 font-medium max-w-2xl mx-auto mb-24 text-lg">
             Everything you need to crack defence exams, all in one platform.
@@ -300,8 +293,6 @@ export default function Home() {
                 <div className="absolute -right-8 -bottom-8 opacity-[0.03] group-hover:opacity-[0.08] transition-opacity duration-500">
                   <service.icon size={160} />
                 </div>
-                {/* Subtle top accent line */}
-                <div className="absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-[#1B4332]/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
                 <div className={`w-14 h-14 ${service.color} rounded-2xl flex items-center justify-center mb-8 group-hover:rotate-6 group-hover:scale-110 transition-transform duration-500 shadow-lg shadow-current/10`}>
                   <service.icon size={28} />
                 </div>

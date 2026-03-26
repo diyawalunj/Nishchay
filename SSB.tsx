@@ -98,7 +98,6 @@ const SSB: React.FC = () => {
                   <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')] opacity-10"></div>
                   <div className="absolute -top-24 -left-24 w-48 h-48 bg-[#1B4332]/20 blur-[80px] rounded-full"></div>
                   <div className="absolute -bottom-24 -right-24 w-48 h-48 bg-[#1B4332]/10 blur-[80px] rounded-full"></div>
-                  <div className="grain-overlay absolute inset-0 opacity-20"></div>
 
                   <div className="relative z-10 flex items-center gap-4 md:gap-6">
                     <motion.div
@@ -133,8 +132,8 @@ const SSB: React.FC = () => {
                 <div className="flex-grow relative bg-white">
                   <div className="absolute inset-0 flex items-center justify-center bg-[#050A0F]">
                     <div className="absolute inset-0 overflow-hidden opacity-20 pointer-events-none">
-                       <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')]"></div>
-                       <div className="absolute inset-0 bg-gradient-to-b from-[#1B4332]/20 to-transparent"></div>
+                      <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')]"></div>
+                      <div className="absolute inset-0 bg-gradient-to-b from-[#1B4332]/20 to-transparent"></div>
                     </div>
                     <div className="flex flex-col items-center gap-6 relative z-10">
                       <div className="relative">
