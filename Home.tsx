@@ -199,7 +199,7 @@ export default function Home() {
                 transition={{ duration: 0.8, delay: 0.1 * idx, ease: [0.16, 1, 0.3, 1] }}
                 className="glass-card-dark rounded-[2rem] p-6 md:p-10 text-center group hover:bg-white/10 transition-all duration-500 relative overflow-hidden"
               >
-                <p className="text-5xl font-black text-white mb-3 tracking-tighter group-hover:scale-110 transition-transform duration-500 tabular-nums">
+                <p className="text-5xl font-black text-white mb-3 tracking-tighter premium-zoom group-hover:scale-110 tabular-nums">
                   {stat.value}{stat.suffix}
                 </p>
                 <p className="text-[10px] font-black tracking-[0.3em] text-white/40 uppercase">{stat.label}</p>

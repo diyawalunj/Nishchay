@@ -121,7 +121,7 @@ export default function Notes() {
               <div className="absolute -right-8 -bottom-8 opacity-[0.05] group-hover:opacity-[0.15] transition-opacity duration-500">
                 <subject.icon size={160} />
               </div>
-              <div className="w-20 h-20 bg-white/10 backdrop-blur-md rounded-3xl flex items-center justify-center mb-8 group-hover:scale-110 group-hover:rotate-6 transition-transform duration-500 border border-white/20 shadow-xl">
+              <div className="w-20 h-20 bg-white/10 backdrop-blur-md rounded-3xl flex items-center justify-center mb-8 premium-zoom group-hover:scale-110 group-hover:rotate-6 border border-white/20 shadow-xl">
                 <subject.icon size={40} />
               </div>
               <h3 className="text-3xl font-black mb-3 tracking-tighter">{subject.title}</h3>

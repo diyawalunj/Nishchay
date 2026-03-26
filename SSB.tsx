@@ -206,7 +206,7 @@ const SSB: React.FC = () => {
               whileHover={{ x: 12 }}
               className="bg-white rounded-[2rem] p-6 md:p-10 shadow-[0_30px_60px_rgba(0,0,0,0.02)] border border-gray-100 flex flex-col md:flex-row items-center gap-6 md:gap-10 group hover:border-[#1B4332]/20 transition-all duration-500"
             >
-              <div className="w-16 h-16 md:w-20 md:h-20 rounded-2xl md:rounded-3xl bg-[#1B4332] text-white flex items-center justify-center font-black text-2xl md:text-3xl shrink-0 shadow-xl group-hover:scale-110 transition-transform duration-500">
+              <div className="w-16 h-16 md:w-20 md:h-20 rounded-2xl md:rounded-3xl bg-[#1B4332] text-white flex items-center justify-center font-black text-2xl md:text-3xl shrink-0 shadow-xl premium-zoom group-hover:scale-110">
                 {step.day}
               </div>
               <div className="flex-grow">

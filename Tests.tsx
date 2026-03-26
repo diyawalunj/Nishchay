@@ -108,7 +108,7 @@ const Tests: React.FC = () => {
               <div className="absolute -right-8 -top-8 opacity-[0.02] group-hover:opacity-[0.05] transition-opacity duration-500">
                 {exam.icon}
               </div>
-              <div className={`${exam.iconBg} w-20 h-20 rounded-3xl flex items-center justify-center text-white mb-8 shadow-xl group-hover:scale-110 group-hover:rotate-6 transition-transform duration-500`}>
+              <div className={`${exam.iconBg} w-20 h-20 rounded-3xl flex items-center justify-center text-white mb-8 shadow-xl premium-zoom group-hover:scale-110 group-hover:rotate-6`}>
                 {exam.icon}
               </div>
               <h3 className="text-4xl font-black text-[#1A1A1A] mb-2 tracking-tighter">

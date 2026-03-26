@@ -1,5 +1,6 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
+import { createPortal } from 'react-dom';
 import { Image as ImageIcon, Camera, Trophy, Users, Dumbbell, X, ChevronLeft, ChevronRight } from 'lucide-react';
 
 const categories = ['ALL', 'NCC CAMPS', 'TRAINING', 'EVENTS', 'ACHIEVEMENTS', 'SPORTS'];
@@ -85,6 +86,22 @@ const galleryItems = [
 const Gallery: React.FC = () => {
   const [activeCategory, setActiveCategory] = useState('ALL');
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  useEffect(() => {
+    if (selectedIndex !== null) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = 'unset';
+    }
+    return () => {
+      document.body.style.overflow = 'unset';
+    };
+  }, [selectedIndex]);
 
   const filteredItems = useMemo(() => 
     activeCategory === 'ALL' 
@@ -127,7 +144,7 @@ const Gallery: React.FC = () => {
           <span className="inline-block px-4 py-1.5 bg-white/10 backdrop-blur-md border border-white/20 rounded-full text-white text-[10px] font-black tracking-[0.4em] uppercase mb-8">
             MEMORIES
           </span>
-          <h1 className="text-7xl md:text-[10rem] font-display text-white mb-8 tracking-tighter text-glow-white leading-none">
+          <h1 className="text-5xl md:text-[8rem] lg:text-[10rem] font-display text-white mb-8 tracking-tighter text-glow-white leading-none px-2">
             GALLERY
           </h1>
           <p className="text-white/60 max-w-2xl mx-auto text-lg md:text-2xl font-medium leading-relaxed tracking-tight">
@@ -174,20 +191,20 @@ const Gallery: React.FC = () => {
                 transition={{ duration: 0.5 }}
                 whileHover={{ y: -12 }}
                 onClick={() => setSelectedIndex(index)}
-                className="bg-white rounded-[3rem] aspect-[4/5] flex flex-col items-center justify-end text-center text-white relative group overflow-hidden shadow-2xl transition-all duration-500 cursor-pointer"
+                className="bg-white rounded-[2rem] md:rounded-[3rem] aspect-[4/5] flex flex-col items-center justify-end text-center text-white relative group overflow-hidden shadow-2xl transition-all duration-700 cursor-pointer"
               >
                 {/* Image Background */}
                 <img 
                   src={item.image} 
                   alt={item.category}
-                  className="absolute inset-0 w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
+                  className="absolute inset-0 w-full h-full object-cover premium-zoom group-hover:scale-110"
                   referrerPolicy="no-referrer"
                 />
 
                 {/* Gradient Overlay */}
                 <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent opacity-60 group-hover:opacity-80 transition-opacity duration-500" />
                 
-                <div className="p-12 relative z-10 w-full">
+                <div className="p-6 md:p-12 relative z-10 w-full">
                   <p className="text-[10px] text-white/70 font-black uppercase tracking-[0.3em]">
                     {item.category}
                   </p>
@@ -202,84 +219,87 @@ const Gallery: React.FC = () => {
       </section>
 
       {/* Lightbox Modal */}
-      <AnimatePresence>
-        {selectedItem && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            onClick={() => setSelectedIndex(null)}
-            className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/95 backdrop-blur-xl cursor-zoom-out"
-          >
-            {/* Close Button */}
-            <motion.button
-              initial={{ opacity: 0, scale: 0.5 }}
-              animate={{ opacity: 1, scale: 1 }}
-              className="absolute top-8 right-8 text-white/50 hover:text-white transition-colors p-4 z-[110]"
-              onClick={(e) => {
-                e.stopPropagation();
-                setSelectedIndex(null);
-              }}
-            >
-              <X size={48} strokeWidth={1.5} />
-            </motion.button>
-
-            {/* Navigation Arrows */}
-            <div className="absolute inset-x-8 top-1/2 -translate-y-1/2 flex justify-between pointer-events-none z-[110]">
-              <motion.button
-                initial={{ opacity: 0, x: -20 }}
-                animate={{ opacity: 1, x: 0 }}
-                whileHover={{ scale: 1.1, x: -5 }}
-                whileTap={{ scale: 0.9 }}
-                onClick={handlePrevious}
-                className="p-6 rounded-full bg-white/5 hover:bg-white/10 text-white backdrop-blur-md border border-white/10 pointer-events-auto transition-all"
-              >
-                <ChevronLeft size={40} strokeWidth={1.5} />
-              </motion.button>
-
-              <motion.button
-                initial={{ opacity: 0, x: 20 }}
-                animate={{ opacity: 1, x: 0 }}
-                whileHover={{ scale: 1.1, x: 5 }}
-                whileTap={{ scale: 0.9 }}
-                onClick={handleNext}
-                className="p-6 rounded-full bg-white/5 hover:bg-white/10 text-white backdrop-blur-md border border-white/10 pointer-events-auto transition-all"
-              >
-                <ChevronRight size={40} strokeWidth={1.5} />
-              </motion.button>
-            </div>
-
-            {/* Image Container */}
+      {mounted && createPortal(
+        <AnimatePresence>
+          {selectedItem && (
             <motion.div
-              key={selectedItem.id}
-              initial={{ opacity: 0, scale: 0.9, y: 20 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.9, y: 20 }}
-              transition={{ type: "spring", damping: 25, stiffness: 200 }}
-              className="relative max-w-5xl w-full bg-white/5 backdrop-blur-md rounded-[4rem] overflow-hidden shadow-2xl flex flex-col items-center p-4 border border-white/10"
-              onClick={(e) => e.stopPropagation()}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setSelectedIndex(null)}
+              className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/95 backdrop-blur-xl cursor-zoom-out"
             >
-              <img
-                src={selectedItem.image}
-                alt="Gallery Preview"
-                className="w-full h-full object-contain max-h-[75vh] rounded-[3.5rem]"
-                referrerPolicy="no-referrer"
-              />
-              
-              {/* Category Indicator */}
-              <motion.div 
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="absolute bottom-10 px-8 py-3 bg-black/40 backdrop-blur-md border border-white/10 rounded-full"
+              {/* Close Button */}
+              <motion.button
+                initial={{ opacity: 0, scale: 0.5 }}
+                animate={{ opacity: 1, scale: 1 }}
+                className="absolute top-8 right-8 text-white/50 hover:text-white transition-colors p-4 z-[110]"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setSelectedIndex(null);
+                }}
               >
-                <p className="text-[10px] text-white font-black uppercase tracking-[0.4em]">
-                  {selectedItem.category}
-                </p>
+                <X size={48} strokeWidth={1.5} />
+              </motion.button>
+
+              {/* Navigation Arrows */}
+              <div className="absolute inset-x-8 top-1/2 -translate-y-1/2 flex justify-between pointer-events-none z-[110]">
+                <motion.button
+                  initial={{ opacity: 0, x: -20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  whileHover={{ scale: 1.1, x: -5 }}
+                  whileTap={{ scale: 0.9 }}
+                  onClick={handlePrevious}
+                  className="p-6 rounded-full bg-white/5 hover:bg-white/10 text-white backdrop-blur-md border border-white/10 pointer-events-auto transition-all"
+                >
+                  <ChevronLeft size={40} strokeWidth={1.5} />
+                </motion.button>
+
+                <motion.button
+                  initial={{ opacity: 0, x: 20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  whileHover={{ scale: 1.1, x: 5 }}
+                  whileTap={{ scale: 0.9 }}
+                  onClick={handleNext}
+                  className="p-6 rounded-full bg-white/5 hover:bg-white/10 text-white backdrop-blur-md border border-white/10 pointer-events-auto transition-all"
+                >
+                  <ChevronRight size={40} strokeWidth={1.5} />
+                </motion.button>
+              </div>
+
+              {/* Image Container */}
+              <motion.div
+                key={selectedItem.id}
+                initial={{ opacity: 0, scale: 0.9, y: 20 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.9, y: 20 }}
+                transition={{ type: "spring", damping: 25, stiffness: 200 }}
+                className="relative max-w-5xl w-full bg-white/5 backdrop-blur-md rounded-2xl md:rounded-[4rem] overflow-hidden shadow-2xl flex flex-col items-center p-2 md:p-4 border border-white/10"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <img
+                  src={selectedItem.image}
+                  alt="Gallery Preview"
+                  className="w-full h-full object-contain max-h-[75vh] rounded-[3.5rem]"
+                  referrerPolicy="no-referrer"
+                />
+                
+                {/* Category Indicator */}
+                <motion.div 
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="absolute bottom-10 px-8 py-3 bg-black/40 backdrop-blur-md border border-white/10 rounded-full"
+                >
+                  <p className="text-[10px] text-white font-black uppercase tracking-[0.4em]">
+                    {selectedItem.category}
+                  </p>
+                </motion.div>
               </motion.div>
             </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+          )}
+        </AnimatePresence>,
+        document.body
+      )}
     </div>
   );
 };
