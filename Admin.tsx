@@ -423,10 +423,9 @@ export default function Admin() {
     
     // Optimistic UI updates
     setMessages(prev => [...prev, tempMsg]);
-    setDoubts(prev => prev.map(d => d.id === selectedDoubt.id ? { ...d, status: 'resolved' } : d));
     
     // Update local selected doubt state
-    setSelectedDoubt(prev => prev ? { ...prev, status: 'resolved' } : null);
+    // setSelectedDoubt(prev => prev ? { ...prev, status: 'resolved' } : null); // Removed auto-resolve
 
     try {
       const headers = await getAuthHeaders();
@@ -482,6 +481,35 @@ export default function Admin() {
       if (!data.success) throw new Error(data.error);
       
       showToast('Doubt reopened.', 'info');
+    } catch (error) {
+      // Revert
+      setDoubts(prev => prev.map(d => d.id === selectedDoubt.id ? { ...d, status: prevStatus } : d));
+      setSelectedDoubt(prev => prev ? { ...prev, status: prevStatus } : null);
+      showToast('Failed to update status.', 'error');
+    }
+  }, [selectedDoubt, showToast, getAuthHeaders]);
+
+  // Resolve a doubt (optimistic)
+  const handleResolve = useCallback(async () => {
+    if (!selectedDoubt) return;
+    
+    const prevStatus = selectedDoubt.status;
+    
+    // Optimistic Update
+    setDoubts(prev => prev.map(d => d.id === selectedDoubt.id ? { ...d, status: 'resolved' } : d));
+    setSelectedDoubt(prev => prev ? { ...prev, status: 'resolved' } : null);
+
+    try {
+      const headers = await getAuthHeaders();
+      const res = await fetch(`/api/doubts/${selectedDoubt.id}/status`, {
+        method: 'PATCH',
+        headers,
+        body: JSON.stringify({ status: 'resolved' }),
+      });
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error);
+      
+      showToast('Doubt resolved manually.', 'success');
     } catch (error) {
       // Revert
       setDoubts(prev => prev.map(d => d.id === selectedDoubt.id ? { ...d, status: prevStatus } : d));
@@ -604,9 +632,12 @@ export default function Admin() {
                         REOPEN
                       </button>
                     ) : (
-                      <span className="px-4 py-2 bg-orange-50 text-orange-700 rounded-xl text-[10px] font-black tracking-widest">
-                        PENDING
-                      </span>
+                      <button
+                        onClick={handleResolve}
+                        className="px-4 py-2 bg-green-50 text-green-700 rounded-xl text-[10px] font-black tracking-widest hover:bg-green-100 transition-colors flex items-center gap-2"
+                      >
+                        MARK RESOLVED
+                      </button>
                     )}
                     <button
                       onClick={() => setShowDeleteConfirm(selectedDoubt.id)}

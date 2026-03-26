@@ -648,7 +648,37 @@ export default function Doubts() {
                   <div ref={messagesEndRef} />
                 </div>
 
+                {/* Reply Preview */}
+                {replyingTo && (
+                  <div className="mx-6 mb-2 p-3 bg-gray-50 border-l-4 border-[#1B4332] rounded-lg flex justify-between items-center animate-in slide-in-from-bottom-2">
+                    <div className="min-w-0">
+                      <p className="text-[10px] font-black text-[#1B4332] uppercase tracking-widest mb-1">Replying to {replyingTo.senderName}</p>
+                      <p className="text-xs text-gray-500 line-clamp-1">{replyingTo.message}</p>
+                    </div>
+                    <button onClick={() => setReplyingTo(null)} className="p-1 hover:bg-gray-200 rounded-full transition-colors">
+                      <X size={14} />
+                    </button>
+                  </div>
+                )}
+
                 <form onSubmit={handleSendMessage} className="p-6 border-t border-gray-100 flex gap-3">
+                  <input
+                    type="file"
+                    ref={fileInputRef}
+                    className="hidden"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) handleFileUpload(file);
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={uploading}
+                    className="w-12 h-12 bg-gray-50 text-gray-400 rounded-2xl flex items-center justify-center hover:bg-gray-100 transition-all shrink-0"
+                  >
+                    {uploading ? <RefreshCw size={20} className="animate-spin" /> : <Paperclip size={20} />}
+                  </button>
                   <input
                     type="text"
                     value={newMessage}
@@ -658,8 +688,8 @@ export default function Doubts() {
                   />
                   <button
                     type="submit"
-                    disabled={!newMessage.trim()}
-                    className="w-14 h-14 bg-[#1B4332] text-white rounded-2xl flex items-center justify-center shadow-lg shadow-[#1B4332]/20 hover:bg-[#2D6A4F] transition-all disabled:opacity-50"
+                    disabled={!newMessage.trim() && !uploading}
+                    className="w-14 h-14 bg-[#1B4332] text-white rounded-2xl flex items-center justify-center shadow-lg shadow-[#1B4332]/20 hover:bg-[#2D6A4F] transition-all disabled:opacity-50 shrink-0"
                   >
                     <Send size={20} />
                   </button>

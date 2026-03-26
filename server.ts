@@ -538,9 +538,8 @@ app.post('/api/doubts/:id/reply', authenticate as any, async (req: AuthRequest, 
     if (isAdmin) {
       const { data: doubt } = await supabase
         .from('doubts')
-        .update({ status: 'resolved' })
-        .eq('id', doubtId)
         .select('email, name, question, category')
+        .eq('id', doubtId)
         .single();
 
       if (doubt) {
