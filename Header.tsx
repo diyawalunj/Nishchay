@@ -72,14 +72,13 @@ export default function Header() {
 
   const isHome = location.pathname === '/';
   const shouldBeSolid = isScrolled || !isHome;
-  const isExpanded = !isScrolled || isHovered || scrollDirection === 'up' || isMobileMenuOpen;
 
   return (
     <motion.header 
-      animate={{ 
-        y: isExpanded ? 0 : -100,
-        opacity: isExpanded ? 1 : 0
-      }}
+  animate={{ 
+    y: 0,
+    opacity: 1
+  }}
       transition={{ 
         duration: 0.5, 
         ease: [0.16, 1, 0.3, 1] 
