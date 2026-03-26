@@ -38,7 +38,7 @@ interface Doubt {
 
 const ChatMessage = memo(function ChatMessage({ msg }: { msg: Message }) {
   const dateStr = msg.date ? new Date(msg.date).toLocaleString() : '';
-  
+
   // Is this message sent by the currently logged-in student?
   // Only the student sees this page, so if msg.isAdmin is true, it's from the founder.
   const isMe = !msg.isAdmin;
@@ -48,11 +48,10 @@ const ChatMessage = memo(function ChatMessage({ msg }: { msg: Message }) {
       <span className={`text-[9px] font-black uppercase tracking-widest mb-1 ${isMe ? 'text-gray-400 text-right' : 'text-[#1B4332] text-left'}`}>
         {isMe ? 'YOU' : msg.senderName.toUpperCase()}
       </span>
-      <div className={`px-5 py-3 rounded-2xl text-sm font-medium shadow-sm ${
-        isMe
-          ? 'bg-[#1B4332] text-white rounded-tr-none'
-          : 'bg-white text-gray-800 rounded-tl-none border border-gray-100'
-      }`}>
+      <div className={`px-5 py-3 rounded-2xl text-sm font-medium shadow-sm ${isMe
+        ? 'bg-[#1B4332] text-white rounded-tr-none'
+        : 'bg-white text-gray-800 rounded-tl-none border border-gray-100'
+        }`}>
         {msg.message}
       </div>
       {dateStr && (
@@ -75,19 +74,17 @@ const DoubtListItem = memo(function DoubtListItem({ doubt, isSelected, onSelect,
     <motion.button
       onClick={onSelect}
       whileHover={{ x: 4 }}
-      className={`w-full p-6 rounded-[2rem] text-left transition-all border ${
-        isSelected
-          ? 'bg-[#1B4332] border-[#1B4332] shadow-xl shadow-[#1B4332]/20'
-          : 'bg-white border-gray-100 hover:border-[#1B4332]/30 shadow-sm hover:shadow-md'
-      }`}
+      className={`w-full p-6 rounded-[2rem] text-left transition-all border ${isSelected
+        ? 'bg-[#1B4332] border-[#1B4332] shadow-xl shadow-[#1B4332]/20'
+        : 'bg-white border-gray-100 hover:border-[#1B4332]/30 shadow-sm hover:shadow-md'
+        }`}
     >
       <div className="flex justify-between items-start mb-3">
         <div className="flex flex-col gap-2">
-          <span className={`px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-widest border w-fit ${
-            isSelected
-              ? 'bg-white/10 text-white border-white/20'
-              : 'bg-amber-50 text-amber-600 border-amber-100'
-          }`}>
+          <span className={`px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-widest border w-fit ${isSelected
+            ? 'bg-white/10 text-white border-white/20'
+            : 'bg-amber-50 text-amber-600 border-amber-100'
+            }`}>
             {doubt.category}
           </span>
         </div>
@@ -100,9 +97,8 @@ const DoubtListItem = memo(function DoubtListItem({ doubt, isSelected, onSelect,
               e.stopPropagation();
               onDelete(e);
             }}
-            className={`p-1.5 rounded-lg transition-colors ${
-              isSelected ? 'hover:bg-white/10 text-white/40 hover:text-white' : 'hover:bg-red-50 text-gray-300 hover:text-red-500'
-            }`}
+            className={`p-1.5 rounded-lg transition-colors ${isSelected ? 'hover:bg-white/10 text-white/40 hover:text-white' : 'hover:bg-red-50 text-gray-300 hover:text-red-500'
+              }`}
           >
             <Trash2 size={14} />
           </button>
@@ -112,13 +108,12 @@ const DoubtListItem = memo(function DoubtListItem({ doubt, isSelected, onSelect,
         {doubt.question}
       </h4>
       <div className="flex items-center justify-between">
-        <span className={`text-[8px] font-black uppercase tracking-[0.2em] ${
-          isSelected
-            ? 'text-white'
-            : doubt.status === 'resolved'
-              ? 'text-green-500'
-              : 'text-orange-500'
-        }`}>
+        <span className={`text-[8px] font-black uppercase tracking-[0.2em] ${isSelected
+          ? 'text-white'
+          : doubt.status === 'resolved'
+            ? 'text-green-500'
+            : 'text-orange-500'
+          }`}>
           {doubt.status}
         </span>
       </div>
@@ -136,15 +131,15 @@ export default function Doubts() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
   const [errors, setErrors] = useState<{ [key: string]: string }>({});
-  
+
   const [doubts, setDoubts] = useState<Doubt[]>([]);
   const [isAdmin, setIsAdmin] = useState(false);
   const [loadingDoubts, setLoadingDoubts] = useState(true);
   const [selectedDoubt, setSelectedDoubt] = useState<Doubt | null>(null);
-  
+
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState('');
-  
+
   const { showToast } = useToast();
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -196,7 +191,7 @@ export default function Doubts() {
 
   useEffect(() => {
     if (!user) return;
-    
+
     fetchMyDoubts();
 
     // REAL-TIME: Listen for any changes to the doubts table for this user
@@ -209,10 +204,10 @@ export default function Doubts() {
 
       const channel = supabase
         .channel('my_doubts_changes')
-        .on('postgres_changes', { 
-          event: '*', 
-          schema: 'public', 
-          table: 'doubts' 
+        .on('postgres_changes', {
+          event: '*',
+          schema: 'public',
+          table: 'doubts'
         }, () => {
           // Refresh the list when anything changes
           fetchMyDoubts();
@@ -245,7 +240,7 @@ export default function Doubts() {
       setMessages([]);
       return;
     }
-    
+
     fetchMessages();
 
     // REAL-TIME: Listen for new messages in THIS specific doubt
@@ -255,9 +250,9 @@ export default function Doubts() {
 
       const channel = supabase
         .channel(`doubt_messages_${selectedDoubt.id}`)
-        .on('postgres_changes', { 
-          event: 'INSERT', 
-          schema: 'public', 
+        .on('postgres_changes', {
+          event: 'INSERT',
+          schema: 'public',
           table: 'messages',
           filter: `doubt_id=eq.${selectedDoubt.id}`
         }, (payload) => {
@@ -345,7 +340,7 @@ export default function Doubts() {
 
     setDoubts(prev => [newDoubt, ...prev]);
     setShowSuccess(true);
-    
+
     // Clear form
     const savedQuestion = formData.question;
     setFormData(prev => ({ ...prev, question: '' }));
@@ -365,14 +360,14 @@ export default function Doubts() {
         }),
       });
       const data = await res.json();
-      
+
       if (!data.success) {
         throw new Error(data.error || 'Failed to submit doubt');
       }
 
       // Replace temp ID with real ID
       setDoubts(prev => prev.map(d => d.id === tempId ? { ...d, id: data.doubtId } : d));
-      
+
     } catch (error: any) {
       console.error('Submit error:', error);
       // Revert optimistic update on failure
@@ -401,7 +396,7 @@ export default function Doubts() {
       isAdmin: false,
       date: new Date().toISOString()
     };
-    
+
     setMessages(prev => [...prev, tempMsg]);
 
     try {
@@ -431,7 +426,7 @@ export default function Doubts() {
   return (
     <div className="min-h-screen bg-[#F8F9FA]">
       {/* Hero Section */}
-      <section className="relative py-40 pt-32 bg-[#050A0F] overflow-hidden">
+      <section className="relative py-48 pt-32 bg-[#050A0F] overflow-hidden">
         <div className="absolute inset-0 bg-gradient-to-b from-[#1B4332]/20 to-transparent" />
         <div className="absolute top-0 left-0 w-full h-full opacity-10 pointer-events-none">
           <div className="absolute top-20 left-10 w-64 h-64 bg-[#1B4332] rounded-full blur-[128px]" />
@@ -483,11 +478,10 @@ export default function Doubts() {
                       <button
                         key={d.id}
                         onClick={() => setSelectedDoubt(d)}
-                        className={`flex-shrink-0 px-5 py-3 rounded-2xl text-left transition-all border ${
-                          selectedDoubt?.id === d.id
-                            ? 'bg-[#1B4332] border-[#1B4332] text-white'
-                            : 'bg-gray-50 border-gray-100 text-gray-600 hover:border-[#1B4332]/30'
-                        }`}
+                        className={`flex-shrink-0 px-5 py-3 rounded-2xl text-left transition-all border ${selectedDoubt?.id === d.id
+                          ? 'bg-[#1B4332] border-[#1B4332] text-white'
+                          : 'bg-gray-50 border-gray-100 text-gray-600 hover:border-[#1B4332]/30'
+                          }`}
                       >
                         <p className={`text-xs font-bold line-clamp-1 max-w-[200px] ${selectedDoubt?.id === d.id ? 'text-white' : 'text-gray-800'}`}>
                           {d.question}
@@ -511,11 +505,10 @@ export default function Doubts() {
                         <span className="px-2 py-0.5 bg-amber-50 text-amber-700 text-[8px] font-black uppercase tracking-widest rounded-full border border-amber-100">
                           {selectedDoubt.category}
                         </span>
-                        <span className={`px-2 py-0.5 text-[8px] font-black uppercase tracking-widest rounded-full border ${
-                          selectedDoubt.status === 'resolved'
-                            ? 'bg-green-50 text-green-600 border-green-100'
-                            : 'bg-orange-50 text-orange-600 border-orange-100'
-                        }`}>
+                        <span className={`px-2 py-0.5 text-[8px] font-black uppercase tracking-widest rounded-full border ${selectedDoubt.status === 'resolved'
+                          ? 'bg-green-50 text-green-600 border-green-100'
+                          : 'bg-orange-50 text-orange-600 border-orange-100'
+                          }`}>
                           {selectedDoubt.status}
                         </span>
                       </div>
@@ -725,49 +718,49 @@ export default function Doubts() {
             </motion.div>
           )}
         </AnimatePresence>
-      <AnimatePresence>
-        {showDeleteModal && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-            <motion.div
-              initial={{ scale: 0.9, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.9, opacity: 0 }}
-              className="bg-white rounded-[2.5rem] p-10 max-w-md w-full shadow-2xl text-center"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="w-20 h-20 rounded-full bg-red-50 flex items-center justify-center mx-auto text-red-500 mb-6">
-                <Trash2 size={40} />
-              </div>
-              <h3 className="text-2xl font-black text-gray-900 mb-2">Delete Chat?</h3>
-              <p className="text-gray-500 font-medium mb-8">Choose how you want to delete this conversation.</p>
-              
-              <div className="flex flex-col gap-3">
-                <button
-                  onClick={() => handleDelete(showDeleteModal, 'me')}
-                  className="w-full py-4 bg-gray-100 text-gray-700 rounded-2xl font-black tracking-widest text-xs hover:bg-gray-200 transition-all uppercase"
-                >
-                  Delete for me
-                </button>
-                {isAdmin && (
+        <AnimatePresence>
+          {showDeleteModal && (
+            <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+              <motion.div
+                initial={{ scale: 0.9, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ scale: 0.9, opacity: 0 }}
+                className="bg-white rounded-[2.5rem] p-10 max-w-md w-full shadow-2xl text-center"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="w-20 h-20 rounded-full bg-red-50 flex items-center justify-center mx-auto text-red-500 mb-6">
+                  <Trash2 size={40} />
+                </div>
+                <h3 className="text-2xl font-black text-gray-900 mb-2">Delete Chat?</h3>
+                <p className="text-gray-500 font-medium mb-8">Choose how you want to delete this conversation.</p>
+
+                <div className="flex flex-col gap-3">
                   <button
-                    onClick={() => handleDelete(showDeleteModal, 'everyone')}
-                    className="w-full py-4 bg-red-50 text-red-600 rounded-2xl font-black tracking-widest text-xs hover:bg-red-100 transition-all uppercase"
+                    onClick={() => handleDelete(showDeleteModal, 'me')}
+                    className="w-full py-4 bg-gray-100 text-gray-700 rounded-2xl font-black tracking-widest text-xs hover:bg-gray-200 transition-all uppercase"
                   >
-                    Delete for everyone
+                    Delete for me
                   </button>
-                )}
-                <button
-                  onClick={() => setShowDeleteModal(null)}
-                  className="w-full py-4 text-gray-400 font-black tracking-widest text-xs hover:text-gray-600 transition-all uppercase mt-2"
-                >
-                  Cancel
-                </button>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
+                  {isAdmin && (
+                    <button
+                      onClick={() => handleDelete(showDeleteModal, 'everyone')}
+                      className="w-full py-4 bg-red-50 text-red-600 rounded-2xl font-black tracking-widest text-xs hover:bg-red-100 transition-all uppercase"
+                    >
+                      Delete for everyone
+                    </button>
+                  )}
+                  <button
+                    onClick={() => setShowDeleteModal(null)}
+                    className="w-full py-4 text-gray-400 font-black tracking-widest text-xs hover:text-gray-600 transition-all uppercase mt-2"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </motion.div>
+            </div>
+          )}
+        </AnimatePresence>
+      </div>
     </div>
-  </div>
-);
+  );
 }
