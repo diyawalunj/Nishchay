@@ -1,6 +1,11 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { auth, onAuthStateChanged, checkIfAdmin } from './firebase';
 import { motion } from 'motion/react';
-import { Search, Calculator, Book, Globe, Newspaper, ClipboardList, Target } from 'lucide-react';
+import {
+  Search, Calculator, Book, Globe, Newspaper, Target,
+  ChevronLeft, Upload, FileText, Atom, FlaskConical,
+  Dna, Landmark, Coins, Map, BookOpen
+} from 'lucide-react';
 
 const SUBJECTS = [
   {
@@ -9,7 +14,6 @@ const SUBJECTS = [
     count: '50+ PDFs',
     icon: Calculator,
     color: 'bg-[#2D5A27]',
-    hoverColor: 'hover:bg-[#366B2F]',
   },
   {
     id: 'english',
@@ -17,15 +21,55 @@ const SUBJECTS = [
     count: '40+ PDFs',
     icon: Book,
     color: 'bg-[#1B3A5B]',
-    hoverColor: 'hover:bg-[#234B75]',
   },
   {
-    id: 'gk',
-    title: 'General Knowledge',
-    count: '60+ PDFs',
-    icon: Globe,
-    color: 'bg-[#3292C7]',
-    hoverColor: 'hover:bg-[#3BA8E3]',
+    id: 'physics',
+    title: 'Physics',
+    count: '0 PDFs',
+    icon: Atom,
+    color: 'bg-[#5B2A86]',
+  },
+  {
+    id: 'chemistry',
+    title: 'Chemistry',
+    count: '0 PDFs',
+    icon: FlaskConical,
+    color: 'bg-[#D64933]',
+  },
+  {
+    id: 'biology',
+    title: 'Biology',
+    count: '0 PDFs',
+    icon: Dna,
+    color: 'bg-[#15822F]',
+  },
+  {
+    id: 'economics',
+    title: 'Economics',
+    count: '0 PDFs',
+    icon: Coins,
+    color: 'bg-[#B57C00]',
+  },
+  {
+    id: 'history',
+    title: 'History',
+    count: '0 PDFs',
+    icon: BookOpen,
+    color: 'bg-[#8A5A44]',
+  },
+  {
+    id: 'polity',
+    title: 'Polity',
+    count: '0 PDFs',
+    icon: Landmark,
+    color: 'bg-[#005B96]',
+  },
+  {
+    id: 'geography',
+    title: 'Geography',
+    count: '0 PDFs',
+    icon: Map,
+    color: 'bg-[#2E8B57]',
   },
   {
     id: 'current-affairs',
@@ -33,7 +77,6 @@ const SUBJECTS = [
     count: 'Monthly Updates',
     icon: Newspaper,
     color: 'bg-[#4B5563]',
-    hoverColor: 'hover:bg-[#606B7A]',
   },
   {
     id: 'strategy',
@@ -41,16 +84,74 @@ const SUBJECTS = [
     count: '10+ Guides',
     icon: Target,
     color: 'bg-[#1B3A5B]',
-    hoverColor: 'hover:bg-[#234B75]',
   },
 ];
 
 export default function Notes() {
   const [searchQuery, setSearchQuery] = useState('');
+  const [selectedSubject, setSelectedSubject] = useState<any>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      setIsAdmin(checkIfAdmin(currentUser));
+    });
+    return () => unsubscribe();
+  }, []);
 
   const filteredSubjects = SUBJECTS.filter(subject =>
     subject.title.toLowerCase().includes(searchQuery.toLowerCase())
   );
+
+  // Detail View for a specific subject
+  if (selectedSubject) {
+    return (
+      <div className="min-h-screen bg-[#F8F9FA] pt-32 pb-20">
+        <div className="max-w-6xl mx-auto px-4">
+          <button
+            onClick={() => setSelectedSubject(null)}
+            className="flex items-center gap-2 text-gray-500 hover:text-[#1A1A1A] mb-8 transition-colors group"
+          >
+            <div className="w-10 h-10 bg-white rounded-full flex items-center justify-center shadow-sm border border-gray-100 group-hover:scale-110 transition-transform">
+              <ChevronLeft size={20} />
+            </div>
+            <span className="font-bold text-xs tracking-widest uppercase">Back to Subjects</span>
+          </button>
+
+          <div className="bg-white rounded-[2rem] p-8 md:p-12 shadow-[0_20px_50px_rgba(0,0,0,0.03)] border border-gray-100 mb-8">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-12 border-b border-gray-100 pb-12">
+              <div className="flex items-center gap-6">
+                <div className={`w-20 h-20 ${selectedSubject.color} rounded-3xl flex items-center justify-center text-white shadow-xl`}>
+                  <selectedSubject.icon size={40} />
+                </div>
+                <div>
+                  <h2 className="text-4xl md:text-5xl font-black text-[#1A1A1A] mb-2 tracking-tighter">{selectedSubject.title}</h2>
+                  <p className="text-gray-500 font-medium text-lg">Upload and manage notes for {selectedSubject.title}</p>
+                </div>
+              </div>
+              {isAdmin && (
+                <button onClick={() => alert('Folder ready for uploads. API integration to be added.')} className="flex items-center justify-center gap-3 px-8 py-4 bg-[#1B4332] text-white rounded-2xl font-bold hover:bg-[#143024] transition-all shadow-lg shadow-[#1B4332]/20 hover:scale-105 hover:-translate-y-1">
+                  <Upload size={20} />
+                  Upload Note
+                </button>
+              )}
+            </div>
+
+            {/* Notes List / Empty State */}
+            <div className="text-center py-24 bg-gray-50 rounded-[2rem] border-2 border-dashed border-gray-200">
+              <div className="w-24 h-24 bg-white rounded-3xl flex items-center justify-center mx-auto mb-6 shadow-sm text-gray-300">
+                <FileText size={48} />
+              </div>
+              <h3 className="text-2xl font-black text-gray-900 mb-3 tracking-tighter">No notes uploaded yet</h3>
+              <p className="text-gray-500 max-w-md mx-auto font-medium leading-relaxed">
+                This folder is empty. Click the upload button above to add PDF notes, study materials, or quick revision sheets into this directory.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-white">
@@ -61,7 +162,7 @@ export default function Notes() {
           <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/camouflage.png')]"></div>
           <div className="absolute top-0 left-0 right-0 h-64 bg-gradient-to-b from-[#1B4332]/60 to-transparent"></div>
         </div>
-        
+
         <div className="relative z-10 max-w-7xl mx-auto px-4 text-center">
           <motion.span
             initial={{ opacity: 0, y: 20 }}
@@ -92,7 +193,7 @@ export default function Notes() {
       {/* Search and Grid Section */}
       <section className="py-32 px-4 max-w-7xl mx-auto relative">
         <div className="absolute top-0 left-0 w-full h-px bg-gradient-to-r from-transparent via-gray-100 to-transparent"></div>
-        
+
         {/* Search Bar */}
         <div className="max-w-2xl mx-auto mb-24">
           <div className="relative group">
@@ -116,6 +217,8 @@ export default function Notes() {
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: index * 0.05 }}
               whileHover={{ y: -12 }}
+              onClick={() => setSelectedSubject(subject)}
+              className={`${subject.color} p-12 rounded-[3rem] text-white transition-all duration-500 flex flex-col items-center text-center group cursor-pointer shadow-2xl relative overflow-hidden`}
               className={`${subject.color} p-8 md:p-12 rounded-[2rem] md:rounded-[3rem] text-white transition-all duration-500 flex flex-col items-center text-center group cursor-pointer shadow-2xl relative overflow-hidden`}
             >
               <div className="absolute -right-8 -bottom-8 opacity-[0.05] group-hover:opacity-[0.15] transition-opacity duration-500">
@@ -127,7 +230,7 @@ export default function Notes() {
               <h3 className="text-3xl font-black mb-3 tracking-tighter">{subject.title}</h3>
               <p className="text-white/50 text-xs font-black mb-10 tracking-[0.3em] uppercase">{subject.count}</p>
               <button className="px-10 py-4 bg-white/10 backdrop-blur-md border border-white/20 rounded-2xl text-[10px] font-black tracking-[0.3em] uppercase hover:bg-white hover:text-gray-900 transition-all duration-500 shadow-lg">
-                Coming Soon
+                Open Folder
               </button>
             </motion.div>
           ))}
