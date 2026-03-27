@@ -7,28 +7,28 @@ const FOUNDERS = [
     image: '/abhi.jpg',
     qualification: 'NDA Qualified',
     degrees: ['B.Tech in AI & Data Science', 'B.A. (Hons.) Political Science'],
-    squadron: 'NCC-1 MAH AIR SQN'
+    squadron: '1 MAH AIR SQN NCC'
   },
   {
     name: 'Aditya Sahane',
     image: '/aditya.jpg',
     qualification: 'NDA Qualified',
     degrees: ['B.Tech in Computer Science Engineering'],
-    squadron: 'NCC-3 MAH AIR SQN'
+    squadron: '3 MAH AIR SQN NCC'
   },
   {
     name: 'Rishikesh Muthal',
     image: '/rishi.jpg',
     qualification: 'NDA Qualified',
     degrees: ['B.Tech in AI & Data Science'],
-    squadron: 'NCC-1 MAH AIR SQN'
+    squadron: '1 MAH AIR SQN NCC'
   },
   {
     name: 'Vedant Jadhav',
     image: '/vedant.jpg',
     qualification: 'CDS Qualified',
     degrees: ['B.E. Information Technology'],
-    squadron: 'NCC-1 MAH AIR SQN'
+    squadron: '1 MAH AIR SQN NCC'
   }
 ];
 
@@ -120,7 +120,7 @@ export default function About() {
             <h2 className="text-5xl md:text-7xl font-black text-[#1A1A1A] mb-12 tracking-tighter">Our Story</h2>
             <div className="mb-12">
               <p className="quote-text text-2xl md:text-3xl mb-6 leading-tight">
-                "Some goals are so worthy it's glorious even to fail... Not every fire is meant to burn down walls; some fires are made to light you from within."
+                "Not every fire is meant to burn down walls; some fires are made to light you from within."
               </p>
             </div>
             <div className="space-y-8 text-gray-500 text-lg leading-relaxed font-medium">
