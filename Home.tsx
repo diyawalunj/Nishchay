@@ -53,7 +53,7 @@ function useAnimatedCounter(target: number, duration: number = 2000, inView: boo
       // Ease-out cubic for smooth deceleration
       const eased = 1 - Math.pow(1 - progress, 3);
       const current = Math.floor(eased * target);
-      
+
       setCount(current);
       if (progress < 1) {
         requestAnimationFrame(animate);
@@ -73,9 +73,9 @@ export default function Home() {
   const statsRef = useRef<HTMLDivElement>(null);
   const statsInView = useInView(statsRef, { once: true, margin: "-100px" });
 
-  const stat1 = useAnimatedCounter(500, 2000, statsInView);
+  const stat1 = useAnimatedCounter(10, 2000, statsInView);
   const stat2 = useAnimatedCounter(4, 1500, statsInView);
-  const stat3 = useAnimatedCounter(200, 2000, statsInView);
+  const stat3 = useAnimatedCounter(50, 2000, statsInView);
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -96,9 +96,9 @@ export default function Home() {
       <section className="relative min-h-screen flex flex-col items-center justify-center pt-20 overflow-hidden">
         {/* Background Image with Overlay */}
         <div className="absolute inset-0 z-0">
-          <img 
-            src="/hero-bg-BtRLye3t.jpg" 
-            alt="Military Background" 
+          <img
+            src="/hero-bg-BtRLye3t.jpg"
+            alt="Military Background"
             className="w-full h-full object-cover"
             referrerPolicy="no-referrer"
           />
@@ -106,8 +106,6 @@ export default function Home() {
           {/* Camouflage Pattern Overlay */}
           <div className="absolute inset-0 opacity-30 pointer-events-none bg-[url('https://www.transparenttextures.com/patterns/camouflage.png')]"></div>
           <div className="absolute top-0 left-0 right-0 h-40 bg-gradient-to-b from-[#1B4332]/60 to-transparent"></div>
-          {/* Grain texture for depth */}
-          <div className="grain-overlay absolute inset-0"></div>
         </div>
 
         <div className="relative z-10 max-w-5xl mx-auto px-4 text-center mt-10">
@@ -123,8 +121,8 @@ export default function Home() {
           <motion.h1
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
-            transition={{ duration: 0.8, delay: 0.2 }}
-            className="text-8xl md:text-[12rem] font-display text-white mb-6 tracking-tighter text-glow-white leading-none"
+            transition={{ duration: 1, delay: 0.2, ease: [0.16, 1, 0.3, 1] }}
+            className="text-4xl md:text-[6rem] lg:text-[8rem] font-display mb-6 tracking-tighter text-glow-white leading-none px-2 text-white"
           >
             NISHCHAY
           </motion.h1>
@@ -169,7 +167,7 @@ export default function Home() {
           >
             <Link to="/contact" className="w-full sm:w-auto">
               <button className="btn-white w-full flex items-center justify-center gap-2">
-                JOIN NOW <ArrowRight size={18} />
+                CONTACT US <ArrowRight size={18} />
               </button>
             </Link>
             <Link to="/notes" className="w-full sm:w-auto">
@@ -177,11 +175,16 @@ export default function Home() {
                 <Download size={18} /> NOTES
               </button>
             </Link>
-            <Link to="/doubts" className="w-full sm:w-auto">
+            <a
+              href="https://chat.whatsapp.com/BjClfB1EydhBWBevGOmvbG"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="w-full sm:w-auto"
+            >
               <button className="btn-secondary w-full flex items-center justify-center gap-2">
-                <MessageCircle size={18} /> DOUBTS
+                <MessageCircle size={18} /> WHATSAPP COMMUNITY
               </button>
-            </Link>
+            </a>
           </motion.div>
         </div>
 
@@ -191,14 +194,12 @@ export default function Home() {
             {stats.map((stat, idx) => (
               <motion.div
                 key={stat.label}
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.6, delay: 1.2 + idx * 0.15 }}
-                className="glass-card-dark rounded-[2rem] p-10 text-center group hover:bg-white/10 transition-all duration-500 relative overflow-hidden"
+                initial={{ opacity: 0, filter: 'blur(10px)', y: 30 }}
+                animate={statsInView ? { opacity: 1, filter: 'blur(0px)', y: 0 } : {}}
+                transition={{ duration: 0.8, delay: 0.1 * idx, ease: [0.16, 1, 0.3, 1] }}
+                className="glass-card-dark rounded-[2rem] p-6 md:p-10 text-center group hover:bg-white/10 transition-all duration-500 relative overflow-hidden"
               >
-                {/* Shimmer decorative strip */}
-                <div className="absolute inset-x-0 top-0 h-px animate-shimmer"></div>
-                <p className="text-5xl font-black text-white mb-3 tracking-tighter group-hover:scale-110 transition-transform duration-500 tabular-nums">
+                <p className="text-5xl font-black text-white mb-3 tracking-tighter premium-zoom group-hover:scale-110 tabular-nums">
                   {stat.value}{stat.suffix}
                 </p>
                 <p className="text-[10px] font-black tracking-[0.3em] text-white/40 uppercase">{stat.label}</p>
@@ -210,12 +211,11 @@ export default function Home() {
 
       {/* Hero Quote Section */}
       <section className="py-32 md:py-48 bg-white overflow-hidden relative">
-        <div className="absolute top-0 left-0 w-full h-px bg-gradient-to-r from-transparent via-gray-200 to-transparent"></div>
         <div className="max-w-5xl mx-auto px-4 text-center">
           <div className="flex justify-center mb-12">
             <Quote className="text-[#1B4332]/10 animate-float" size={64} />
           </div>
-          
+
           <div className="relative h-64 md:h-48">
             <AnimatePresence mode="wait">
               <motion.div
@@ -237,9 +237,8 @@ export default function Home() {
               <button
                 key={idx}
                 onClick={() => setActiveQuote(idx)}
-                className={`h-1.5 rounded-full transition-all duration-500 ${
-                  activeQuote === idx ? 'bg-[#1B4332] w-8' : 'bg-gray-100 w-4 hover:bg-gray-200'
-                }`}
+                className={`h-1.5 rounded-full transition-all duration-500 ${activeQuote === idx ? 'bg-[#1B4332] w-8' : 'bg-gray-100 w-4 hover:bg-gray-200'
+                  }`}
               />
             ))}
           </div>
@@ -250,14 +249,13 @@ export default function Home() {
       <section className="py-32 bg-[#F8F9FA] relative overflow-hidden">
         <div className="absolute top-0 right-0 w-96 h-96 bg-[#1B4332]/5 rounded-full blur-[100px] -mr-48 -mt-48"></div>
         <div className="max-w-7xl mx-auto px-4 text-center relative z-10">
-          <span className="section-label">Our Purpose</span>
           <h2 className="text-5xl md:text-7xl font-black mb-20 text-[#1A1A1A] tracking-tighter">Our Mission</h2>
-          
-          <motion.div 
+
+          <motion.div
             initial={{ opacity: 0, y: 40 }}
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
-            className="max-w-5xl mx-auto bg-white p-16 md:p-28 rounded-[2rem] shadow-[0_40px_100px_rgba(0,0,0,0.03)] border border-gray-100 relative group"
+            className="max-w-5xl mx-auto bg-white p-6 md:p-28 rounded-[2rem] shadow-[0_40px_100px_rgba(0,0,0,0.03)] border border-gray-100 relative group"
           >
             <div className="absolute top-10 left-10 opacity-5 group-hover:opacity-10 transition-opacity">
               <Quote size={80} />
@@ -277,7 +275,6 @@ export default function Home() {
       {/* Our Services Section */}
       <section className="py-32 bg-white">
         <div className="max-w-7xl mx-auto px-4 text-center">
-          <span className="section-label">What We Offer</span>
           <h2 className="text-5xl md:text-7xl font-black mb-6 text-[#1A1A1A] tracking-tighter">Our Services</h2>
           <p className="text-gray-400 font-medium max-w-2xl mx-auto mb-24 text-lg">
             Everything you need to crack defence exams, all in one platform.
@@ -291,13 +288,11 @@ export default function Home() {
                 whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true, margin: "-50px" }}
                 transition={{ delay: idx * 0.08, duration: 0.5, ease: "easeOut" }}
-                className="bg-white p-10 rounded-[2rem] border border-gray-100 shadow-sm card-hover-shadow text-left group relative overflow-hidden"
+                className="bg-white p-6 md:p-10 rounded-[2rem] border border-gray-100 shadow-sm card-hover-shadow card-lift text-left group relative overflow-hidden"
               >
                 <div className="absolute -right-8 -bottom-8 opacity-[0.03] group-hover:opacity-[0.08] transition-opacity duration-500">
                   <service.icon size={160} />
                 </div>
-                {/* Subtle top accent line */}
-                <div className="absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-[#1B4332]/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
                 <div className={`w-14 h-14 ${service.color} rounded-2xl flex items-center justify-center mb-8 group-hover:rotate-6 group-hover:scale-110 transition-transform duration-500 shadow-lg shadow-current/10`}>
                   <service.icon size={28} />
                 </div>
@@ -313,4 +308,3 @@ export default function Home() {
     </main>
   );
 }
-

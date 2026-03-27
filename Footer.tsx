@@ -43,7 +43,7 @@ export default function Footer() {
               <span className="w-4 h-px bg-white/20"></span>
               Quick Links
             </h4>
-            <ul className="space-y-4">
+            <ul className="space-y-4 stagger-children">
               {FOOTER_LINKS.quickLinks.map((link) => (
                 <li key={link.name}>
                   <Link to={link.href} className="text-gray-400 hover:text-white transition-all duration-300 text-sm font-medium hover:translate-x-1 inline-block">{link.name}</Link>
@@ -57,7 +57,7 @@ export default function Footer() {
               <span className="w-4 h-px bg-white/20"></span>
               Resources
             </h4>
-            <ul className="space-y-4">
+            <ul className="space-y-4 stagger-children">
               {FOOTER_LINKS.resources.map((link) => (
                 <li key={link.name}>
                   <Link to={link.href} className="text-gray-400 hover:text-white transition-all duration-300 text-sm font-medium hover:translate-x-1 inline-block">{link.name}</Link>
@@ -88,15 +88,15 @@ export default function Footer() {
 
         <div className="pt-12 border-t border-white/5 text-center">
           <div className="space-y-6">
-            <div className="space-y-2">
-              <p className="text-white font-black tracking-[0.4em] uppercase text-[10px] md:text-xs animate-text-glow">
-                Designed & Engineered By Diya Walunj
+            <div className="space-y-3">
+              <p className="text-white font-black tracking-[0.3em] md:tracking-[0.4em] uppercase text-[9px] md:text-xs animate-text-glow leading-relaxed">
+                Designed & Engineered By <br className="md:hidden" /> Diya Walunj
               </p>
-              <p className="text-white/40 font-bold tracking-[0.3em] uppercase text-[8px] md:text-[10px]">
-                Founded By Abhijeet, Vedant, Rishikesh & Aditya
+              <p className="text-white/40 font-bold tracking-[0.2em] md:tracking-[0.3em] uppercase text-[7px] md:text-[10px] leading-relaxed">
+                Founded By <br className="md:hidden" /> Abhijeet, Vedant, Rishikesh & Aditya
               </p>
             </div>
-            <div className="flex flex-col md:flex-row items-center justify-center gap-4 md:gap-8 text-[10px] text-gray-600 font-bold uppercase tracking-[0.2em]">
+            <div className="flex flex-col md:flex-row items-center justify-center gap-4 md:gap-8 text-[9px] text-gray-600 font-bold uppercase tracking-[0.2em]">
               <p>© 2026 Nishchay. All rights reserved.</p>
               <div className="hidden md:block w-1.5 h-1.5 rounded-full bg-white/10"></div>
               <p className="text-white/40">Jai Hind! 🇮🇳</p>

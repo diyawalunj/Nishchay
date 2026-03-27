@@ -14,6 +14,10 @@ interface Message {
   message: string;
   isAdmin: boolean;
   date: string;
+  fileUrl?: string;
+  fileType?: string;
+  replyToId?: string;
+  replyToText?: string;
 }
 
 interface Doubt {
@@ -31,24 +35,34 @@ interface Doubt {
 
 const AdminChatMessage = memo(function AdminChatMessage({ msg }: { msg: Message }) {
   const dateStr = msg.date ? new Date(msg.date).toLocaleString() : '';
+  const isMe = msg.isAdmin;
+
   return (
-    <div className={`max-w-[70%] flex flex-col ${msg.isAdmin ? 'self-end' : 'self-start'}`}>
-      <span className={`text-[9px] font-black uppercase tracking-widest mb-1 ${msg.isAdmin ? 'text-right text-[#1B4332]' : 'text-gray-400'}`}>
-        {msg.isAdmin ? msg.senderName.toUpperCase() : msg.senderName}
+    <motion.div 
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      className={`max-w-[75%] flex flex-col group relative ${isMe ? 'self-end' : 'self-start'}`}
+    >
+      <span className={`text-[9px] font-black uppercase tracking-widest mb-1 ${isMe ? 'text-right text-[#1B4332]' : 'text-gray-400'}`}>
+        {isMe ? msg.senderName.toUpperCase() : msg.senderName}
       </span>
-      <div className={`px-5 py-3 rounded-2xl text-sm font-medium shadow-sm ${
-        msg.isAdmin
+
+      <div className={`rounded-2xl text-sm font-medium shadow-sm overflow-hidden ${
+        isMe
           ? 'bg-[#1B4332] text-white rounded-tr-none'
           : 'bg-gray-100 text-gray-800 rounded-tl-none'
       }`}>
-        {msg.message}
+        
+        <div className="px-5 py-3">
+          {msg.message && <p>{msg.message}</p>}
+        </div>
       </div>
       {dateStr && (
-        <span className={`text-[8px] text-gray-300 mt-1 ${msg.isAdmin ? 'text-right' : ''}`}>
+        <span className={`text-[8px] text-gray-300 mt-1 ${isMe ? 'text-right' : ''}`}>
           {dateStr}
         </span>
       )}
-    </div>
+    </motion.div>
   );
 });
 
@@ -61,7 +75,7 @@ const AdminDoubtCard = memo(function AdminDoubtCard({ doubt, onSelect }: {
     <motion.div
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
-      className="bg-white rounded-3xl p-8 shadow-lg border border-gray-100 hover:shadow-xl transition-all cursor-pointer"
+      className="bg-white rounded-2xl md:rounded-3xl p-6 md:p-8 shadow-lg border border-gray-100 hover:shadow-xl transition-all cursor-pointer"
       onClick={() => onSelect(doubt)}
     >
       <div className="flex flex-col md:flex-row justify-between gap-6">
@@ -109,7 +123,7 @@ function AdminSkeleton() {
   return (
     <div className="grid gap-6 animate-pulse">
       {[1, 2, 3].map((i) => (
-        <div key={i} className="bg-white rounded-3xl p-8 shadow-lg border border-gray-100">
+        <div key={i} className="bg-white rounded-2xl md:rounded-3xl p-6 md:p-8 shadow-lg border border-gray-100">
           <div className="flex flex-col md:flex-row justify-between gap-6">
             <div className="flex-grow space-y-4">
               <div className="flex items-center gap-2">
@@ -265,7 +279,7 @@ export default function Admin() {
               senderName: newMessage.sender_name,
               message: newMessage.message,
               isAdmin: newMessage.is_admin,
-              date: newMessage.created_at
+              date: newMessage.created_at,
             }];
           });
         })
@@ -290,28 +304,25 @@ export default function Admin() {
   }, [messages.length]);
 
   // Send reply (optimistic)
-  const handleSendMessage = useCallback(async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!adminUser || !selectedDoubt || !newMessage.trim()) return;
+  const handleSendMessage = useCallback(async (e: React.FormEvent | null) => {
+    if (e) e.preventDefault();
+    if (!adminUser || !selectedDoubt) return;
+    if (!newMessage.trim()) return;
 
     const msgText = newMessage.trim();
     setNewMessage('');
-
+    
     const tempMsg: Message = {
       doubtId: selectedDoubt.id,
       senderName: adminUser.displayName || 'Admin',
       message: msgText,
       isAdmin: true,
-      date: new Date().toISOString()
+      date: new Date().toISOString(),
     };
     
     // Optimistic UI updates
     setMessages(prev => [...prev, tempMsg]);
-    setDoubts(prev => prev.map(d => d.id === selectedDoubt.id ? { ...d, status: 'resolved' } : d));
     
-    // Update local selected doubt state
-    setSelectedDoubt(prev => prev ? { ...prev, status: 'resolved' } : null);
-
     try {
       const headers = await getAuthHeaders();
       const res = await fetch(`/api/doubts/${selectedDoubt.id}/reply`, {
@@ -327,7 +338,6 @@ export default function Admin() {
       if (!data.success) throw new Error(data.error);
 
       showToast('Reply sent and resolved!', 'success');
-      // No need to fetchMessages/fetchDoubts — Supabase Realtime handles the update
     } catch (error) {
       console.error('Error sending reply:', error);
       // Revert optimistic
@@ -335,7 +345,7 @@ export default function Admin() {
       setNewMessage(msgText);
       showToast('Failed to send reply.', 'error');
     }
-  }, [adminUser, selectedDoubt, newMessage, showToast, getAuthHeaders, fetchMessages, fetchDoubts]);
+  }, [adminUser, selectedDoubt, newMessage, showToast, getAuthHeaders]);
 
   const handleSelectDoubt = useCallback((doubt: Doubt) => {
     setSelectedDoubt(doubt);
@@ -362,6 +372,35 @@ export default function Admin() {
       if (!data.success) throw new Error(data.error);
       
       showToast('Doubt reopened.', 'info');
+    } catch (error) {
+      // Revert
+      setDoubts(prev => prev.map(d => d.id === selectedDoubt.id ? { ...d, status: prevStatus } : d));
+      setSelectedDoubt(prev => prev ? { ...prev, status: prevStatus } : null);
+      showToast('Failed to update status.', 'error');
+    }
+  }, [selectedDoubt, showToast, getAuthHeaders]);
+
+  // Resolve a doubt (optimistic)
+  const handleResolve = useCallback(async () => {
+    if (!selectedDoubt) return;
+    
+    const prevStatus = selectedDoubt.status;
+    
+    // Optimistic Update
+    setDoubts(prev => prev.map(d => d.id === selectedDoubt.id ? { ...d, status: 'resolved' } : d));
+    setSelectedDoubt(prev => prev ? { ...prev, status: 'resolved' } : null);
+
+    try {
+      const headers = await getAuthHeaders();
+      const res = await fetch(`/api/doubts/${selectedDoubt.id}/status`, {
+        method: 'PATCH',
+        headers,
+        body: JSON.stringify({ status: 'resolved' }),
+      });
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error);
+      
+      showToast('Doubt resolved manually.', 'success');
     } catch (error) {
       // Revert
       setDoubts(prev => prev.map(d => d.id === selectedDoubt.id ? { ...d, status: prevStatus } : d));
@@ -411,8 +450,8 @@ export default function Admin() {
                 <LayoutDashboard size={32} />
               </div>
               <div>
-                <h1 className="text-4xl font-black tracking-tight">Admin Dashboard</h1>
-                <p className="text-white/70 font-medium">Manage student inquiries and doubts</p>
+                <h1 className="text-2xl md:text-4xl font-black tracking-tight">Admin Dashboard</h1>
+                <p className="text-white/70 font-medium text-xs md:text-base">Manage inquiries and doubts</p>
               </div>
             </div>
             <button
@@ -460,7 +499,7 @@ export default function Admin() {
               <motion.div
                 initial={{ opacity: 0, x: 20 }}
                 animate={{ opacity: 1, x: 0 }}
-                className="bg-white rounded-[2.5rem] shadow-xl overflow-hidden flex flex-col h-[700px]"
+                className="bg-white rounded-2xl md:rounded-[2.5rem] shadow-xl overflow-hidden flex flex-col h-[600px] md:h-[700px]"
               >
                 <div className="p-6 bg-gray-50 border-b border-gray-100 flex items-center justify-between">
                   <div className="flex items-center gap-4">
@@ -484,9 +523,12 @@ export default function Admin() {
                         REOPEN
                       </button>
                     ) : (
-                      <span className="px-4 py-2 bg-orange-50 text-orange-700 rounded-xl text-[10px] font-black tracking-widest">
-                        PENDING
-                      </span>
+                      <button
+                        onClick={handleResolve}
+                        className="px-4 py-2 bg-green-50 text-green-700 rounded-xl text-[10px] font-black tracking-widest hover:bg-green-100 transition-colors flex items-center gap-2"
+                      >
+                        MARK RESOLVED
+                      </button>
                     )}
                     <button
                       onClick={() => setShowDeleteConfirm(selectedDoubt.id)}
@@ -509,21 +551,23 @@ export default function Admin() {
                   <div ref={messagesEndRef} />
                 </div>
 
-                <form onSubmit={handleSendMessage} className="p-6 border-t border-gray-100 flex gap-3">
-                  <input
-                    type="text"
-                    value={newMessage}
-                    onChange={(e) => setNewMessage(e.target.value)}
-                    placeholder="Type your reply to send an email to the student..."
-                    className="flex-grow px-6 py-4 rounded-2xl bg-gray-50 border border-gray-100 focus:border-[#1B4332] outline-none transition-all font-bold text-gray-700"
-                  />
-                  <button
-                    type="submit"
-                    disabled={!newMessage.trim()}
-                    className="w-14 h-14 bg-[#1B4332] text-white rounded-2xl flex items-center justify-center shadow-lg shadow-[#1B4332]/20 hover:bg-[#2D6A4F] transition-all disabled:opacity-50"
-                  >
-                    <Send size={20} />
-                  </button>
+                <form onSubmit={handleSendMessage} className="p-6 border-t border-gray-100 flex flex-col gap-3">
+                  <div className="flex gap-3 items-center">
+                    <input
+                      type="text"
+                      value={newMessage}
+                      onChange={(e) => setNewMessage(e.target.value)}
+                      placeholder="Type your reply to send an email to the student..."
+                      className="flex-grow px-6 py-4 rounded-2xl bg-gray-50 border border-gray-100 focus:border-[#1B4332] outline-none transition-all font-bold text-gray-700"
+                    />
+                    <button
+                      type="submit"
+                      disabled={!newMessage.trim()}
+                      className="w-14 h-14 bg-[#1B4332] text-white rounded-2xl flex items-center justify-center shadow-lg shadow-[#1B4332]/20 hover:bg-[#2D6A4F] transition-all disabled:opacity-50"
+                    >
+                      <Send size={20} />
+                    </button>
+                  </div>
                 </form>
               </motion.div>
             ) : (

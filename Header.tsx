@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Shield, Menu, X, LogOut, User as UserIcon } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
@@ -14,7 +14,6 @@ export default function Header() {
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
   const location = useLocation();
-  const profileRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
@@ -50,19 +49,6 @@ export default function Header() {
   useEffect(() => {
     setIsMobileMenuOpen(false);
   }, [location]);
-
-  // Close profile dropdown when clicking outside
-  useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (profileRef.current && !profileRef.current.contains(e.target as Node)) {
-        setIsProfileOpen(false);
-      }
-    };
-    if (isProfileOpen) {
-      document.addEventListener('mousedown', handleClickOutside);
-    }
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [isProfileOpen]);
 
   const isHome = location.pathname === '/';
   const shouldBeSolid = isScrolled || !isHome;
@@ -156,7 +142,7 @@ export default function Header() {
 
           <div className="flex items-center gap-4">
             {user ? (
-              <div className="relative" ref={profileRef}>
+              <div className="relative">
                 <motion.button
                   whileHover={{ scale: 1.05 }}
                   whileTap={{ scale: 0.95 }}

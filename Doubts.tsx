@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback, memo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { auth, signInWithGoogle, onAuthStateChanged, type User as FirebaseUser, checkIfAdmin } from './firebase';
-import { Lock, MessageSquare, Send, Clock, ChevronLeft, RefreshCw, HelpCircle, Trash2, X } from 'lucide-react';
+import { Lock, MessageSquare, Send, Clock, ChevronLeft, RefreshCw, HelpCircle, Trash2, X, Paperclip, Image as ImageIcon, FileText } from 'lucide-react';
 import { useToast } from './Toast';
 import { useNavigate } from 'react-router-dom';
 import { supabase, isPlaceholder } from './supabase-frontend';
@@ -22,6 +22,10 @@ interface Message {
   message: string;
   isAdmin: boolean;
   date: string;
+  fileUrl?: string;
+  fileType?: string;
+  replyToId?: string;
+  replyToText?: string;
 }
 
 interface Doubt {
@@ -38,28 +42,35 @@ interface Doubt {
 
 const ChatMessage = memo(function ChatMessage({ msg }: { msg: Message }) {
   const dateStr = msg.date ? new Date(msg.date).toLocaleString() : '';
-
-  // Is this message sent by the currently logged-in student?
-  // Only the student sees this page, so if msg.isAdmin is true, it's from the founder.
   const isMe = !msg.isAdmin;
 
   return (
-    <div className={`max-w-[80%] flex flex-col ${isMe ? 'self-end' : 'self-start'}`}>
+    <motion.div 
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      className={`max-w-[85%] flex flex-col group relative ${isMe ? 'self-end' : 'self-start'}`}
+    >
       <span className={`text-[9px] font-black uppercase tracking-widest mb-1 ${isMe ? 'text-gray-400 text-right' : 'text-[#1B4332] text-left'}`}>
         {isMe ? 'YOU' : msg.senderName.toUpperCase()}
       </span>
-      <div className={`px-5 py-3 rounded-2xl text-sm font-medium shadow-sm ${isMe
+      
+      <div className={`rounded-2xl text-sm font-medium shadow-sm overflow-hidden ${isMe
         ? 'bg-[#1B4332] text-white rounded-tr-none'
         : 'bg-white text-gray-800 rounded-tl-none border border-gray-100'
         }`}>
-        {msg.message}
+        
+        {/* Render Message Text */}
+        <div className="px-5 py-3">
+          {msg.message && <p>{msg.message}</p>}
+        </div>
       </div>
+
       {dateStr && (
         <span className={`text-[8px] text-gray-300 mt-1 ${isMe ? 'text-right' : 'text-left'}`}>
           {dateStr}
         </span>
       )}
-    </div>
+    </motion.div>
   );
 });
 
@@ -265,7 +276,7 @@ export default function Doubts() {
               senderName: newMessage.sender_name,
               message: newMessage.message,
               isAdmin: newMessage.is_admin,
-              date: newMessage.created_at
+              date: newMessage.created_at,
             }];
           });
         })
@@ -381,20 +392,21 @@ export default function Doubts() {
   };
 
   // Send a follow-up message (optimistic)
-  const handleSendMessage = useCallback(async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!user || !selectedDoubt || !newMessage.trim()) return;
+  const handleSendMessage = useCallback(async (e: React.FormEvent | null) => {
+    if (e) e.preventDefault();
+    if (!user || !selectedDoubt) return;
+    if (!newMessage.trim()) return;
 
     const msgText = newMessage.trim();
     setNewMessage('');
-
+    
     // Optimistic Update
     const tempMsg: Message = {
       doubtId: selectedDoubt.id,
       senderName: user.displayName || 'Student',
       message: msgText,
       isAdmin: false,
-      date: new Date().toISOString()
+      date: new Date().toISOString(),
     };
 
     setMessages(prev => [...prev, tempMsg]);
@@ -421,7 +433,7 @@ export default function Doubts() {
       setNewMessage(msgText);
       showToast('Failed to send. Please try again.', 'error');
     }
-  }, [user, selectedDoubt, newMessage, showToast, fetchMessages, getAuthHeaders]);
+  }, [user, selectedDoubt, newMessage, showToast, getAuthHeaders]);
 
   return (
     <div className="min-h-screen bg-[#F8F9FA]">
@@ -442,7 +454,7 @@ export default function Doubts() {
           <span className="inline-block px-4 py-1.5 bg-white/10 backdrop-blur-md border border-white/20 rounded-full text-white text-[10px] font-black tracking-[0.4em] uppercase mb-8">
             PRIVATE GUIDANCE
           </span>
-          <h1 className="text-7xl md:text-[10rem] font-display text-white mb-8 tracking-tighter text-glow-white leading-none">
+          <h1 className="text-5xl md:text-[8rem] lg:text-[10rem] font-display text-white mb-8 tracking-tighter text-glow-white leading-none px-2">
             DOUBTS
           </h1>
           <p className="text-white/60 max-w-2xl mx-auto text-lg md:text-2xl font-medium leading-relaxed tracking-tight">
@@ -493,7 +505,7 @@ export default function Doubts() {
               </div>
 
               {/* Chat Panel */}
-              <div className="bg-white rounded-[2rem] shadow-2xl border border-gray-100 overflow-hidden flex flex-col h-[600px]">
+              <div className="bg-white rounded-[2rem] shadow-2xl border border-gray-100 overflow-hidden flex flex-col h-[500px] md:h-[600px]">
                 <div className="p-6 bg-gray-50 border-b border-gray-100 flex items-center justify-between">
                   <div className="flex items-center gap-4">
                     <div className="w-10 h-10 rounded-xl bg-[#1B4332] flex items-center justify-center text-white">
@@ -540,7 +552,7 @@ export default function Doubts() {
                   <button
                     type="submit"
                     disabled={!newMessage.trim()}
-                    className="w-14 h-14 bg-[#1B4332] text-white rounded-2xl flex items-center justify-center shadow-lg shadow-[#1B4332]/20 hover:bg-[#2D6A4F] transition-all disabled:opacity-50"
+                    className="w-14 h-14 bg-[#1B4332] text-white rounded-2xl flex items-center justify-center shadow-lg shadow-[#1B4332]/20 hover:bg-[#2D6A4F] transition-all disabled:opacity-50 shrink-0"
                   >
                     <Send size={20} />
                   </button>
@@ -557,7 +569,7 @@ export default function Doubts() {
               className="space-y-8"
             >
               {/* Ask Doubt Card */}
-              <div className="bg-white rounded-[2rem] p-8 md:p-10 shadow-xl border border-gray-100">
+              <div className="bg-white rounded-[2rem] p-6 md:p-10 shadow-xl border border-gray-100">
                 <div className="flex items-center justify-between mb-8">
                   <div className="flex items-center gap-4">
                     <div className="w-12 h-12 rounded-2xl bg-[#1B4332]/5 flex items-center justify-center text-[#1B4332]">
@@ -664,7 +676,7 @@ export default function Doubts() {
               </div>
 
               {/* Recent Doubts Card */}
-              <div className="bg-white rounded-[2rem] p-8 md:p-10 shadow-xl border border-gray-100">
+              <div className="bg-white rounded-[2rem] p-6 md:p-10 shadow-xl border border-gray-100">
                 <div className="flex items-center justify-between mb-8">
                   <div className="flex items-center gap-4">
                     <div className="w-12 h-12 rounded-2xl bg-[#1B4332]/5 flex items-center justify-center text-[#1B4332]">

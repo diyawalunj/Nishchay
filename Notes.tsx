@@ -175,7 +175,7 @@ export default function Notes() {
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
             transition={{ duration: 0.8, delay: 0.1 }}
-            className="text-7xl md:text-[10rem] font-display text-white mb-8 tracking-tighter text-glow-white leading-none"
+            className="text-5xl md:text-[8rem] lg:text-[10rem] font-display text-white mb-8 tracking-tighter text-glow-white leading-none px-2"
           >
             NOTES
           </motion.h1>
@@ -219,11 +219,12 @@ export default function Notes() {
               whileHover={{ y: -12 }}
               onClick={() => setSelectedSubject(subject)}
               className={`${subject.color} p-12 rounded-[3rem] text-white transition-all duration-500 flex flex-col items-center text-center group cursor-pointer shadow-2xl relative overflow-hidden`}
+              className={`${subject.color} p-8 md:p-12 rounded-[2rem] md:rounded-[3rem] text-white transition-all duration-500 flex flex-col items-center text-center group cursor-pointer shadow-2xl relative overflow-hidden`}
             >
               <div className="absolute -right-8 -bottom-8 opacity-[0.05] group-hover:opacity-[0.15] transition-opacity duration-500">
                 <subject.icon size={160} />
               </div>
-              <div className="w-20 h-20 bg-white/10 backdrop-blur-md rounded-3xl flex items-center justify-center mb-8 group-hover:scale-110 group-hover:rotate-6 transition-transform duration-500 border border-white/20 shadow-xl">
+              <div className="w-20 h-20 bg-white/10 backdrop-blur-md rounded-3xl flex items-center justify-center mb-8 premium-zoom group-hover:scale-110 group-hover:rotate-6 border border-white/20 shadow-xl">
                 <subject.icon size={40} />
               </div>
               <h3 className="text-3xl font-black mb-3 tracking-tighter">{subject.title}</h3>
