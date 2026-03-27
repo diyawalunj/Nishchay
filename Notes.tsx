@@ -99,6 +99,12 @@ export default function Notes() {
     return () => unsubscribe();
   }, []);
 
+  useEffect(() => {
+    if (selectedSubject) {
+      window.scrollTo(0, 0);
+    }
+  }, [selectedSubject]);
+
   const filteredSubjects = SUBJECTS.filter(subject =>
     subject.title.toLowerCase().includes(searchQuery.toLowerCase())
   );
