@@ -101,7 +101,7 @@ export default function Notes() {
 
   useEffect(() => {
     if (selectedSubject) {
-      window.scrollTo(0, 0);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
     }
   }, [selectedSubject]);
 
@@ -224,7 +224,6 @@ export default function Notes() {
               transition={{ delay: index * 0.05 }}
               whileHover={{ y: -12 }}
               onClick={() => setSelectedSubject(subject)}
-              className={`${subject.color} p-12 rounded-[3rem] text-white transition-all duration-500 flex flex-col items-center text-center group cursor-pointer shadow-2xl relative overflow-hidden`}
               className={`${subject.color} p-8 md:p-12 rounded-[2rem] md:rounded-[3rem] text-white transition-all duration-500 flex flex-col items-center text-center group cursor-pointer shadow-2xl relative overflow-hidden`}
             >
               <div className="absolute -right-8 -bottom-8 opacity-[0.05] group-hover:opacity-[0.15] transition-opacity duration-500">
