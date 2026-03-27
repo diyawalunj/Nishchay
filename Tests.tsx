@@ -1,13 +1,13 @@
 import React from 'react';
 import { motion } from 'motion/react';
-import { 
-  Swords, 
-  GraduationCap, 
-  Plane, 
-  Settings, 
-  Clock, 
-  BarChart3, 
-  FileText 
+import {
+  Swords,
+  GraduationCap,
+  Plane,
+  Settings,
+  Clock,
+  BarChart3,
+  FileText
 } from 'lucide-react';
 
 const examCategories = [
@@ -38,7 +38,7 @@ const examCategories = [
   {
     title: 'Technical Entries',
     subtitle: 'TES & SSC Technical',
-    description: '10+2 B.Tech, UES, SSC technical entries into Armed Forces',
+    description: '10+2 B.Tech and SSC technical entries into Armed Forces',
     icon: <Settings size={24} />,
     iconBg: 'bg-[#151C25]',
     status: 'COMING SOON'
@@ -73,8 +73,8 @@ const Tests: React.FC = () => {
           <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/camouflage.png')]"></div>
           <div className="absolute top-0 left-0 right-0 h-64 bg-gradient-to-b from-[#1B4332]/60 to-transparent"></div>
         </div>
-        
-        <motion.div 
+
+        <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           className="relative z-10 max-w-7xl mx-auto px-4 text-center"
@@ -94,7 +94,7 @@ const Tests: React.FC = () => {
       {/* Exam Categories Grid */}
       <section className="max-w-7xl mx-auto px-4 py-32 relative">
         <div className="absolute top-0 left-0 w-full h-px bg-gradient-to-r from-transparent via-gray-100 to-transparent"></div>
-        
+
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
           {examCategories.map((exam, index) => (
             <motion.div
@@ -140,7 +140,7 @@ const Tests: React.FC = () => {
             Test Features
           </h2>
         </div>
-        
+
         <div className="grid grid-cols-1 md:grid-cols-3 gap-10">
           {testFeatures.map((feature, index) => (
             <motion.div

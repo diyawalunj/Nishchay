@@ -1,0 +1,78 @@
+*   [33m3986daf[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mvedant[m[33m)[m Merge branch 'vedant' of https://github.com/diyawalunj/Nishchay into vedant
+[31m|[m[32m\[m  
+[31m|[m *   [33m035c429[m[33m ([m[1;31morigin/vedant[m[33m)[m Merge branch 'main' into vedant
+[31m|[m [33m|[m[34m\[m  
+[31m|[m [33m|[m * [33mc8596b7[m[33m ([m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m)[m Add files via upload
+[31m|[m [33m|[m * [33m1266909[m Update About.tsx
+[31m|[m [33m|[m * [33m452d8ad[m Refactor Gallery component for performance and clarity
+[31m|[m [33m|[m * [33mf96a557[m Update founder images and layout styles
+[31m|[m [33m|[m * [33mfb6ac89[m Update Header.tsx
+[31m|[m [33m|[m * [33m7ab8f0a[m Update header animations and pointer events
+[31m|[m [33m|[m * [33m3df6028[m Update Header.tsx
+[31m|[m [33m|[m * [33m8ec2a1a[m Update header component for scroll and mobile menu
+[31m|[m [33m|[m * [33meaaf057[m Add files via upload
+[31m|[m [33m|[m * [33m6faf1e6[m Update Gallery.tsx
+[31m|[m [33m|[m * [33mc9d23f6[m Update About.tsx
+[31m|[m [33m|[m * [33m9747fa5[m Update Header.tsx
+[31m|[m [33m|[m * [33m0730517[m Add files via upload
+[31m|[m [33m|[m * [33m620ba1a[m Add files via upload
+[31m|[m [33m|[m * [33m4611b1f[m Add files via upload
+[31m|[m [33m|[m * [33mf53a585[m Update statistics and button labels in Home component
+[31m|[m [33m|[m * [33mcd99378[m Add files via upload
+[31m|[m [33m|[m * [33m18b4079[m Add files via upload
+[31m|[m [33m|[m * [33mf08c8ab[m Add files via upload
+[31m|[m [33m|[m * [33m79f6ff2[m Add files via upload
+[31m|[m [33m|[m * [33mce7cc3d[m Add files via upload
+[31m|[m [33m|[m *   [33m35be48f[m Merge pull request #4 from diyawalunj/vedant
+[31m|[m [33m|[m [35m|[m[36m\[m  
+* [33m|[m [35m|[m [36m|[m [33m66e6a34[m Fix error of notes folder opening from footer
+[33m|[m[33m/[m [35m/[m [36m/[m  
+* [35m|[m [36m/[m [33m8308a11[m Added openable subject folders and changed quote on about page
+[36m|[m [35m|[m[36m/[m  
+[36m|[m[36m/[m[35m|[m   
+* [35m|[m [33m39594fa[m Fixed Doubts CSS error
+* [35m|[m [33me60bce5[m Merge pull request #3 from diyawalunj/main
+[1;31m|[m[35m\[m[35m|[m 
+[1;31m|[m *   [33mebfa6f0[m Merge pull request #2 from diyawalunj/vedant
+[1;31m|[m [1;33m|[m[1;31m\[m  
+[1;31m|[m [1;33m|[m[1;31m/[m  
+[1;31m|[m[1;31m/[m[1;33m|[m   
+* [1;33m|[m [33m4d0b3bd[m Changed tips for SSB
+[1;33m|[m[1;33m/[m  
+* [33m71e21e9[m[33m ([m[1;32mmain[m[33m)[m Remove Practice Papers entry from Notes
+* [33m947c36c[m Update description for Mission section in About.tsx
+* [33mba40441[m Add files via upload
+* [33ma2f9dc6[m Add files via upload
+* [33m71c6509[m Add files via upload
+* [33ma6ca74c[m Add files via upload
+* [33md1023f9[m Add files via upload
+* [33m725752a[m Add files via upload
+* [33mbab3087[m Add files via upload
+* [33m513e2b9[m Delete README.md
+* [33maeacdc3[m Add files via upload
+* [33m02f54ee[m Add files via upload
+* [33ma7aa088[m Add files via upload
+* [33m84f2b74[m Update founder images from PNG to JPG format
+* [33md4eedf0[m Add files via upload
+* [33m64999c5[m Add files via upload
+* [33m9ea1041[m Add files via upload
+* [33mcba618b[m Delete .env.example
+* [33m9fae9a7[m Delete .gitignore
+* [33m14f30aa[m Add files via upload
+* [33me531a6b[m Enhance Gallery with lightbox and navigation arrows
+* [33m52b5c7a[m Update Doubts.tsx
+* [33m552f778[m Implement header loading with error handling
+* [33m981e67c[m Import createServer from vite conditionally
+* [33mcee2fb2[m Improve error handling in question submission
+* [33m0ca939c[m Improve error handling in form submission
+* [33m6157dae[m Fix route destination path in vercel.json
+* [33m3b43af7[m Enhance error handling and logging in server.ts
+* [33mc744e8a[m Update About.tsx
+* [33mdddf3d7[m Update image paths for founders in About.tsx
+* [33mdd1298d[m Update founder images from PNG to JPG format
+* [33m0fbb8d9[m Add files via upload
+* [33m12578d7[m Create new
+* [33m028e7a8[m Delete public
+* [33m96949d7[m Create public
+* [33mf818bd9[m Add files via upload
+* [33md0b3b87[m Initial commit
