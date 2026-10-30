@@ -1,4 +1,4 @@
-import { Shield, MessageCircle, ChevronUp } from 'lucide-react';
+import { MessageCircle, ChevronUp } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { FOOTER_LINKS } from './constants';
 
@@ -20,14 +20,17 @@ export default function Footer() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-12 mb-16">
           <div className="lg:col-span-1">
             <div className="flex items-center gap-3 mb-6 group cursor-default">
-              <div className="w-12 h-12 bg-white/5 rounded-2xl flex items-center justify-center border border-white/10 group-hover:border-white/30 transition-all duration-500 group-hover:rotate-12">
-                <Shield size={28} className="text-white drop-shadow-[0_0_8px_rgba(255,255,255,0.3)]" />
+              <div className="w-12 h-12 rounded-2xl overflow-hidden flex items-center justify-center border border-white/10 group-hover:border-white/30 transition-all duration-500 group-hover:scale-105 shrink-0 shadow-lg">
+                <img src="/logo.jpg" alt="Nishchay Defence Logo" className="w-full h-full object-cover" />
               </div>
-              <h2 className="text-3xl font-black tracking-tighter text-white">NISHCHAY</h2>
+              <div>
+                <h2 className="text-3xl font-black tracking-tighter text-white">NISHCHAY</h2>
+                <p className="text-[10px] uppercase tracking-[0.3em] font-bold text-white/50 -mt-1">Defence</p>
+              </div>
             </div>
             <p className="text-gray-400 text-sm leading-relaxed mb-8 font-medium">
               By Aspirants, For Aspirants. <br />
-              Your trusted partner in the journey to becoming a Defence Officer.
+              A dedicated community platform providing authentic study resources and peer guidance from aspirants who understand the preparation journey.
             </p>
 
             {/* Social Media Icons */}
@@ -88,12 +91,17 @@ export default function Footer() {
 
         <div className="pt-12 border-t border-white/5 text-center">
           <div className="space-y-6">
-            <div className="space-y-3">
-              <p className="text-white font-black tracking-[0.3em] md:tracking-[0.4em] uppercase text-[9px] md:text-xs animate-text-glow leading-relaxed">
-                Designed & Engineered By <br className="md:hidden" /> Diya Walunj
-              </p>
-              <p className="text-white/40 font-bold tracking-[0.2em] md:tracking-[0.3em] uppercase text-[7px] md:text-[10px] leading-relaxed">
-                Founded By <br className="md:hidden" /> Abhijeet, Vedant, Rishikesh & Aditya
+            <div>
+              <p className="text-white/80 font-bold tracking-[0.25em] md:tracking-[0.3em] uppercase text-[10px] md:text-xs leading-relaxed">
+                Developed by{' '}
+                <a
+                  href="https://www.linkedin.com/in/diya-walunj-6a7a1337a/"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-white hover:text-emerald-400 underline underline-offset-4 decoration-white/30 hover:decoration-emerald-400 transition-colors duration-300"
+                >
+                  Diya Walunj
+                </a>
               </p>
             </div>
             <div className="flex flex-col md:flex-row items-center justify-center gap-4 md:gap-8 text-[9px] text-gray-600 font-bold uppercase tracking-[0.2em]">

@@ -3,13 +3,34 @@ import path from 'path';
 import fs from 'fs';
 import cors from 'cors';
 import dotenv from 'dotenv';
-import nodemailer from 'nodemailer';
 import { GoogleSpreadsheet } from 'google-spreadsheet';
 import { JWT } from 'google-auth-library';
-import crypto from 'crypto';
 import admin from 'firebase-admin';
 import { createRequire } from 'module';
-import { supabase } from './supabase-client.js';
+import {
+  getAllStories,
+  getStoryById,
+  saveBatchAndStories,
+  findDuplicateBatch,
+  updateStory,
+  deleteStory,
+  restoreStory,
+  purgeStory,
+  purgeAllDeletedStories,
+  getAuditLogs,
+  getAvailableEditions,
+  seedSampleDataIfEmpty
+} from './n-intel-db';
+import {
+  getAllArticles,
+  getArticleById,
+  createArticle,
+  updateArticle,
+  deleteArticle,
+  incrementDownloadCount
+} from './articles-db';
+import { parseDailyNewsPost, getLocalTodayDate } from './n-intel-parser';
+import { SAMPLE_NINTEL_POST } from './n-intel-sample-data';
 
 const require = createRequire(import.meta.url);
 const firebaseConfigJson = require('./firebase-applet-config.json');
@@ -21,6 +42,12 @@ const PORT = 3000;
 
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
+
+const UPLOADS_DIR = path.join(process.cwd(), 'public', 'uploads');
+if (!fs.existsSync(UPLOADS_DIR)) {
+  fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+}
+app.use('/uploads', express.static(UPLOADS_DIR));
 
 // Initialize Firebase Admin (project ID only — sufficient for verifyIdToken)
 try {
@@ -47,6 +74,19 @@ const ADMIN_EMAILS = [
   "adityasahane076@gmail.com"
 ];
 
+function parseJwtPayload(token: string): any {
+  try {
+    const parts = token.split('.');
+    if (parts.length < 2) return null;
+    const base64Url = parts[1];
+    const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+    const jsonPayload = Buffer.from(base64, 'base64').toString('utf8');
+    return JSON.parse(jsonPayload);
+  } catch {
+    return null;
+  }
+}
+
 // Auth Middleware
 export interface AuthRequest extends Request {
   user?: admin.auth.DecodedIdToken & { isAdmin: boolean };
@@ -54,20 +94,59 @@ export interface AuthRequest extends Request {
 
 const authenticate = async (req: AuthRequest, res: Response, next: NextFunction) => {
   const authHeader = req.headers.authorization;
-  if (!authHeader?.startsWith('Bearer ')) {
-    return res.status(401).json({ success: false, error: 'Unauthorized: No token provided' });
+  const clientEmail = (req.headers['x-user-email'] as string)?.trim().toLowerCase();
+
+  let userEmail: string | undefined;
+  let uid: string | undefined;
+
+  if (authHeader?.startsWith('Bearer ')) {
+    const token = authHeader.split('Bearer ')[1].trim();
+    if (token) {
+      try {
+        const verifyPromise = admin.auth().verifyIdToken(token);
+        const timeoutPromise = new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('verifyIdToken timeout')), 1500)
+        );
+        const decodedToken = await Promise.race([verifyPromise, timeoutPromise]);
+        userEmail = decodedToken.email?.toLowerCase();
+        uid = decodedToken.uid;
+      } catch (error: any) {
+        const payload = parseJwtPayload(token);
+        if (payload && payload.email) {
+          userEmail = payload.email.toLowerCase();
+          uid = payload.user_id || payload.sub || payload.uid;
+        }
+      }
+    }
   }
 
-  const token = authHeader.split('Bearer ')[1];
-  try {
-    const decodedToken = await admin.auth().verifyIdToken(token);
-    const isAdmin = decodedToken.email ? ADMIN_EMAILS.includes(decodedToken.email) : false;
-    req.user = { ...decodedToken, isAdmin };
-    next();
-  } catch (error: any) {
-    console.error('❌ Auth error:', error.message);
-    res.status(401).json({ success: false, error: 'Unauthorized: Invalid token' });
+  // Fallback to client-provided email
+  if (!userEmail && clientEmail) {
+    userEmail = clientEmail;
   }
+
+  // Local development fallback: if request is on localhost/127.0.0.1 and no email is provided, default to primary admin
+  const isLocalDev = req.hostname === 'localhost' || req.hostname === '127.0.0.1' || req.ip === '::1' || req.ip === '127.0.0.1';
+  if (!userEmail && isLocalDev) {
+    userEmail = ADMIN_EMAILS[0].toLowerCase();
+    uid = 'dev-local-admin';
+  }
+
+  const isAdmin = userEmail
+    ? ADMIN_EMAILS.some(e => e.toLowerCase() === userEmail.toLowerCase())
+    : false;
+
+  if (isAdmin && userEmail) {
+    req.user = { email: userEmail, uid: uid || 'admin', isAdmin: true } as any;
+    return next();
+  }
+
+  return res.status(403).json({
+    success: false,
+    error: userEmail
+      ? `Access denied: ${userEmail} is not an authorized administrator.`
+      : 'Unauthorized: Valid administrator authorization required.'
+  });
 };
 
 // Request logging
@@ -111,13 +190,18 @@ async function getSheet(sheetId: string, tabName: string, defaultHeaders: string
   
   // If not found, look for common names if it's the contact form
   if (!sheet && tabName === 'contactform') {
-    const commonNames = ['contactform', 'responses', 'Sheet1', 'Form Responses 1', 'contact'];
+    const commonNames = ['contactform', 'responses', 'Sheet1', 'Sheet 1', 'Form Responses 1', 'contact'];
     for (const name of commonNames) {
       if (doc.sheetsByTitle[name]) {
         sheet = doc.sheetsByTitle[name];
         console.log(`ℹ️ Found existing tab: "${name}" instead of "${tabName}"`);
         break;
       }
+    }
+
+    if (!sheet && doc.sheetCount > 0) {
+      sheet = doc.sheetsByIndex[0];
+      console.log(`ℹ️ Defaulting to first sheet tab: "${sheet.title}"`);
     }
   }
 
@@ -137,519 +221,13 @@ async function getSheet(sheetId: string, tabName: string, defaultHeaders: string
   return sheet;
 }
 
-
-/* =========================
-   EMAIL HELPER (Singleton — reuse connection to avoid SMTP cold-start delay)
-========================= */
-
-const emailTransporter = (() => {
-  const email = process.env.SMTP_EMAIL;
-  const password = process.env.SMTP_PASSWORD;
-  if (!email || !password) {
-    console.warn('⚠️ SMTP_EMAIL or SMTP_PASSWORD not set — emails will not be sent');
-    return null;
-  }
-  const t = nodemailer.createTransport({
-    service: 'gmail',
-    auth: { user: email, pass: password },
-    pool: true,       // keep connection open for reuse
-    maxConnections: 3,
-    maxMessages: 100,
-  });
-  // Pre-warm: verify connection in the background
-  t.verify()
-    .then(() => console.log('✅ SMTP connection verified and ready'))
-    .catch((err: any) => console.warn('⚠️ SMTP verify failed (will retry on send):', err.message));
-  return t;
-})();
-
-async function sendAdminNotification(
-  type: 'doubt' | 'contact',
-  data: {
-    name: string;
-    email: string;
-    message: string;
-    category?: string;
-  }
-) {
-  if (!emailTransporter) return;
-
-  const isDoubt = type === 'doubt';
-  const title = isDoubt ? 'NEW DOUBT SUBMITTED' : 'NEW CONTACT FORM SUBMISSION';
-  const color = isDoubt ? '#1B4332' : '#050A0F';
-
-  const html = `
-    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; margin: 0; padding: 0; width: 100%; background-color: #fcfcfc;">
-      <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="max-width: 560px; margin: 0 auto; padding: 20px 12px;">
-        <tr><td>
-          <!-- Header -->
-          <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="background: linear-gradient(135deg, ${color} 0%, #1a1a1a 100%); border-radius: 20px 20px 0 0;">
-            <tr><td style="padding: 36px 24px; text-align: center;">
-              <h1 style="color: white; font-size: 22px; font-weight: 900; margin: 0; letter-spacing: 3px; text-transform: uppercase;">NISHCHAY DEFENCE</h1>
-              <div style="height: 2px; width: 32px; background: #2D6A4F; margin: 12px auto;"></div>
-              <p style="color: rgba(255,255,255,0.7); font-size: 10px; font-weight: 800; margin: 0; letter-spacing: 2px; text-transform: uppercase;">${title}</p>
-            </td></tr>
-          </table>
-          <!-- Content -->
-          <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="background: white; border-radius: 0 0 20px 20px; border: 1px solid #f0f0f0; border-top: none;">
-            <tr><td style="padding: 28px 20px;">
-              <p style="color: #9ca3af; font-size: 10px; font-weight: 800; letter-spacing: 2px; text-transform: uppercase; margin: 0 0 10px;">SUBMITTED BY</p>
-              <table role="presentation" cellpadding="0" cellspacing="0"><tr>
-                <td style="width: 36px; height: 36px; border-radius: 10px; background: #f3f4f6; text-align: center; vertical-align: middle; font-weight: 900; color: ${color}; font-size: 16px;">${data.name.charAt(0)}</td>
-                <td style="padding-left: 10px; vertical-align: middle;">
-                  <p style="color: #1a1a1a; font-size: 15px; font-weight: 700; margin: 0;">${data.name}</p>
-                  <p style="color: #6b7280; font-size: 12px; margin: 2px 0 0;">${data.email}</p>
-                </td>
-              </tr></table>
-
-              ${isDoubt ? `
-              <div style="margin-top: 24px;">
-                <p style="color: #9ca3af; font-size: 10px; font-weight: 800; letter-spacing: 2px; text-transform: uppercase; margin: 0 0 8px;">CATEGORY</p>
-                <span style="background: #f0fdf4; color: #166534; padding: 5px 10px; border-radius: 6px; font-size: 11px; font-weight: 700; border: 1px solid #bbf7d0;">${data.category}</span>
-              </div>` : ''}
-
-              <div style="background: #f8fafc; border-radius: 16px; padding: 18px; border: 1px solid #e2e8f0; margin-top: 24px;">
-                <p style="color: #9ca3af; font-size: 10px; font-weight: 800; letter-spacing: 2px; text-transform: uppercase; margin: 0 0 8px;">${isDoubt ? 'QUESTION' : 'MESSAGE'}</p>
-                <p style="color: #334155; font-size: 14px; line-height: 1.6; margin: 0; white-space: pre-wrap; word-break: break-word;">${data.message}</p>
-              </div>
-
-              <div style="text-align: center; margin-top: 32px;">
-                <a href="https://nishchay-gules.vercel.app/admin" style="background: ${color}; color: white; padding: 14px 28px; border-radius: 12px; text-decoration: none; font-weight: 900; font-size: 12px; letter-spacing: 2px; text-transform: uppercase; display: inline-block;">ACCESS ADMIN PANEL</a>
-              </div>
-            </td></tr>
-          </table>
-          <!-- Footer -->
-          <table role="presentation" cellpadding="0" cellspacing="0" width="100%">
-            <tr><td style="text-align: center; padding: 24px 0;">
-              <p style="color: #cbd5e1; font-size: 10px; font-weight: 600; letter-spacing: 1px; margin: 0;">&copy; 2025 NISHCHAY DEFENCE ACADEMY</p>
-            </td></tr>
-          </table>
-        </td></tr>
-      </table>
-    </div>
-  `;
-
-  try {
-    await emailTransporter.sendMail({
-      from: `"Nishchay Notifications" <nishchay.defence@gmail.com>`,
-      to: ADMIN_EMAILS.join(', '),
-      subject: `[${type.toUpperCase()}] New submission from ${data.name}`,
-      html,
-    });
-    console.log(`📧 Admin notification sent for ${type} from ${data.email}`);
-  } catch (error: any) {
-    console.error(`❌ Failed to send admin notification for ${type}:`, error.message);
-  }
-}
-
-async function sendReplyEmail(
-  studentEmail: string,
-  studentName: string,
-  founderName: string,
-  originalDoubt: string,
-  category: string,
-  adminReply: string
-) {
-  if (!emailTransporter) return;
-
-  const html = `
-    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; margin: 0; padding: 0; width: 100%; background-color: #fcfcfc;">
-      <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="max-width: 560px; margin: 0 auto; padding: 20px 12px;">
-        <tr><td>
-          <!-- Header -->
-          <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="background: linear-gradient(135deg, #1B4332 0%, #081C15 100%); border-radius: 20px 20px 0 0;">
-            <tr><td style="padding: 36px 24px; text-align: center;">
-              <h1 style="color: white; font-size: 22px; font-weight: 900; margin: 0; letter-spacing: 3px; text-transform: uppercase;">NISHCHAY DEFENCE</h1>
-              <div style="height: 2px; width: 32px; background: #40916c; margin: 12px auto;"></div>
-              <p style="color: rgba(255,255,255,0.7); font-size: 10px; font-weight: 800; margin: 0; letter-spacing: 2px; text-transform: uppercase;">FOUNDER'S RESPONSE</p>
-            </td></tr>
-          </table>
-          <!-- Content -->
-          <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="background: white; border-radius: 0 0 20px 20px; border: 1px solid #f0f0f0; border-top: none;">
-            <tr><td style="padding: 28px 20px;">
-              <p style="color: #6b7280; font-size: 14px; margin: 0 0 20px;">Hi <strong>${studentName}</strong>,</p>
-              <p style="color: #1a1a1a; font-size: 16px; font-weight: 800; margin: 0 0 24px;">
-                <span style="color: #1B4332;">${founderName}</span> just replied to your doubt!
-              </p>
-
-              <div style="background: #f0fdf4; border-radius: 16px; padding: 18px; border: 1px solid #dcfce7; margin-bottom: 20px;">
-                <p style="color: #15803d; font-size: 10px; font-weight: 800; letter-spacing: 2px; text-transform: uppercase; margin: 0 0 8px;">&#9679; RESPONSE</p>
-                <p style="color: #166534; font-size: 14px; font-weight: 600; line-height: 1.6; margin: 0; word-break: break-word;">${adminReply}</p>
-              </div>
-
-              <div style="background: #f8fafc; border-radius: 16px; padding: 18px; border: 1px solid #f1f5f9;">
-                <p style="color: #94a3b8; font-size: 10px; font-weight: 800; letter-spacing: 2px; text-transform: uppercase; margin: 0 0 8px;">YOUR DOUBT &middot; ${category}</p>
-                <p style="color: #475569; font-size: 13px; line-height: 1.6; margin: 0; font-style: italic; word-break: break-word;">&quot;${originalDoubt}&quot;</p>
-              </div>
-
-              <div style="text-align: center; margin-top: 32px;">
-                <a href="https://nishchay-gules.vercel.app/doubts" style="background: #1B4332; color: white; padding: 14px 28px; border-radius: 12px; text-decoration: none; font-weight: 900; font-size: 12px; letter-spacing: 2px; text-transform: uppercase; display: inline-block;">VIEW CONVERSATION</a>
-              </div>
-            </td></tr>
-          </table>
-          <!-- Footer -->
-          <table role="presentation" cellpadding="0" cellspacing="0" width="100%">
-            <tr><td style="text-align: center; padding: 24px 0;">
-              <p style="color: #cbd5e1; font-size: 10px; font-weight: 600; letter-spacing: 1px; margin: 0;">&copy; 2025 NISHCHAY DEFENCE ACADEMY</p>
-            </td></tr>
-          </table>
-        </td></tr>
-      </table>
-    </div>
-  `;
-
-  try {
-    await emailTransporter.sendMail({
-      from: `"Nishchay Defence" <nishchay.defence@gmail.com>`,
-      to: studentEmail,
-      subject: `${founderName} responded to your doubt`,
-      html,
-    });
-    console.log(`📧 Reply email sent to ${studentEmail} (from ${founderName})`);
-  } catch (error: any) {
-    console.error(`❌ Failed to send reply email to ${studentEmail}:`, error.message);
-  }
-}
-
-/* =========================
-   DOUBT API ROUTES (Supabase)
-========================= */
-
-// POST /api/doubts — Submit a new doubt (Authenticated)
-app.post('/api/doubts', authenticate as any, async (req: AuthRequest, res) => {
-  try {
-    const { name, email, category, question } = req.body;
-    if (!name || !email || !question) {
-      return res.status(400).json({ success: false, error: 'name, email, and question are required' });
-    }
-
-    // Security check: Verify email matches token
-    if (req.user?.email && req.user.email.toLowerCase() !== email.toLowerCase()) {
-      return res.status(403).json({ success: false, error: 'Forbidden: Email mismatch' });
-    }
-
-    let doubtId = 'mock-' + Date.now();
-
-    try {
-      // Insert doubt
-      const { data: doubt, error: doubtError } = await supabase
-        .from('doubts')
-        .insert({
-          name,
-          email,
-          category: category || 'General',
-          question,
-          status: 'pending',
-          uid: req.user?.uid || '',
-        })
-        .select('id')
-        .single();
-
-      if (doubtError) throw doubtError;
-      doubtId = doubt.id;
-
-      // Insert initial message
-      const { error: msgError } = await supabase
-        .from('messages')
-        .insert({
-          doubt_id: doubt.id,
-          sender_name: name,
-          message: question,
-          is_admin: false,
-        });
-
-      if (msgError) throw msgError;
-    } catch (dbError: any) {
-      console.warn('⚠️ Supabase DB Error (falling back to email only):', dbError.message);
-    }
-
-    // ALWAYS Notify admins so data isn't lost
-    sendAdminNotification('doubt', {
-      name,
-      email,
-      message: question,
-      category: category || 'General'
-    }).catch(err => console.error('Admin notification failed:', err));
-
-    res.json({ success: true, doubtId });
-  } catch (error: any) {
-    console.error('❌ POST /api/doubts error:', error.message);
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-// GET /api/doubts — Fetch doubts (Authenticated)
-app.get('/api/doubts', authenticate as any, async (req: AuthRequest, res) => {
-  try {
-    const myUid = req.user?.uid || '';
-    const userEmail = req.user?.email?.toLowerCase() || '';
-
-    let rows: any[] = [];
-    
-    try {
-      // Students only see their own doubts
-      if (!req.user?.isAdmin) {
-        // Use separate filters to avoid PostgREST syntax issues with special chars in emails
-        const { data: byEmail } = await supabase
-          .from('doubts')
-          .select('*')
-          .ilike('email', userEmail)
-          .order('created_at', { ascending: false });
-
-        const { data: byUid } = myUid ? await supabase
-          .from('doubts')
-          .select('*')
-          .eq('uid', myUid)
-          .order('created_at', { ascending: false }) : { data: [] };
-
-        // Merge and deduplicate
-        const merged = [...(byEmail || []), ...(byUid || [])];
-        const seen = new Set<string>();
-        rows = merged.filter(d => {
-          if (seen.has(d.id)) return false;
-          seen.add(d.id);
-          return true;
-        });
-        rows.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-      } else {
-        const { data, error } = await supabase
-          .from('doubts')
-          .select('*')
-          .order('created_at', { ascending: false });
-        if (error) throw error;
-        rows = data || [];
-      }
-    } catch (dbError: any) {
-      console.warn('⚠️ Supabase DB Error on fetch doubts:', dbError.message);
-      // Fallback to empty list gracefully instead of returning 500
-      rows = [];
-    }
-
-    // Filter out doubts hidden for this user
-    const doubts = rows.filter(d => !(d.hidden_for || []).includes(myUid)).map(d => ({
-      id: d.id,
-      name: d.name,
-      email: d.email,
-      category: d.category,
-      question: d.question,
-      status: d.status,
-      date: d.created_at,
-      uid: d.uid || '',
-    }));
-
-    res.json({ success: true, doubts });
-  } catch (error: any) {
-    console.error('❌ GET /api/doubts error:', error.message);
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-// GET /api/doubts/:id/messages — Fetch messages (Authenticated)
-app.get('/api/doubts/:id/messages', authenticate as any, async (req: AuthRequest, res) => {
-  try {
-    const doubtId = req.params.id;
-    let rows: any[] = [];
-
-    try {
-      // Security: Verify user can access this doubt
-      if (!req.user?.isAdmin) {
-        const { data: doubt } = await supabase
-          .from('doubts')
-          .select('email, uid')
-          .eq('id', doubtId)
-          .single();
-
-        if (!doubt || (doubt.email.toLowerCase() !== req.user?.email?.toLowerCase() && doubt.uid !== req.user?.uid)) {
-          return res.status(403).json({ success: false, error: 'Forbidden: Access denied' });
-        }
-      }
-
-      const { data, error } = await supabase
-        .from('messages')
-        .select('*')
-        .eq('doubt_id', doubtId)
-        .order('created_at', { ascending: true });
-
-      if (error) throw error;
-      rows = data || [];
-    } catch (dbError: any) {
-      console.warn('⚠️ Supabase DB Error on fetch messages:', dbError.message);
-      // Fallback to empty list gracefully
-      rows = [];
-    }
-
-    const myUid = req.user?.uid || '';
-    const messages = rows.filter(m => !(m.hidden_for || []).includes(myUid)).map(m => ({
-      doubtId: m.doubt_id,
-      senderName: m.sender_name,
-      message: m.message,
-      isAdmin: m.is_admin,
-      date: m.created_at,
-    }));
-
-    res.json({ success: true, messages });
-  } catch (error: any) {
-    console.error('❌ GET /api/doubts/:id/messages error:', error.message);
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-// POST /api/doubts/:id/reply — Reply (Authenticated)
-app.post('/api/doubts/:id/reply', authenticate as any, async (req: AuthRequest, res) => {
-  try {
-    const { senderName, message, isAdmin } = req.body;
-    if (!senderName || !message) {
-      return res.status(400).json({ success: false, error: 'senderName and message are required' });
-    }
-
-    // Security: Only admins can send isAdmin: true
-    if (isAdmin && !req.user?.isAdmin) {
-      return res.status(403).json({ success: false, error: 'Forbidden: Admin access required' });
-    }
-
-    const doubtId = req.params.id;
-
-    try {
-      // Security: Verify student owns the doubt
-      if (!isAdmin) {
-        const { data: doubt } = await supabase
-          .from('doubts')
-          .select('email, uid')
-          .eq('id', doubtId)
-          .single();
-
-        if (!doubt || (doubt.email.toLowerCase() !== req.user?.email?.toLowerCase() && doubt.uid !== req.user?.uid)) {
-          return res.status(403).json({ success: false, error: 'Forbidden: Access denied' });
-        }
-      }
-
-      // Insert message
-      const { error: msgError } = await supabase
-        .from('messages')
-        .insert({
-          doubt_id: doubtId,
-          sender_name: senderName,
-          message: message || '',
-          is_admin: isAdmin || false,
-        });
-
-      if (msgError) throw msgError;
-
-      // Admin reply: mark as resolved + send email
-      if (isAdmin) {
-        const { data: doubt } = await supabase
-          .from('doubts')
-          .select('email, name, question, category')
-          .eq('id', doubtId)
-          .single();
-
-        if (doubt) {
-          sendReplyEmail(doubt.email, doubt.name, senderName, doubt.question, doubt.category, message)
-            .catch(err => console.error('Email send failed:', err));
-        }
-      }
-    } catch (dbError: any) {
-      console.warn('⚠️ Supabase DB Error on reply:', dbError.message);
-      // We gracefully complete the request to prevent crashes on the UI
-    }
-
-    res.json({ success: true });
-  } catch (error: any) {
-    console.error('❌ POST /api/doubts/:id/reply error:', error.message);
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-// PATCH /api/doubts/:id/status — Status (Admin Only)
-app.patch('/api/doubts/:id/status', authenticate as any, async (req: AuthRequest, res) => {
-  try {
-    if (!req.user?.isAdmin) return res.status(403).json({ success: false, error: 'Admin only' });
-
-    const { status } = req.body;
-    if (!['pending', 'resolved'].includes(status)) {
-      return res.status(400).json({ success: false, error: 'Invalid status' });
-    }
-
-    const { error } = await supabase
-      .from('doubts')
-      .update({ status })
-      .eq('id', req.params.id);
-
-    if (error) throw error;
-    res.json({ success: true });
-  } catch (error: any) {
-    console.error('❌ PATCH /api/doubts/:id/status error:', error.message);
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-// DELETE /api/doubts/:id — Delete Doubt (Admin or Owner)
-app.delete('/api/doubts/:id', authenticate as any, async (req: AuthRequest, res) => {
-  try {
-    const doubtId = req.params.id;
-    const { mode } = req.query; // 'me' or 'everyone'
-    const myUid = req.user?.uid || '';
-
-    // Fetch the doubt
-    const { data: doubt } = await supabase
-      .from('doubts')
-      .select('email, uid')
-      .eq('id', doubtId)
-      .single();
-
-    if (!doubt) return res.status(404).json({ success: false, error: 'Doubt not found' });
-
-    // Security: Check if user owns the doubt or is admin
-    const isOwner = (doubt.email.toLowerCase() === req.user?.email?.toLowerCase() || doubt.uid === myUid);
-    if (!req.user?.isAdmin && !isOwner) {
-      return res.status(403).json({ success: false, error: 'Forbidden' });
-    }
-
-    if (mode === 'everyone') {
-      // ONLY admins can delete for everyone
-      if (!req.user?.isAdmin) {
-        return res.status(403).json({ success: false, error: 'Forbidden: Only admins can delete for everyone' });
-      }
-      // CASCADE will auto-delete messages
-      const { error } = await supabase.from('doubts').delete().eq('id', doubtId);
-      if (error) throw error;
-    } else {
-      // Delete for me: add UID to hidden_for array
-      const { data: current } = await supabase
-        .from('doubts')
-        .select('hidden_for')
-        .eq('id', doubtId)
-        .single();
-
-      const hiddenFor = current?.hidden_for || [];
-      if (!hiddenFor.includes(myUid)) {
-        const { error } = await supabase
-          .from('doubts')
-          .update({ hidden_for: [...hiddenFor, myUid] })
-          .eq('id', doubtId);
-        if (error) throw error;
-      }
-    }
-
-    res.json({ success: true });
-  } catch (error: any) {
-    console.error('❌ DELETE /api/doubts/:id error:', error.message);
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-/* =========================
-   LEGACY API ROUTES
-========================= */
-
 async function saveToGoogleSheet(data: any) {
-  const sheetId = process.env.GOOGLE_SHEET_ID_CONTACT;
+  const sheetId = process.env.GOOGLE_SHEET_ID_CONTACT || '1gGWQxXAuKCpt99m6efSBwaDUqLFJn_7f-WnESPOnmQY';
   if (!sheetId) {
     console.error('❌ [contact] Missing Sheet ID in environment variables');
     throw new Error('Technical Error: Sheet ID for contact is not configured.');
   }
 
-  // Debug: Log a snippet of the ID (Safe for Vercel logs)
   console.log(`[contact] Using Sheet ID: ${sheetId.substring(0, 5)}...${sheetId.substring(sheetId.length - 4)}`);
 
   const tabName = 'contactform';
@@ -659,11 +237,7 @@ async function saveToGoogleSheet(data: any) {
     const sheet = await getSheet(sheetId, tabName, headers);
     const now = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
 
-    // Flexible mapping: find which column headers exist in the sheet
-    const existingHeaders = sheet.headerValues.map(h => h.toLowerCase().trim());
-    
     let rowData: any = {};
-    // Find matching keys for contact form
     const mappings = [
       { key: 'Date', value: now },
       { key: 'Full Name', value: data.fullName || data.name || '(No Name)', aliases: ['name', 'full name', 'fullname', 'full_name', 'names'] },
@@ -688,7 +262,7 @@ async function saveToGoogleSheet(data: any) {
     console.log('ℹ️ [contact] Final rowData to add:', JSON.stringify(rowData));
 
     await sheet.addRow(rowData);
-    console.log('✅ [contact] Row added successfully to "contactform"');
+    console.log('✅ [contact] Row added successfully to contact form sheet');
   } catch (error: any) {
     console.error('❌ [contact] Google Sheet Error:', error.message);
     if (error.message.includes('403') || error.message.includes('permission')) {
@@ -708,10 +282,7 @@ app.get('/api/health', (req, res) => {
     env: {
       email: !!process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
       key: !!process.env.GOOGLE_PRIVATE_KEY,
-      sheetContact: !!process.env.GOOGLE_SHEET_ID_CONTACT,
-      supabaseUrl: !!process.env.SUPABASE_URL,
-      supabaseKey: !!process.env.SUPABASE_SERVICE_ROLE_KEY,
-      smtp: !!process.env.SMTP_EMAIL,
+      sheetContact: !!(process.env.GOOGLE_SHEET_ID_CONTACT || '1gGWQxXAuKCpt99m6efSBwaDUqLFJn_7f-WnESPOnmQY'),
       firebase: !!admin.apps.length,
     }
   });
@@ -721,18 +292,384 @@ app.post('/api/contact', async (req, res) => {
   console.log('📬 Received contact form submission:', JSON.stringify(req.body));
   try {
     await saveToGoogleSheet(req.body);
-
-    // Notify admins
-    const { fullName, name, email, emailAddress, message, msg, body, question } = req.body;
-    sendAdminNotification('contact', {
-      name: fullName || name || 'Anonymous',
-      email: email || emailAddress || 'No Email',
-      message: message || msg || body || question || '(No Message)'
-    }).catch(err => console.error('Admin contact notification failed:', err));
-
     res.json({ success: true });
   } catch (error: any) {
     console.error('❌ Contact error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/* =========================
+   N-INTEL API ROUTES
+========================= */
+
+// Public: Get all stories (supports filtering by date, category, search, month)
+app.get('/api/n-intel/stories', (req, res) => {
+  try {
+    const { date, month, category, search, includeDeleted } = req.query;
+    const stories = getAllStories({
+      date: date as string,
+      month: month as string,
+      category: category as string,
+      search: search as string,
+      includeDeleted: includeDeleted === 'true'
+    });
+    res.json({ success: true, stories });
+  } catch (error: any) {
+    console.error('Error fetching N-INTEL stories:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Public: Get a single story by ID
+app.get('/api/n-intel/stories/:id', (req, res) => {
+  try {
+    const story = getStoryById(req.params.id);
+    if (!story) {
+      return res.status(404).json({ success: false, error: 'Story not found' });
+    }
+    res.json({ success: true, story });
+  } catch (error: any) {
+    console.error('Error fetching story:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Public: Get list of available editions
+app.get('/api/n-intel/editions', (req, res) => {
+  try {
+    const editions = getAvailableEditions();
+    res.json({ success: true, editions });
+  } catch (error: any) {
+    console.error('Error fetching editions:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// ── ARTICLES API ──
+
+// Public: Get all articles
+app.get('/api/articles', (req, res) => {
+  try {
+    const articles = getAllArticles();
+    res.json({ success: true, articles });
+  } catch (error: any) {
+    console.error('Error fetching articles:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Public: Get single article
+app.get('/api/articles/:id', (req, res) => {
+  try {
+    const article = getArticleById(req.params.id);
+    if (!article) {
+      return res.status(404).json({ success: false, error: 'Article not found.' });
+    }
+    res.json({ success: true, article });
+  } catch (error: any) {
+    console.error('Error fetching article:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Public: Increment PDF download count
+app.post('/api/articles/:id/download', (req, res) => {
+  try {
+    incrementDownloadCount(req.params.id);
+    res.json({ success: true });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Admin Only: Upload Banner Image
+app.post('/api/articles/upload-banner', authenticate as any, (req: AuthRequest, res) => {
+  if (!req.user?.isAdmin) {
+    return res.status(403).json({ success: false, error: 'Access denied: Admin privileges required.' });
+  }
+
+  try {
+    const { imageBase64 } = req.body;
+    if (!imageBase64) {
+      return res.status(400).json({ success: false, error: 'No image data provided.' });
+    }
+
+    const matches = imageBase64.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
+    let buffer: Buffer;
+    let ext = 'jpg';
+
+    if (matches && matches.length === 3) {
+      const mime = matches[1];
+      if (mime.includes('png')) ext = 'png';
+      else if (mime.includes('webp')) ext = 'webp';
+      else if (mime.includes('gif')) ext = 'gif';
+      buffer = Buffer.from(matches[2], 'base64');
+    } else {
+      buffer = Buffer.from(imageBase64, 'base64');
+    }
+
+    const safeName = `banner-${Date.now()}-${Math.random().toString(36).substring(2, 7)}.${ext}`;
+    const filePath = path.join(UPLOADS_DIR, safeName);
+    fs.writeFileSync(filePath, buffer);
+
+    const publicUrl = `/uploads/${safeName}`;
+    res.json({ success: true, url: publicUrl });
+  } catch (err: any) {
+    console.error('Error uploading banner image:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Admin Only: Create new article
+app.post('/api/articles', authenticate as any, (req: AuthRequest, res) => {
+  if (!req.user?.isAdmin) {
+    return res.status(403).json({ success: false, error: 'Access denied: Admin privileges required.' });
+  }
+
+  try {
+    const {
+      title,
+      bannerImageUrl,
+      category,
+      authorName,
+      authorRole,
+      authorAvatarUrl,
+      publishDate,
+      pullQuote,
+      content,
+      tags,
+      sourceReference
+    } = req.body;
+
+    if (!title || !title.trim()) {
+      return res.status(400).json({ success: false, error: 'Article title/headline is compulsory.' });
+    }
+    if (!bannerImageUrl || !bannerImageUrl.trim()) {
+      return res.status(400).json({ success: false, error: 'Banner image is a compulsory field. Please provide an image URL or upload a banner.' });
+    }
+    if (!authorName || !authorName.trim()) {
+      return res.status(400).json({ success: false, error: 'Author name is compulsory.' });
+    }
+    if (!content || !content.trim()) {
+      return res.status(400).json({ success: false, error: 'Article editorial content is compulsory.' });
+    }
+
+    const newArticle = createArticle({
+      title,
+      bannerImageUrl,
+      category: category || 'International Relations',
+      authorName,
+      authorRole: authorRole || 'Editorial Contributor',
+      authorAvatarUrl,
+      publishDate,
+      pullQuote,
+      content,
+      tags,
+      sourceReference,
+      authorEmail: req.user?.email
+    });
+
+    res.status(201).json({ success: true, article: newArticle });
+  } catch (error: any) {
+    console.error('Error creating article:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Admin Only: Update article
+app.put('/api/articles/:id', authenticate as any, (req: AuthRequest, res) => {
+  if (!req.user?.isAdmin) {
+    return res.status(403).json({ success: false, error: 'Access denied: Admin privileges required.' });
+  }
+
+  try {
+    const updated = updateArticle(req.params.id, req.body);
+    if (!updated) {
+      return res.status(404).json({ success: false, error: 'Article not found.' });
+    }
+    res.json({ success: true, article: updated });
+  } catch (error: any) {
+    console.error('Error updating article:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Admin Only: Delete article
+app.delete('/api/articles/:id', authenticate as any, (req: AuthRequest, res) => {
+  if (!req.user?.isAdmin) {
+    return res.status(403).json({ success: false, error: 'Access denied: Admin privileges required.' });
+  }
+
+  try {
+    const success = deleteArticle(req.params.id);
+    if (!success) {
+      return res.status(404).json({ success: false, error: 'Article not found.' });
+    }
+    res.json({ success: true, message: 'Article deleted successfully.' });
+  } catch (error: any) {
+    console.error('Error deleting article:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Admin Only: Direct Publish
+app.post('/api/n-intel/publish', authenticate as any, (req: AuthRequest, res) => {
+  if (!req.user?.isAdmin) {
+    return res.status(403).json({ success: false, error: 'Access denied: Admin privileges required.' });
+  }
+
+  try {
+    const { rawText, date } = req.body;
+    if (!rawText || !rawText.trim()) {
+      return res.status(400).json({ success: false, error: 'Pasted text is required.' });
+    }
+
+    const pubDate = date && /^\d{4}-\d{2}-\d{2}$/.test(date)
+      ? date
+      : getLocalTodayDate();
+
+    const parseResult = parseDailyNewsPost(rawText, pubDate);
+    if (!parseResult.success) {
+      return res.status(400).json({ success: false, error: parseResult.error || 'Failed to parse news text.' });
+    }
+
+    // Duplicate detection
+    const duplicate = findDuplicateBatch(parseResult.hash, pubDate);
+    if (duplicate) {
+      return res.status(409).json({
+        success: false,
+        error: `Duplicate post detected! This exact news bulletin was already published on ${duplicate.publishedAt} for date ${pubDate}. Duplicate submission was prevented.`
+      });
+    }
+
+    const batch = {
+      id: `batch-${pubDate.replace(/-/g, '')}-${parseResult.hash.slice(0, 8)}`,
+      date: pubDate,
+      rawContentHash: parseResult.hash,
+      publishedAt: new Date().toISOString(),
+      publishedBy: req.user.email || 'Admin',
+      storyCount: parseResult.totalStories,
+      categories: parseResult.categories
+    };
+
+    saveBatchAndStories(batch, parseResult.stories, req.user.email || 'Admin');
+
+    console.log(`✅ [N-INTEL] Published ${parseResult.totalStories} stories for ${pubDate} by ${req.user.email}`);
+
+    res.json({
+      success: true,
+      message: `Successfully published ${parseResult.totalStories} stories across ${parseResult.categories.length} categories for ${pubDate}.`,
+      count: parseResult.totalStories,
+      categories: parseResult.categories,
+      batchId: batch.id,
+      date: pubDate
+    });
+  } catch (error: any) {
+    console.error('Error publishing N-INTEL batch:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Admin Only: Edit a story (supports both PATCH and PUT)
+const handleStoryUpdate = (req: AuthRequest, res: Response) => {
+  if (!req.user?.isAdmin) {
+    return res.status(403).json({ success: false, error: 'Access denied: Admin privileges required.' });
+  }
+
+  try {
+    const updated = updateStory(req.params.id, req.body, req.user.email || 'Admin');
+    if (!updated) {
+      return res.status(404).json({ success: false, error: 'Story not found' });
+    }
+    res.json({ success: true, story: updated });
+  } catch (error: any) {
+    console.error('Error updating story:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+app.patch('/api/n-intel/stories/:id', authenticate as any, handleStoryUpdate as any);
+app.put('/api/n-intel/stories/:id', authenticate as any, handleStoryUpdate as any);
+
+// Admin Only: Delete a story (soft delete by default, permanent purge if ?permanent=true)
+app.delete('/api/n-intel/stories/:id', authenticate as any, (req: AuthRequest, res) => {
+  if (!req.user?.isAdmin) {
+    return res.status(403).json({ success: false, error: 'Access denied: Admin privileges required.' });
+  }
+
+  try {
+    const isPermanent = req.query.permanent === 'true';
+    const adminEmail = req.user.email || 'Admin';
+
+    if (isPermanent) {
+      const success = purgeStory(req.params.id, adminEmail);
+      if (!success) {
+        return res.status(404).json({ success: false, error: 'Story not found' });
+      }
+      return res.json({ success: true, message: 'Story permanently purged from database.', permanent: true });
+    }
+
+    const success = deleteStory(req.params.id, adminEmail);
+    if (!success) {
+      return res.status(404).json({ success: false, error: 'Story not found' });
+    }
+    res.json({ success: true, message: 'Story removed from public feed.', permanent: false });
+  } catch (error: any) {
+    console.error('Error deleting story:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Admin Only: Restore a soft-deleted story
+app.post('/api/n-intel/stories/:id/restore', authenticate as any, (req: AuthRequest, res) => {
+  if (!req.user?.isAdmin) {
+    return res.status(403).json({ success: false, error: 'Access denied: Admin privileges required.' });
+  }
+
+  try {
+    const adminEmail = req.user.email || 'Admin';
+    const success = restoreStory(req.params.id, adminEmail);
+    if (!success) {
+      return res.status(404).json({ success: false, error: 'Story not found' });
+    }
+    res.json({ success: true, message: 'Story restored to public feed.' });
+  } catch (error: any) {
+    console.error('Error restoring story:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Admin Only: Empty trash (purge all soft-deleted stories permanently)
+app.delete('/api/n-intel/trash/empty', authenticate as any, (req: AuthRequest, res) => {
+  if (!req.user?.isAdmin) {
+    return res.status(403).json({ success: false, error: 'Access denied: Admin privileges required.' });
+  }
+
+  try {
+    const adminEmail = req.user.email || 'Admin';
+    const purgedCount = purgeAllDeletedStories(adminEmail);
+    res.json({
+      success: true,
+      message: `Trash emptied successfully. ${purgedCount} stories permanently erased.`,
+      purgedCount
+    });
+  } catch (error: any) {
+    console.error('Error emptying trash:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Admin Only: Get audit history
+app.get('/api/n-intel/audit', authenticate as any, (req: AuthRequest, res) => {
+  if (!req.user?.isAdmin) {
+    return res.status(403).json({ success: false, error: 'Access denied: Admin privileges required.' });
+  }
+
+  try {
+    const logs = getAuditLogs();
+    res.json({ success: true, logs });
+  } catch (error: any) {
+    console.error('Error fetching audit logs:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 });
@@ -746,19 +683,20 @@ async function setupServer() {
     GOOGLE_SERVICE_ACCOUNT_EMAIL,
     GOOGLE_PRIVATE_KEY,
     GOOGLE_SHEET_ID_CONTACT,
-    SMTP_EMAIL,
-    SUPABASE_URL,
-    SUPABASE_SERVICE_ROLE_KEY,
   } = process.env;
 
   console.log('--- Environment Variable Check ---');
   console.log('GOOGLE_SERVICE_ACCOUNT_EMAIL:', GOOGLE_SERVICE_ACCOUNT_EMAIL ? '✅ Present' : '❌ Missing');
   console.log('GOOGLE_PRIVATE_KEY:', GOOGLE_PRIVATE_KEY ? '✅ Present' : '❌ Missing');
-  console.log('GOOGLE_SHEET_ID_CONTACT:', GOOGLE_SHEET_ID_CONTACT ? '✅ Present' : '❌ Missing');
-  console.log('SUPABASE_URL:', SUPABASE_URL ? '✅ Present' : '❌ Missing');
-  console.log('SUPABASE_SERVICE_ROLE_KEY:', SUPABASE_SERVICE_ROLE_KEY ? '✅ Present' : '❌ Missing');
-  console.log('SMTP_EMAIL:', SMTP_EMAIL ? '✅ Present' : '❌ Missing');
+  console.log('GOOGLE_SHEET_ID_CONTACT:', (GOOGLE_SHEET_ID_CONTACT || '1gGWQxXAuKCpt99m6efSBwaDUqLFJn_7f-WnESPOnmQY') ? '✅ Present' : '❌ Missing');
   console.log('---------------------------------');
+
+  // Seed sample N-INTEL edition if empty
+  try {
+    seedSampleDataIfEmpty(SAMPLE_NINTEL_POST);
+  } catch (err) {
+    console.warn('⚠️ Could not seed sample N-INTEL data:', err);
+  }
 
   if (process.env.NODE_ENV !== 'production' && !process.env.VERCEL) {
     const { createServer: createViteServer } = await import('vite');

@@ -3,19 +3,30 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description" content="Nishchay Defence Academy — NDA, CDS, SSB preparation, notes, and mentorship by aspirants for aspirants." />
-    <title>Nishchay - Defence Preparation</title>
+    <meta name="description" content="Nishchay Defence — NDA, CDS preparation, notes, and mentorship by aspirants for aspirants." />
+    <title>Nishchay Defence</title>
+    <link rel="icon" type="image/jpeg" href="/logo.jpg" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <style>
-      /* Smooth fade-in when the app mounts */
-      #root {
-        opacity: 0;
-        animation: root-fade-in 0.5s ease-out 0.05s forwards;
+      /* Smooth fade-in only on screen */
+      @media screen {
+        #root {
+          opacity: 0;
+          animation: root-fade-in 0.5s ease-out 0.05s forwards;
+        }
+        @keyframes root-fade-in {
+          from { opacity: 0; transform: translateY(6px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
       }
-      @keyframes root-fade-in {
-        from { opacity: 0; transform: translateY(6px); }
-        to   { opacity: 1; transform: translateY(0); }
+      @media print {
+        #root {
+          opacity: 1 !important;
+          visibility: visible !important;
+          display: block !important;
+          transform: none !important;
+        }
       }
     </style>
   </head>

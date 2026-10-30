@@ -10,12 +10,14 @@ import Home from './Home';
 // Home is imported normally above to prevent layout flickering on initial load
 const About = lazy(() => import('./About'));
 const Notes = lazy(() => import('./Notes'));
-const Doubts = lazy(() => import('./Doubts'));
-const Tests = lazy(() => import('./Tests'));
-const SSB = lazy(() => import('./SSB'));
 const Gallery = lazy(() => import('./Gallery'));
 const Contact = lazy(() => import('./Contact'));
-const Admin = lazy(() => import('./Admin'));
+const NIntel = lazy(() => import('./NIntel'));
+const NIntelStoryDetail = lazy(() => import('./NIntelStoryDetail'));
+const NIntelArchive = lazy(() => import('./NIntelArchive'));
+const NIntelAdmin = lazy(() => import('./NIntelAdmin'));
+const Articles = lazy(() => import('./Articles'));
+const ArticleDetail = lazy(() => import('./ArticleDetail'));
 
 // Branded loading skeleton shown while a route chunk is downloading
 function PageLoader() {
@@ -69,17 +71,21 @@ function AnimatedRoutes() {
         animate={{ opacity: 1, y: 0 }}
         exit={{ opacity: 0, y: -8 }}
         transition={{ duration: 0.3, ease: "easeOut" }}
+        className="print:opacity-100 print:transform-none print:overflow-visible print:block print:h-auto"
       >
         <Routes location={location}>
           <Route path="/" element={<Home />} />
           <Route path="/about" element={<About />} />
           <Route path="/notes" element={<Notes />} />
-          <Route path="/doubts" element={<Doubts />} />
-          <Route path="/tests" element={<Tests />} />
-          <Route path="/ssb" element={<SSB />} />
           <Route path="/gallery" element={<Gallery />} />
           <Route path="/contact" element={<Contact />} />
-          <Route path="/admin" element={<Admin />} />
+          <Route path="/n-intel" element={<NIntel />} />
+          <Route path="/n-intel/edition/:date" element={<NIntel />} />
+          <Route path="/n-intel/story/:id" element={<NIntelStoryDetail />} />
+          <Route path="/n-intel/archive" element={<NIntelArchive />} />
+          <Route path="/n-intel/admin" element={<NIntelAdmin />} />
+          <Route path="/articles" element={<Articles />} />
+          <Route path="/articles/:id" element={<ArticleDetail />} />
           {/* Fallback for other routes */}
           <Route path="*" element={<Home />} />
         </Routes>
@@ -101,36 +107,62 @@ function AppContent() {
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
+  // Suppress browser default title in printed headers/footers
+  useEffect(() => {
+    let originalTitle = document.title;
+    const handleBeforePrint = () => {
+      originalTitle = document.title;
+      document.title = ' ';
+    };
+    const handleAfterPrint = () => {
+      document.title = originalTitle;
+    };
+
+    window.addEventListener('beforeprint', handleBeforePrint);
+    window.addEventListener('afterprint', handleAfterPrint);
+
+    return () => {
+      window.removeEventListener('beforeprint', handleBeforePrint);
+      window.removeEventListener('afterprint', handleAfterPrint);
+    };
+  }, []);
+
   const scrollToTop = () => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   return (
-    <div className="min-h-screen flex flex-col">
-      <Header />
+    <div className="min-h-screen flex flex-col print:min-h-0 print:block">
+      <div className="print:hidden">
+        <Header />
+      </div>
       
-      <main className={`flex-grow ${!isHome ? 'pt-20' : ''}`}>
+      <main className={`flex-grow ${!isHome ? 'pt-20' : ''} print:pt-0 print:m-0 print:flex-none`}>
         <Suspense fallback={<PageLoader />}>
           <AnimatedRoutes />
         </Suspense>
       </main>
 
-      <Footer />
+      <div className="print:hidden">
+        <Footer />
+      </div>
 
       {/* Scroll to Top */}
       <AnimatePresence>
         {showScrollTop && (
-          <motion.button
-            initial={{ opacity: 0, scale: 0.5, y: 20 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.5, y: 20 }}
-            whileHover={{ scale: 1.1 }}
-            whileTap={{ scale: 0.9 }}
-            onClick={scrollToTop}
-            className="fixed bottom-8 right-8 w-14 h-14 bg-[#1B4332] text-white rounded-2xl flex items-center justify-center shadow-[0_8px_32px_rgba(27,67,50,0.3)] hover:bg-[#2D6A4F] transition-colors z-50 backdrop-blur-sm"
-          >
-            <ChevronUp size={24} />
-          </motion.button>
+          <div className="print:hidden">
+            <motion.button
+              initial={{ opacity: 0, scale: 0.5, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.5, y: 20 }}
+              whileHover={{ scale: 1.1 }}
+              whileTap={{ scale: 0.9 }}
+              onClick={scrollToTop}
+              className="fixed bottom-8 right-8 w-14 h-14 bg-[#1B4332] text-white rounded-2xl flex items-center justify-center shadow-[0_8px_32px_rgba(27,67,50,0.3)] hover:bg-[#2D6A4F] transition-colors z-50 backdrop-blur-sm"
+            >
+              <ChevronUp size={24} />
+            </motion.button>
+          </div>
         )}
       </AnimatePresence>
     </div>

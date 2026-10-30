@@ -156,7 +156,7 @@ export default function Home() {
             transition={{ duration: 0.6, delay: 0.8 }}
             className="text-base md:text-lg text-white/70 max-w-2xl mx-auto mb-16 leading-relaxed font-medium"
           >
-            Genuine mentorship, curated notes, SSB preparation & defence career guidance — all from aspirants who've been in your shoes.
+            Genuine mentorship, curated notes & defence career guidance — all from aspirants who've been in your shoes.
           </motion.p>
 
           <motion.div

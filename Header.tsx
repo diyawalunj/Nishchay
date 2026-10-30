@@ -1,16 +1,14 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Shield, Menu, X, LogOut, User as UserIcon } from 'lucide-react';
+import { Menu, X, LogOut, User as UserIcon } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
 import { NAV_LINKS } from './constants';
-import { auth, signInWithGoogle, logout, onAuthStateChanged, type User, isFirebaseConfigured, checkIfAdmin } from './firebase';
-import { LayoutDashboard } from 'lucide-react';
+import { auth, signInWithGoogle, logout, onAuthStateChanged, type User, isFirebaseConfigured } from './firebase';
 
 export default function Header() {
   const [isScrolled, setIsScrolled] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [user, setUser] = useState<User | null>(null);
-  const [isAdmin, setIsAdmin] = useState(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
   const location = useLocation();
@@ -18,7 +16,6 @@ export default function Header() {
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
-      setIsAdmin(checkIfAdmin(currentUser));
     });
     return () => unsubscribe();
   }, []);
@@ -98,37 +95,32 @@ export default function Header() {
           <Link to="/" className="flex items-center gap-3 cursor-pointer">
             <motion.div 
               whileHover={{ scale: 1.05 }}
-              className={`w-10 h-10 rounded-full flex items-center justify-center transition-all duration-300 ${
-                shouldBeSolid ? 'bg-[#1B4332] text-white shadow-md' : 'bg-white/10 backdrop-blur-md text-white border border-white/20'
-              }`}
+              className="w-10 h-10 rounded-full overflow-hidden flex items-center justify-center shadow-md border border-white/20 shrink-0"
             >
-              <Shield size={22} />
+              <img src="/logo.jpg" alt="Nishchay Defence Logo" className="w-full h-full object-cover" />
             </motion.div>
             <div>
               <h1 className={`text-xl font-black tracking-tighter transition-colors duration-300 ${shouldBeSolid ? 'text-[#1B4332]' : 'text-white'}`}>NISHCHAY</h1>
-              <p className={`text-[9px] uppercase tracking-[0.3em] font-bold transition-colors duration-300 ${shouldBeSolid ? 'text-gray-500' : 'text-white/70'}`}>Defence Preparation</p>
+              <p className={`text-[9px] uppercase tracking-[0.3em] font-bold transition-colors duration-300 ${shouldBeSolid ? 'text-gray-500' : 'text-white/70'}`}>Defence</p>
             </div>
           </Link>
 
           {/* Desktop Nav */}
           <nav className="hidden lg:flex items-center gap-2">
             {NAV_LINKS.map((link) => {
-              const isDoubtLink = link.name === 'DOUBTS';
-              const linkName = (isDoubtLink && isAdmin) ? 'DOUBT PANEL' : link.name;
-              const linkHref = (isDoubtLink && isAdmin) ? '/admin' : link.href;
-              
+              const isActive = link.href === '/' ? location.pathname === '/' : location.pathname.startsWith(link.href);
               return (
                 <motion.div key={link.name} whileHover={{ y: -2 }} whileTap={{ scale: 0.95 }}>
                   <Link
-                    to={linkHref}
+                    to={link.href}
                     className={`px-4 py-2 text-xs font-bold tracking-widest rounded-md transition-all duration-300 relative group ${
                       shouldBeSolid
-                        ? (location.pathname === linkHref ? 'text-[#1B4332]' : 'text-gray-700 hover:text-[#1B4332]') 
-                        : (location.pathname === linkHref ? 'text-white' : 'text-white/80 hover:text-white')
+                        ? (isActive ? 'text-[#1B4332]' : 'text-gray-700 hover:text-[#1B4332]') 
+                        : (isActive ? 'text-white' : 'text-white/80 hover:text-white')
                     }`}
                   >
-                    {linkName}
-                    {location.pathname === linkHref && (
+                    {link.name}
+                    {isActive && (
                       <motion.div 
                         layoutId="activeNav"
                         className={`absolute bottom-0 left-4 right-4 h-0.5 ${shouldBeSolid ? 'bg-[#1B4332]' : 'bg-white'}`}
@@ -229,34 +221,21 @@ export default function Header() {
           >
             <div className="px-4 py-6 space-y-2">
               {NAV_LINKS.map((link) => {
-                const isDoubtLink = link.name === 'DOUBTS';
-                const linkName = (isDoubtLink && isAdmin) ? 'DOUBT PANEL' : link.name;
-                const linkHref = (isDoubtLink && isAdmin) ? '/admin' : link.href;
-                
+                const isActive = link.href === '/' ? location.pathname === '/' : location.pathname.startsWith(link.href);
                 return (
                   <Link
                     key={link.name}
-                    to={linkHref}
+                    to={link.href}
                     className={`block px-4 py-3 text-sm font-bold tracking-widest rounded-xl transition-colors ${
-                      location.pathname === linkHref 
+                      isActive 
                         ? 'bg-[#1B4332] text-white' 
                         : 'text-gray-700 hover:bg-gray-50'
                     }`}
                   >
-                    {linkName}
+                    {link.name}
                   </Link>
                 );
               })}
-              
-              {user && isAdmin && (
-                <Link
-                  to="/admin"
-                  className="block px-4 py-3 text-sm font-bold tracking-widest rounded-xl transition-colors bg-amber-50 text-amber-700 hover:bg-amber-100 flex items-center gap-2"
-                >
-                  <LayoutDashboard size={18} />
-                  ADMIN PANEL
-                </Link>
-              )}
 
               {user ? (
                 <button 

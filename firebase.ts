@@ -103,7 +103,8 @@ const ADMIN_EMAILS = [
 /** Synchronous fallback — checks email list. Use for fast routing decisions only. */
 export const checkIfAdmin = (user: User | null) => {
   if (!user || !user.email) return false;
-  return ADMIN_EMAILS.includes(user.email);
+  const email = user.email.trim().toLowerCase();
+  return ADMIN_EMAILS.some(e => e.toLowerCase() === email);
 };
 
 /** Async admin check — reads role from Firestore `users/{uid}`. Authoritative source. */
@@ -140,22 +141,6 @@ export async function retryWrite<T>(fn: () => Promise<T>, maxRetries = 2): Promi
     }
   }
   throw lastError;
-}
-
-// ── Subcollection Cleanup ──
-/** Delete a doubt and all its messages in one batch. */
-export async function deleteDoubtWithMessages(doubtId: string): Promise<void> {
-  // Fetch all messages in the subcollection
-  const messagesSnap = await getDocs(collection(db, `doubts/${doubtId}/messages`));
-  
-  // Firestore batches are limited to 500 ops — fine for typical chat threads
-  const batch = writeBatch(db);
-  messagesSnap.docs.forEach(msgDoc => {
-    batch.delete(msgDoc.ref);
-  });
-  batch.delete(doc(db, 'doubts', doubtId));
-  
-  await batch.commit();
 }
 
 // Auth Helpers

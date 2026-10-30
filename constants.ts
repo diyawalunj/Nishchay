@@ -1,12 +1,11 @@
-import { BookOpen, HelpCircle, GraduationCap, Bell, Users, Dumbbell } from 'lucide-react';
+import { BookOpen, Bell, Users, Dumbbell } from 'lucide-react';
 
 export const NAV_LINKS = [
   { name: 'HOME', href: '/' },
   { name: 'ABOUT', href: '/about' },
   { name: 'NOTES', href: '/notes' },
-  { name: 'DOUBTS', href: '/doubts' },
-  { name: 'TESTS', href: '/tests' },
-  { name: 'SSB', href: '/ssb' },
+  { name: 'N-INTEL', href: '/n-intel' },
+  { name: 'ARTICLES', href: '/articles' },
   { name: 'GALLERY', href: '/gallery' },
   { name: 'CONTACT', href: '/contact' },
 ];
@@ -17,18 +16,6 @@ export const SERVICES = [
     description: 'Handwritten & typed notes by NDA/CDS-qualified mentors for Maths, English, GK & Current Affairs.',
     icon: BookOpen,
     color: 'bg-green-50 text-green-600',
-  },
-  {
-    title: 'Doubt Solving',
-    description: 'Get your doubts resolved instantly via WhatsApp, live chat, or community Q&A.',
-    icon: HelpCircle,
-    color: 'bg-blue-50 text-blue-600',
-  },
-  {
-    title: 'SSB Preparation',
-    description: 'Complete SSB coaching — Screening, Psychology, GTO, Interview & OLQ development.',
-    icon: GraduationCap,
-    color: 'bg-yellow-50 text-yellow-600',
   },
   {
     title: 'Exam Updates',
@@ -55,7 +42,8 @@ export const FOOTER_LINKS = {
     { name: 'Home', href: '/' },
     { name: 'About', href: '/about' },
     { name: 'Notes', href: '/notes' },
-    { name: 'SSB', href: '/ssb' },
+    { name: 'N-INTEL Daily', href: '/n-intel' },
+    { name: 'Articles', href: '/articles' },
     { name: 'Contact', href: '/contact' },
   ],
   exams: [
@@ -66,8 +54,6 @@ export const FOOTER_LINKS = {
   ],
   resources: [
     { name: 'Gallery', href: '/gallery' },
-    { name: 'Doubts', href: '/doubts' },
     { name: 'NCC', href: '/ncc' },
-    { name: 'Mock Tests', href: '/tests' },
   ],
 };
