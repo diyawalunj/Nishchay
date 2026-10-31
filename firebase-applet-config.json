@@ -1,10 +1,10 @@
 {
-  "apiKey": "AIzaSyBxXt2Gb1V6xcrhOGe4ENP7pRVWHPZHRKo",
-  "authDomain": "gen-lang-client-0762202834.firebaseapp.com",
-  "projectId": "gen-lang-client-0762202834",
-  "storageBucket": "gen-lang-client-0762202834.firebasestorage.app",
-  "messagingSenderId": "796498287072",
-  "appId": "1:796498287072:web:1928c114f27dab1332f385",
-  "measurementId": "G-K9E17CRRMK",
+  "apiKey": "AIzaSyA29KMZiv22hjqnRZjzWmblv50Jm76rN28",
+  "authDomain": "nishchay-defence.firebaseapp.com",
+  "projectId": "nishchay-defence",
+  "storageBucket": "nishchay-defence.firebasestorage.app",
+  "messagingSenderId": "996621856671",
+  "appId": "1:996621856671:web:208c0a682c2c0e933897aa",
+  "measurementId": "G-58CPRV7TJ7",
   "firestoreDatabaseId": "(default)"
 }
