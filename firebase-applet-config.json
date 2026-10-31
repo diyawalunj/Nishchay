@@ -1,10 +1,10 @@
 {
-  "apiKey": "AIzaSyA29KMZiv22hjqnRZjzWmblv50Jm76rN28",
-  "authDomain": "nishchay-defence.firebaseapp.com",
-  "projectId": "nishchay-defence",
-  "storageBucket": "nishchay-defence.firebasestorage.app",
-  "messagingSenderId": "996621856671",
-  "appId": "1:996621856671:web:208c0a682c2c0e933897aa",
-  "measurementId": "G-58CPRV7TJ7",
+  "apiKey": "",
+  "authDomain": "",
+  "projectId": "",
+  "storageBucket": "",
+  "messagingSenderId": "",
+  "appId": "",
+  "measurementId": "",
   "firestoreDatabaseId": "(default)"
 }
