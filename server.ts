@@ -37,6 +37,13 @@ import {
   savePyqFileRecord,
   deletePyqFileRecord
 } from './pyq-db';
+import {
+  getAllNotes,
+  getNotesBySubject,
+  getNoteById,
+  saveNote,
+  deleteNote
+} from './notes-db';
 import { parseDailyNewsPost, getLocalTodayDate } from './n-intel-parser';
 import { SAMPLE_NINTEL_POST } from './n-intel-sample-data';
 
@@ -173,11 +180,15 @@ const publishLimiter = rateLimit({
 // Secure static uploads directory with Sandboxing and nosniff
 const UPLOADS_DIR = path.join(process.cwd(), 'public', 'uploads');
 const PYQ_UPLOADS_DIR = path.join(UPLOADS_DIR, 'pyq');
+const NOTES_UPLOADS_DIR = path.join(UPLOADS_DIR, 'notes');
 if (!fs.existsSync(UPLOADS_DIR)) {
   fs.mkdirSync(UPLOADS_DIR, { recursive: true });
 }
 if (!fs.existsSync(PYQ_UPLOADS_DIR)) {
   fs.mkdirSync(PYQ_UPLOADS_DIR, { recursive: true });
+}
+if (!fs.existsSync(NOTES_UPLOADS_DIR)) {
+  fs.mkdirSync(NOTES_UPLOADS_DIR, { recursive: true });
 }
 app.use(
   '/uploads',
@@ -1105,6 +1116,140 @@ app.post('/api/pyq/delete', authenticate as any, (req: AuthRequest, res: Respons
   } catch (err: any) {
     console.error('Error deleting PYQ file:', err);
     res.status(500).json({ success: false, error: 'Failed to delete file.' });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────
+// SUBJECT NOTES API ENDPOINTS
+// ─────────────────────────────────────────────────────────────
+
+// GET all notes or filter by subject
+app.get('/api/notes', (req: Request, res: Response) => {
+  try {
+    const { subject } = req.query;
+    if (typeof subject === 'string' && subject.trim()) {
+      const notes = getNotesBySubject(subject.trim());
+      return res.json({ success: true, notes });
+    }
+    const notes = getAllNotes();
+    res.json({ success: true, notes });
+  } catch (err: any) {
+    console.error('Error fetching subject notes:', err);
+    res.status(500).json({ success: false, error: 'Failed to retrieve notes.' });
+  }
+});
+
+// Upload a note PDF file (Admin Only)
+app.post('/api/notes/upload', uploadLimiter, authenticate as any, (req: AuthRequest, res: Response) => {
+  if (!req.user?.isAdmin) {
+    return res.status(403).json({ success: false, error: 'Access denied: Administrator privileges required.' });
+  }
+
+  try {
+    const { subjectId, subjectTitle, title, category, fileBase64, originalName, fileSize } = req.body;
+
+    if (!subjectId || !subjectTitle || !title || !fileBase64) {
+      return res.status(400).json({ success: false, error: 'Missing required fields (subjectId, subjectTitle, title, fileBase64).' });
+    }
+
+    const base64Data = fileBase64.replace(/^data:application\/pdf;base64,/, '').replace(/^data:.*?;base64,/, '');
+    const buffer = Buffer.from(base64Data, 'base64');
+
+    if (buffer.length > 50 * 1024 * 1024) {
+      return res.status(400).json({ success: false, error: 'File size exceeds 50MB ceiling.' });
+    }
+
+    // Verify PDF Magic Bytes (%PDF-)
+    if (buffer.length < 5 || buffer[0] !== 0x25 || buffer[1] !== 0x50 || buffer[2] !== 0x44 || buffer[3] !== 0x46) {
+      return res.status(400).json({ success: false, error: 'File rejected: Not a valid PDF document.' });
+    }
+
+    const timestamp = Date.now();
+    const cleanSubject = subjectId.toLowerCase().replace(/[^a-z0-9]/g, '-');
+    const sanitizedTitle = (originalName || title || 'note').replace(/[^a-zA-Z0-9.-]/g, '_').replace(/\.pdf$/i, '');
+    const safeFileName = `${cleanSubject}-${timestamp}-${sanitizedTitle}.pdf`;
+    const targetPath = path.join(NOTES_UPLOADS_DIR, safeFileName);
+
+    fs.writeFileSync(targetPath, buffer);
+    const publicUrl = `/uploads/notes/${safeFileName}`;
+
+    const note = saveNote({
+      subjectId,
+      subjectTitle,
+      title,
+      category,
+      url: publicUrl,
+      fileName: originalName || `${title}.pdf`,
+      fileSize: fileSize || `${(buffer.length / (1024 * 1024)).toFixed(2)} MB`,
+    });
+
+    res.json({ success: true, note });
+  } catch (err: any) {
+    console.error('Error uploading subject note:', err);
+    res.status(500).json({ success: false, error: 'Failed to process note upload.' });
+  }
+});
+
+// Link a note from Google Drive or external URL (Admin Only)
+app.post('/api/notes/link', authenticate as any, (req: AuthRequest, res: Response) => {
+  if (!req.user?.isAdmin) {
+    return res.status(403).json({ success: false, error: 'Access denied: Administrator privileges required.' });
+  }
+
+  try {
+    const { subjectId, subjectTitle, title, category, url, fileSize } = req.body;
+
+    if (!subjectId || !subjectTitle || !title || !url) {
+      return res.status(400).json({ success: false, error: 'Missing required parameters.' });
+    }
+
+    const note = saveNote({
+      subjectId,
+      subjectTitle,
+      title,
+      category,
+      url: url.trim(),
+      fileName: title.trim(),
+      fileSize: fileSize || 'Online Document',
+    });
+
+    res.json({ success: true, note });
+  } catch (err: any) {
+    console.error('Error linking subject note:', err);
+    res.status(500).json({ success: false, error: 'Failed to save note link.' });
+  }
+});
+
+// Delete a note (Admin Only)
+app.post('/api/notes/delete', authenticate as any, (req: AuthRequest, res: Response) => {
+  if (!req.user?.isAdmin) {
+    return res.status(403).json({ success: false, error: 'Access denied: Administrator privileges required.' });
+  }
+
+  try {
+    const { id } = req.body;
+    if (!id) {
+      return res.status(400).json({ success: false, error: 'Missing note ID.' });
+    }
+
+    const note = getNoteById(id);
+    if (note?.url && note.url.startsWith('/uploads/notes/')) {
+      const filename = path.basename(note.url);
+      const diskPath = path.join(NOTES_UPLOADS_DIR, filename);
+      if (fs.existsSync(diskPath)) {
+        try {
+          fs.unlinkSync(diskPath);
+        } catch (cleanupErr) {
+          console.warn('Could not remove note file from disk:', cleanupErr);
+        }
+      }
+    }
+
+    const success = deleteNote(id);
+    res.json({ success });
+  } catch (err: any) {
+    console.error('Error deleting subject note:', err);
+    res.status(500).json({ success: false, error: 'Failed to delete note.' });
   }
 });
 

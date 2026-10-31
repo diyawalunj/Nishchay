@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, ChangeEvent } from 'react';
 import { auth, onAuthStateChanged, checkIfAdmin } from './firebase';
+import type { SubjectNote } from './notes-db';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   Search, Calculator, Book, Globe, Newspaper, Target,
@@ -57,11 +58,15 @@ interface PyqSessionData {
 
 interface UploadModalState {
   isOpen: boolean;
-  paper: ExamPaper;
-  subjectKey: 'maths' | 'gat' | 'english' | 'gs';
+  mode: 'pyq' | 'subject';
+  // PYQ fields
+  paper?: ExamPaper;
+  subjectKey?: 'maths' | 'gat' | 'english' | 'gs';
+  fileType?: 'paper' | 'key';
+  typeLabel?: string;
+  // Subject Note fields
+  subjectId?: string;
   subjectTitle: string;
-  fileType: 'paper' | 'key';
-  typeLabel: 'Question Paper' | 'Answer Key';
 }
 
 const SUBJECTS: Subject[] = [
@@ -208,12 +213,24 @@ export default function Notes() {
     }
   });
 
+  // Subject Notes State
+  const [allSubjectNotes, setAllSubjectNotes] = useState<SubjectNote[]>(() => {
+    try {
+      const saved = localStorage.getItem('nishchay_subject_notes');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
   // Upload Modal State
   const [uploadModal, setUploadModal] = useState<UploadModalState | null>(null);
   const [uploadTab, setUploadTab] = useState<'file' | 'link'>('file');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [customLink, setCustomLink] = useState('');
   const [linkTitle, setLinkTitle] = useState('');
+  const [noteTitle, setNoteTitle] = useState('');
+  const [noteCategory, setNoteCategory] = useState('');
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState('');
   const [uploadSuccess, setUploadSuccess] = useState('');
@@ -245,6 +262,25 @@ export default function Notes() {
       });
   }, []);
 
+  // Fetch latest uploaded subject notes from server
+  useEffect(() => {
+    fetch('/api/notes')
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.success && data.notes) {
+          setAllSubjectNotes(data.notes);
+          try {
+            localStorage.setItem('nishchay_subject_notes', JSON.stringify(data.notes));
+          } catch (e) {
+            console.warn('LocalStorage save failed for notes:', e);
+          }
+        }
+      })
+      .catch((err) => {
+        console.warn('Could not reach /api/notes, using local cache:', err);
+      });
+  }, []);
+
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }, [selectedSubject, selectedExam, selectedPaper]);
@@ -258,12 +294,34 @@ export default function Notes() {
     if (!isAdmin) return;
     setUploadModal({
       isOpen: true,
+      mode: 'pyq',
       paper,
       subjectKey,
       subjectTitle,
       fileType,
       typeLabel: fileType === 'paper' ? 'Question Paper' : 'Answer Key',
     });
+    setNoteTitle('');
+    setNoteCategory('');
+    setSelectedFile(null);
+    setCustomLink('');
+    setLinkTitle('');
+    setUploadError('');
+    setUploadSuccess('');
+    setUploadTab('file');
+  };
+
+  const openSubjectUploadModal = (subjectId: string, subjectTitle: string) => {
+    if (!isAdmin) return;
+    setUploadModal({
+      isOpen: true,
+      mode: 'subject',
+      subjectId,
+      subjectTitle,
+      typeLabel: `${subjectTitle} Note`,
+    });
+    setNoteTitle('');
+    setNoteCategory('');
     setSelectedFile(null);
     setCustomLink('');
     setLinkTitle('');
@@ -274,6 +332,8 @@ export default function Notes() {
 
   const closeUploadModal = () => {
     setUploadModal(null);
+    setNoteTitle('');
+    setNoteCategory('');
     setSelectedFile(null);
     setCustomLink('');
     setLinkTitle('');
@@ -313,7 +373,7 @@ export default function Notes() {
   const handleExecuteUpload = async () => {
     if (!uploadModal) return;
     if (!isAdmin) {
-      setUploadError('Only verified administrators are authorized to upload papers.');
+      setUploadError('Only verified administrators are authorized to upload files.');
       return;
     }
     setUploading(true);
@@ -322,6 +382,81 @@ export default function Notes() {
 
     try {
       const headers = await getAuthHeaders();
+
+      // 1. Subject Note Upload Mode
+      if (uploadModal.mode === 'subject') {
+        if (!noteTitle.trim()) {
+          throw new Error('Please enter a title for the note.');
+        }
+
+        if (uploadTab === 'file') {
+          if (!selectedFile) {
+            throw new Error('Please select a PDF file to upload.');
+          }
+
+          const base64Data = await fileToBase64(selectedFile);
+          const res = await fetch('/api/notes/upload', {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({
+              subjectId: uploadModal.subjectId,
+              subjectTitle: uploadModal.subjectTitle,
+              title: noteTitle.trim(),
+              category: noteCategory.trim() || undefined,
+              fileBase64: base64Data,
+              originalName: selectedFile.name,
+              fileSize: `${(selectedFile.size / (1024 * 1024)).toFixed(2)} MB`,
+            }),
+          });
+
+          const data = await res.json();
+          if (!data.success) {
+            throw new Error(data.error || 'Upload failed');
+          }
+
+          const updatedNotes = [data.note, ...allSubjectNotes.filter((n) => n.id !== data.note.id)];
+          setAllSubjectNotes(updatedNotes);
+          localStorage.setItem('nishchay_subject_notes', JSON.stringify(updatedNotes));
+
+          setUploadSuccess(`"${noteTitle}" uploaded successfully!`);
+          setTimeout(() => closeUploadModal(), 1200);
+        } else {
+          // Link submission
+          if (!customLink.trim()) {
+            throw new Error('Please enter a valid PDF or Google Drive link.');
+          }
+
+          const res = await fetch('/api/notes/link', {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({
+              subjectId: uploadModal.subjectId,
+              subjectTitle: uploadModal.subjectTitle,
+              title: noteTitle.trim(),
+              category: noteCategory.trim() || undefined,
+              url: customLink.trim(),
+              fileSize: 'Online Document',
+            }),
+          });
+
+          const data = await res.json();
+          if (!data.success) {
+            throw new Error(data.error || 'Failed to save link');
+          }
+
+          const updatedNotes = [data.note, ...allSubjectNotes.filter((n) => n.id !== data.note.id)];
+          setAllSubjectNotes(updatedNotes);
+          localStorage.setItem('nishchay_subject_notes', JSON.stringify(updatedNotes));
+
+          setUploadSuccess(`"${noteTitle}" link saved!`);
+          setTimeout(() => closeUploadModal(), 1200);
+        }
+        return;
+      }
+
+      // 2. PYQ Paper / Key Upload Mode
+      if (!uploadModal.paper) return;
+
       if (uploadTab === 'file') {
         if (!selectedFile) {
           throw new Error('Please select a PDF file to upload.');
@@ -401,6 +536,32 @@ export default function Notes() {
       setUploadError(err.message || 'Upload operation failed.');
     } finally {
       setUploading(false);
+    }
+  };
+
+  // Delete Subject Note (Admin Only)
+  const handleDeleteSubjectNote = async (noteId: string, title: string) => {
+    if (!isAdmin) return;
+
+    if (!confirm(`Are you sure you want to delete note "${title}"?`)) {
+      return;
+    }
+
+    try {
+      const headers = await getAuthHeaders();
+      const res = await fetch('/api/notes/delete', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ id: noteId }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        const updated = allSubjectNotes.filter((n) => n.id !== noteId);
+        setAllSubjectNotes(updated);
+        localStorage.setItem('nishchay_subject_notes', JSON.stringify(updated));
+      }
+    } catch (err) {
+      console.error('Delete note failed:', err);
     }
   };
 
@@ -1200,6 +1361,10 @@ export default function Notes() {
   // Standard Subject Detail View (e.g. Mathematics, English, etc.)
   // ─────────────────────────────────────────────────────────────
   if (selectedSubject) {
+    const subjectNotesList = allSubjectNotes.filter(
+      (n) => n.subjectId.toLowerCase() === selectedSubject.id.toLowerCase()
+    );
+
     return (
       <div className="min-h-screen bg-[#F8F9FA] pt-32 pb-20">
         <div className="max-w-6xl mx-auto px-4">
@@ -1221,12 +1386,16 @@ export default function Notes() {
                 </div>
                 <div>
                   <h2 className="text-4xl md:text-5xl font-black text-[#1A1A1A] mb-2 tracking-tighter">{selectedSubject.title}</h2>
-                  <p className="text-gray-500 font-medium text-lg">Upload and manage notes for {selectedSubject.title}</p>
+                  <p className="text-gray-500 font-medium text-lg">
+                    {subjectNotesList.length > 0
+                      ? `${subjectNotesList.length} ${subjectNotesList.length === 1 ? 'study note' : 'study notes'} available for revision`
+                      : `Download and practice notes for ${selectedSubject.title}`}
+                  </p>
                 </div>
               </div>
               {isAdmin && (
                 <button
-                  onClick={() => alert(`Folder ready for uploads. API integration to be added for ${selectedSubject.title}.`)}
+                  onClick={() => openSubjectUploadModal(selectedSubject.id, selectedSubject.title)}
                   className="flex items-center justify-center gap-3 px-8 py-4 bg-[#1B4332] text-white rounded-2xl font-bold hover:bg-[#143024] transition-all shadow-lg shadow-[#1B4332]/20 hover:scale-105 hover:-translate-y-1 cursor-pointer"
                 >
                   <Upload size={20} />
@@ -1235,18 +1404,78 @@ export default function Notes() {
               )}
             </div>
 
-            {/* Notes List / Empty State */}
-            <div className="text-center py-24 bg-gray-50 rounded-[2rem] border-2 border-dashed border-gray-200">
-              <div className="w-24 h-24 bg-white rounded-3xl flex items-center justify-center mx-auto mb-6 shadow-sm text-gray-300">
-                <FileText size={48} />
+            {/* Notes Grid or Empty State */}
+            {subjectNotesList.length > 0 ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {subjectNotesList.map((note, idx) => (
+                  <motion.div
+                    key={note.id}
+                    initial={{ opacity: 0, y: 15 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: idx * 0.04 }}
+                    whileHover={{ y: -5 }}
+                    className="p-6 rounded-[2rem] bg-white border border-gray-100 hover:border-[#1B4332]/30 shadow-[0_10px_30px_rgba(0,0,0,0.02)] hover:shadow-xl transition-all duration-300 flex flex-col justify-between group"
+                  >
+                    <div>
+                      <div className="flex items-center justify-between gap-2 mb-4">
+                        <span className="px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-50 text-emerald-800 border border-emerald-100/60">
+                          {note.category || selectedSubject.title}
+                        </span>
+                        <span className="text-[10px] font-bold text-gray-400">
+                          {note.fileSize || 'PDF'}
+                        </span>
+                      </div>
+                      <h4 className="text-lg font-black text-gray-900 group-hover:text-[#1B4332] transition-colors leading-snug line-clamp-2 mb-2">
+                        {note.title}
+                      </h4>
+                      <p className="text-xs text-gray-400 font-semibold truncate mb-6" title={note.fileName}>
+                        {note.fileName}
+                      </p>
+                    </div>
+
+                    <div className="flex items-center gap-2 pt-4 border-t border-gray-100">
+                      <a
+                        href={note.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-[#1B4332] text-white rounded-xl text-xs font-bold hover:bg-[#143024] transition-all shadow-xs"
+                      >
+                        <Download size={14} /> View / Download
+                      </a>
+                      {isAdmin && (
+                        <button
+                          onClick={() => handleDeleteSubjectNote(note.id, note.title)}
+                          title="Delete Note"
+                          className="p-3 bg-red-50 hover:bg-red-100 text-red-600 rounded-xl transition-all cursor-pointer"
+                        >
+                          <Trash2 size={15} />
+                        </button>
+                      )}
+                    </div>
+                  </motion.div>
+                ))}
               </div>
-              <h3 className="text-2xl font-black text-gray-900 mb-3 tracking-tighter">No notes uploaded yet</h3>
-              <p className="text-gray-500 max-w-md mx-auto font-medium leading-relaxed">
-                {isAdmin
-                  ? 'This folder is empty. Click the upload button above to add PDF notes, study materials, or quick revision sheets into this directory.'
-                  : 'Study materials and notes for this subject are currently being prepared by our mentors and will be available soon.'}
-              </p>
-            </div>
+            ) : (
+              <div className="text-center py-24 bg-gray-50 rounded-[2rem] border-2 border-dashed border-gray-200">
+                <div className="w-24 h-24 bg-white rounded-3xl flex items-center justify-center mx-auto mb-6 shadow-sm text-gray-300">
+                  <FileText size={48} />
+                </div>
+                <h3 className="text-2xl font-black text-gray-900 mb-3 tracking-tighter">No notes uploaded yet</h3>
+                <p className="text-gray-500 max-w-md mx-auto font-medium leading-relaxed mb-6">
+                  {isAdmin
+                    ? 'This folder is empty. Click the button below to upload PDF notes or study materials for this subject.'
+                    : 'Study materials and notes for this subject are currently being prepared by our mentors and will be available soon.'}
+                </p>
+                {isAdmin && (
+                  <button
+                    onClick={() => openSubjectUploadModal(selectedSubject.id, selectedSubject.title)}
+                    className="inline-flex items-center gap-2 px-6 py-3.5 bg-[#1B4332] text-white rounded-2xl text-xs font-black uppercase tracking-wider hover:bg-[#143024] transition-all shadow-md cursor-pointer hover:scale-105"
+                  >
+                    <Upload size={14} /> Upload First Note
+                  </button>
+                )}
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -1350,7 +1579,14 @@ export default function Notes() {
                 <subject.icon size={40} />
               </div>
               <h3 className="text-3xl font-black mb-3 tracking-tighter">{subject.title}</h3>
-              <p className="text-white/50 text-xs font-black mb-10 tracking-[0.3em] uppercase">{subject.count}</p>
+              <p className="text-white/50 text-xs font-black mb-10 tracking-[0.3em] uppercase">
+                {subject.id === 'pyq-papers'
+                  ? subject.count
+                  : (() => {
+                      const c = allSubjectNotes.filter((n) => n.subjectId.toLowerCase() === subject.id.toLowerCase()).length;
+                      return c > 0 ? `${c} ${c === 1 ? 'PDF Note' : 'PDF Notes'}` : subject.count;
+                    })()}
+              </p>
               <button className="px-10 py-4 bg-white/10 backdrop-blur-md border border-white/20 rounded-2xl text-[10px] font-black tracking-[0.3em] uppercase hover:bg-white hover:text-gray-900 transition-all duration-500 shadow-lg cursor-pointer">
                 Open Folder
               </button>
@@ -1381,7 +1617,9 @@ export default function Notes() {
               <div className="flex items-start justify-between gap-4 pb-4 border-b border-gray-100 mb-6">
                 <div>
                   <span className="text-[10px] font-black uppercase tracking-widest text-[#1B4332]">
-                    {uploadModal.paper.title} • {uploadModal.subjectTitle}
+                    {uploadModal.mode === 'subject'
+                      ? `${uploadModal.subjectTitle} Archive`
+                      : `${uploadModal.paper?.title} • ${uploadModal.subjectTitle}`}
                   </span>
                   <h3 className="text-2xl font-black text-gray-900 tracking-tight mt-1">
                     Upload {uploadModal.typeLabel}
@@ -1394,6 +1632,36 @@ export default function Notes() {
                   <X size={18} />
                 </button>
               </div>
+
+              {/* Subject Note Title & Category Inputs */}
+              {uploadModal.mode === 'subject' && (
+                <div className="space-y-3 mb-6 p-4 rounded-2xl bg-gray-50 border border-gray-100">
+                  <div>
+                    <label className="block text-xs font-black uppercase tracking-wider text-gray-600 mb-1.5">
+                      Note Title <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Calculus Formulas, Grammar Shortcuts, Optics Summary..."
+                      value={noteTitle}
+                      onChange={(e) => setNoteTitle(e.target.value)}
+                      className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl text-xs font-bold text-gray-800 outline-none focus:border-[#1B4332] transition-all"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-black uppercase tracking-wider text-gray-600 mb-1.5">
+                      Topic / Chapter / Category (Optional)
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Differentiation, Ancient History, Vocabulary..."
+                      value={noteCategory}
+                      onChange={(e) => setNoteCategory(e.target.value)}
+                      className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl text-xs font-bold text-gray-800 outline-none focus:border-[#1B4332] transition-all"
+                    />
+                  </div>
+                </div>
+              )}
 
               {/* Upload Type Tabs */}
               <div className="flex items-center gap-2 p-1 bg-gray-100 rounded-xl mb-6">
@@ -1444,10 +1712,12 @@ export default function Notes() {
                     ) : (
                       <div>
                         <p className="text-sm font-bold text-gray-800">
-                          Click to browse downloaded PDF
+                          Click to browse PDF from device
                         </p>
                         <p className="text-xs text-gray-400 mt-1">
-                          Select the downloaded {uploadModal.subjectTitle} {uploadModal.typeLabel}
+                          {uploadModal.mode === 'subject'
+                            ? `Select the PDF note file for ${uploadModal.subjectTitle}`
+                            : `Select the downloaded ${uploadModal.subjectTitle} ${uploadModal.typeLabel}`}
                         </p>
                       </div>
                     )}
@@ -1468,18 +1738,20 @@ export default function Notes() {
                       className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-xs font-bold text-gray-800 outline-none focus:border-[#1B4332] focus:bg-white transition-all"
                     />
                   </div>
-                  <div>
-                    <label className="block text-xs font-black uppercase tracking-wider text-gray-600 mb-1.5">
-                      Display Title (Optional)
-                    </label>
-                    <input
-                      type="text"
-                      placeholder={`e.g. ${uploadModal.paper.title} ${uploadModal.subjectTitle} ${uploadModal.typeLabel}`}
-                      value={linkTitle}
-                      onChange={(e) => setLinkTitle(e.target.value)}
-                      className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-xs font-bold text-gray-800 outline-none focus:border-[#1B4332] focus:bg-white transition-all"
-                    />
-                  </div>
+                  {uploadModal.mode === 'pyq' && (
+                    <div>
+                      <label className="block text-xs font-black uppercase tracking-wider text-gray-600 mb-1.5">
+                        Display Title (Optional)
+                      </label>
+                      <input
+                        type="text"
+                        placeholder={`e.g. ${uploadModal.paper?.title} ${uploadModal.subjectTitle} ${uploadModal.typeLabel}`}
+                        value={linkTitle}
+                        onChange={(e) => setLinkTitle(e.target.value)}
+                        className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-xs font-bold text-gray-800 outline-none focus:border-[#1B4332] focus:bg-white transition-all"
+                      />
+                    </div>
+                  )}
                 </div>
               )}
 
