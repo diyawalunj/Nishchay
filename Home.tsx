@@ -22,7 +22,7 @@ const quotes = [
     author: "Philip Sidney"
   },
   {
-    text: "Fortune favors the brave.",
+    text: "Fortune favors the brave!",
     author: "Virgil"
   },
   {
