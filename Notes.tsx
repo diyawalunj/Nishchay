@@ -291,7 +291,14 @@ export default function Notes() {
     subjectTitle: string,
     fileType: 'paper' | 'key'
   ) => {
-    if (!isAdmin) return;
+    if (!isAdmin) {
+      if (!auth.currentUser) {
+        alert('Authentication Required: Please sign in with your administrator Google account to upload papers.');
+      } else {
+        alert(`Access Restricted (${auth.currentUser.email}): This account is not authorized as an administrator.`);
+      }
+      return;
+    }
     setUploadModal({
       isOpen: true,
       mode: 'pyq',
@@ -312,7 +319,14 @@ export default function Notes() {
   };
 
   const openSubjectUploadModal = (subjectId: string, subjectTitle: string) => {
-    if (!isAdmin) return;
+    if (!isAdmin) {
+      if (!auth.currentUser) {
+        alert('Authentication Required: Please sign in with your administrator Google account to upload notes.');
+      } else {
+        alert(`Access Restricted (${auth.currentUser.email}): This account is not authorized as an administrator.`);
+      }
+      return;
+    }
     setUploadModal({
       isOpen: true,
       mode: 'subject',
@@ -664,6 +678,209 @@ export default function Notes() {
   };
 
   // ─────────────────────────────────────────────────────────────
+  // REUSABLE UPLOAD MODAL DIALOG (Rendered across all views)
+  // ─────────────────────────────────────────────────────────────
+  const renderUploadModal = () => (
+    <AnimatePresence>
+      {uploadModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95, y: 20 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.95, y: 20 }}
+            className="bg-white rounded-3xl p-6 md:p-8 max-w-lg w-full shadow-2xl border border-gray-100 relative overflow-hidden"
+          >
+            {/* Modal Header */}
+            <div className="flex items-start justify-between gap-4 pb-4 border-b border-gray-100 mb-6">
+              <div>
+                <span className="text-[10px] font-black uppercase tracking-widest text-[#1B4332]">
+                  {uploadModal.mode === 'subject'
+                    ? `${uploadModal.subjectTitle} Archive`
+                    : `${uploadModal.paper?.title} • ${uploadModal.subjectTitle}`}
+                </span>
+                <h3 className="text-2xl font-black text-gray-900 tracking-tight mt-1">
+                  Upload {uploadModal.typeLabel}
+                </h3>
+              </div>
+              <button
+                onClick={closeUploadModal}
+                className="w-9 h-9 rounded-full bg-gray-100 hover:bg-gray-200 text-gray-600 flex items-center justify-center transition-colors cursor-pointer shrink-0"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Subject Note Title & Category Inputs */}
+            {uploadModal.mode === 'subject' && (
+              <div className="space-y-3 mb-6 p-4 rounded-2xl bg-gray-50 border border-gray-100">
+                <div>
+                  <label className="block text-xs font-black uppercase tracking-wider text-gray-600 mb-1.5">
+                    Note Title <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Calculus Formulas, Grammar Shortcuts, Optics Summary..."
+                    value={noteTitle}
+                    onChange={(e) => setNoteTitle(e.target.value)}
+                    className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl text-xs font-bold text-gray-800 outline-none focus:border-[#1B4332] transition-all"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-black uppercase tracking-wider text-gray-600 mb-1.5">
+                    Topic / Chapter / Category (Optional)
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Differentiation, Ancient History, Vocabulary..."
+                    value={noteCategory}
+                    onChange={(e) => setNoteCategory(e.target.value)}
+                    className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl text-xs font-bold text-gray-800 outline-none focus:border-[#1B4332] transition-all"
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Upload Type Tabs */}
+            <div className="flex items-center gap-2 p-1 bg-gray-100 rounded-xl mb-6">
+              <button
+                onClick={() => setUploadTab('file')}
+                className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                  uploadTab === 'file' ? 'bg-white text-gray-900 shadow-xs' : 'text-gray-500 hover:text-gray-800'
+                }`}
+              >
+                <FileUp size={14} /> Upload PDF File
+              </button>
+              <button
+                onClick={() => setUploadTab('link')}
+                className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                  uploadTab === 'link' ? 'bg-white text-gray-900 shadow-xs' : 'text-gray-500 hover:text-gray-800'
+                }`}
+              >
+                <LinkIcon size={14} /> Paste PDF / Drive Link
+              </button>
+            </div>
+
+            {/* Tab 1: File Upload */}
+            {uploadTab === 'file' ? (
+              <div>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".pdf,application/pdf"
+                  onChange={handleFileChange}
+                  className="hidden"
+                />
+                <div
+                  onClick={() => fileInputRef.current?.click()}
+                  className="border-2 border-dashed border-gray-200 hover:border-[#1B4332] rounded-2xl p-8 text-center cursor-pointer transition-all bg-gray-50/60 hover:bg-emerald-50/20 group"
+                >
+                  <div className="w-14 h-14 bg-white rounded-2xl flex items-center justify-center mx-auto mb-3 text-gray-400 group-hover:text-[#1B4332] shadow-xs group-hover:scale-105 transition-all">
+                    <FileUp size={28} />
+                  </div>
+                  {selectedFile ? (
+                    <div>
+                      <p className="text-sm font-bold text-gray-900 truncate max-w-xs mx-auto">
+                        {selectedFile.name}
+                      </p>
+                      <p className="text-xs text-gray-400 mt-1">
+                        {(selectedFile.size / (1024 * 1024)).toFixed(2)} MB • Ready to upload
+                      </p>
+                    </div>
+                  ) : (
+                    <div>
+                      <p className="text-sm font-bold text-gray-800">
+                        Click to browse PDF from device
+                      </p>
+                      <p className="text-xs text-gray-400 mt-1">
+                        {uploadModal.mode === 'subject'
+                          ? `Select the PDF note file for ${uploadModal.subjectTitle}`
+                          : `Select the downloaded ${uploadModal.subjectTitle} ${uploadModal.typeLabel}`}
+                      </p>
+                      <p className="text-[11px] font-semibold text-emerald-800/80 mt-2 bg-emerald-50 inline-block px-2.5 py-0.5 rounded-full">
+                        Max direct upload: 4 MB • For larger files use "Paste PDF / Drive Link"
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            ) : (
+              /* Tab 2: URL / Drive Link */
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-xs font-black uppercase tracking-wider text-gray-600 mb-1.5">
+                    PDF Link or Google Drive Link
+                  </label>
+                  <input
+                    type="url"
+                    placeholder="https://drive.google.com/file/d/... or direct PDF link"
+                    value={customLink}
+                    onChange={(e) => setCustomLink(e.target.value)}
+                    className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-xs font-bold text-gray-800 outline-none focus:border-[#1B4332] focus:bg-white transition-all"
+                  />
+                </div>
+                {uploadModal.mode === 'pyq' && (
+                  <div>
+                    <label className="block text-xs font-black uppercase tracking-wider text-gray-600 mb-1.5">
+                      Display Title (Optional)
+                    </label>
+                    <input
+                      type="text"
+                      placeholder={`e.g. ${uploadModal.paper?.title} ${uploadModal.subjectTitle} ${uploadModal.typeLabel}`}
+                      value={linkTitle}
+                      onChange={(e) => setLinkTitle(e.target.value)}
+                      className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-xs font-bold text-gray-800 outline-none focus:border-[#1B4332] focus:bg-white transition-all"
+                    />
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Status messages */}
+            {uploadError && (
+              <div className="mt-4 p-3 rounded-xl bg-red-50 text-red-700 text-xs font-bold flex items-center gap-2">
+                <AlertCircle size={15} /> {uploadError}
+              </div>
+            )}
+            {uploadSuccess && (
+              <div className="mt-4 p-3 rounded-xl bg-emerald-50 text-emerald-700 text-xs font-bold flex items-center gap-2">
+                <Check size={15} /> {uploadSuccess}
+              </div>
+            )}
+
+            {/* Modal Footer Buttons */}
+            <div className="flex items-center justify-end gap-3 mt-8 pt-4 border-t border-gray-100">
+              <button
+                type="button"
+                onClick={closeUploadModal}
+                disabled={uploading}
+                className="px-5 py-2.5 text-xs font-bold text-gray-600 hover:text-gray-900 rounded-xl transition-all cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleExecuteUpload}
+                disabled={uploading}
+                className="px-6 py-2.5 bg-[#1B4332] text-white rounded-xl text-xs font-black tracking-wider uppercase hover:bg-[#143024] transition-all shadow-md cursor-pointer flex items-center gap-2 disabled:opacity-50"
+              >
+                {uploading ? (
+                  <>
+                    <RefreshCw size={14} className="animate-spin" /> Uploading...
+                  </>
+                ) : (
+                  <>
+                    <Upload size={14} /> Save {uploadModal.typeLabel}
+                  </>
+                )}
+              </button>
+            </div>
+          </motion.div>
+        </div>
+      )}
+    </AnimatePresence>
+  );
+
+  // ─────────────────────────────────────────────────────────────
   // LEVEL 3: Specific Exam Paper View (Upload & Manage Papers & Keys)
   // ─────────────────────────────────────────────────────────────
   if (selectedPaper) {
@@ -996,6 +1213,7 @@ export default function Notes() {
             </div>
           </div>
         </div>
+        {renderUploadModal()}
       </div>
     );
   }
@@ -1519,6 +1737,7 @@ export default function Notes() {
             )}
           </div>
         </div>
+        {renderUploadModal()}
       </div>
     );
   }
@@ -1642,206 +1861,8 @@ export default function Notes() {
         )}
       </section>
 
-      {/* ─────────────────────────────────────────────────────────────
-          UPLOAD MODAL DIALOG (For Question Papers & Answer Keys - Admin Only)
-         ───────────────────────────────────────────────────────────── */}
-      <AnimatePresence>
-        {uploadModal && isAdmin && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95, y: 20 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              className="bg-white rounded-3xl p-6 md:p-8 max-w-lg w-full shadow-2xl border border-gray-100 relative overflow-hidden"
-            >
-              {/* Modal Header */}
-              <div className="flex items-start justify-between gap-4 pb-4 border-b border-gray-100 mb-6">
-                <div>
-                  <span className="text-[10px] font-black uppercase tracking-widest text-[#1B4332]">
-                    {uploadModal.mode === 'subject'
-                      ? `${uploadModal.subjectTitle} Archive`
-                      : `${uploadModal.paper?.title} • ${uploadModal.subjectTitle}`}
-                  </span>
-                  <h3 className="text-2xl font-black text-gray-900 tracking-tight mt-1">
-                    Upload {uploadModal.typeLabel}
-                  </h3>
-                </div>
-                <button
-                  onClick={closeUploadModal}
-                  className="w-9 h-9 rounded-full bg-gray-100 hover:bg-gray-200 text-gray-600 flex items-center justify-center transition-colors cursor-pointer shrink-0"
-                >
-                  <X size={18} />
-                </button>
-              </div>
-
-              {/* Subject Note Title & Category Inputs */}
-              {uploadModal.mode === 'subject' && (
-                <div className="space-y-3 mb-6 p-4 rounded-2xl bg-gray-50 border border-gray-100">
-                  <div>
-                    <label className="block text-xs font-black uppercase tracking-wider text-gray-600 mb-1.5">
-                      Note Title <span className="text-red-500">*</span>
-                    </label>
-                    <input
-                      type="text"
-                      placeholder="e.g. Calculus Formulas, Grammar Shortcuts, Optics Summary..."
-                      value={noteTitle}
-                      onChange={(e) => setNoteTitle(e.target.value)}
-                      className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl text-xs font-bold text-gray-800 outline-none focus:border-[#1B4332] transition-all"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-black uppercase tracking-wider text-gray-600 mb-1.5">
-                      Topic / Chapter / Category (Optional)
-                    </label>
-                    <input
-                      type="text"
-                      placeholder="e.g. Differentiation, Ancient History, Vocabulary..."
-                      value={noteCategory}
-                      onChange={(e) => setNoteCategory(e.target.value)}
-                      className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl text-xs font-bold text-gray-800 outline-none focus:border-[#1B4332] transition-all"
-                    />
-                  </div>
-                </div>
-              )}
-
-              {/* Upload Type Tabs */}
-              <div className="flex items-center gap-2 p-1 bg-gray-100 rounded-xl mb-6">
-                <button
-                  onClick={() => setUploadTab('file')}
-                  className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
-                    uploadTab === 'file' ? 'bg-white text-gray-900 shadow-xs' : 'text-gray-500 hover:text-gray-800'
-                  }`}
-                >
-                  <FileUp size={14} /> Upload PDF File
-                </button>
-                <button
-                  onClick={() => setUploadTab('link')}
-                  className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
-                    uploadTab === 'link' ? 'bg-white text-gray-900 shadow-xs' : 'text-gray-500 hover:text-gray-800'
-                  }`}
-                >
-                  <LinkIcon size={14} /> Paste PDF / Drive Link
-                </button>
-              </div>
-
-              {/* Tab 1: File Upload */}
-              {uploadTab === 'file' ? (
-                <div>
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept=".pdf,application/pdf"
-                    onChange={handleFileChange}
-                    className="hidden"
-                  />
-                  <div
-                    onClick={() => fileInputRef.current?.click()}
-                    className="border-2 border-dashed border-gray-200 hover:border-[#1B4332] rounded-2xl p-8 text-center cursor-pointer transition-all bg-gray-50/60 hover:bg-emerald-50/20 group"
-                  >
-                    <div className="w-14 h-14 bg-white rounded-2xl flex items-center justify-center mx-auto mb-3 text-gray-400 group-hover:text-[#1B4332] shadow-xs group-hover:scale-105 transition-all">
-                      <FileUp size={28} />
-                    </div>
-                    {selectedFile ? (
-                      <div>
-                        <p className="text-sm font-bold text-gray-900 truncate max-w-xs mx-auto">
-                          {selectedFile.name}
-                        </p>
-                        <p className="text-xs text-gray-400 mt-1">
-                          {(selectedFile.size / (1024 * 1024)).toFixed(2)} MB • Ready to upload
-                        </p>
-                      </div>
-                    ) : (
-                      <div>
-                        <p className="text-sm font-bold text-gray-800">
-                          Click to browse PDF from device
-                        </p>
-                        <p className="text-xs text-gray-400 mt-1">
-                          {uploadModal.mode === 'subject'
-                            ? `Select the PDF note file for ${uploadModal.subjectTitle}`
-                            : `Select the downloaded ${uploadModal.subjectTitle} ${uploadModal.typeLabel}`}
-                        </p>
-                        <p className="text-[11px] font-semibold text-emerald-800/80 mt-2 bg-emerald-50 inline-block px-2.5 py-0.5 rounded-full">
-                          Max direct upload: 4 MB • For larger files use "Paste PDF / Drive Link"
-                        </p>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              ) : (
-                /* Tab 2: URL / Drive Link */
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-xs font-black uppercase tracking-wider text-gray-600 mb-1.5">
-                      PDF Link or Google Drive Link
-                    </label>
-                    <input
-                      type="url"
-                      placeholder="https://drive.google.com/file/d/... or direct PDF link"
-                      value={customLink}
-                      onChange={(e) => setCustomLink(e.target.value)}
-                      className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-xs font-bold text-gray-800 outline-none focus:border-[#1B4332] focus:bg-white transition-all"
-                    />
-                  </div>
-                  {uploadModal.mode === 'pyq' && (
-                    <div>
-                      <label className="block text-xs font-black uppercase tracking-wider text-gray-600 mb-1.5">
-                        Display Title (Optional)
-                      </label>
-                      <input
-                        type="text"
-                        placeholder={`e.g. ${uploadModal.paper?.title} ${uploadModal.subjectTitle} ${uploadModal.typeLabel}`}
-                        value={linkTitle}
-                        onChange={(e) => setLinkTitle(e.target.value)}
-                        className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-xs font-bold text-gray-800 outline-none focus:border-[#1B4332] focus:bg-white transition-all"
-                      />
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* Status messages */}
-              {uploadError && (
-                <div className="mt-4 p-3 rounded-xl bg-red-50 text-red-700 text-xs font-bold flex items-center gap-2">
-                  <AlertCircle size={15} /> {uploadError}
-                </div>
-              )}
-              {uploadSuccess && (
-                <div className="mt-4 p-3 rounded-xl bg-emerald-50 text-emerald-700 text-xs font-bold flex items-center gap-2">
-                  <Check size={15} /> {uploadSuccess}
-                </div>
-              )}
-
-              {/* Modal Footer Buttons */}
-              <div className="flex items-center justify-end gap-3 mt-8 pt-4 border-t border-gray-100">
-                <button
-                  type="button"
-                  onClick={closeUploadModal}
-                  disabled={uploading}
-                  className="px-5 py-2.5 text-xs font-bold text-gray-600 hover:text-gray-900 rounded-xl transition-all cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  onClick={handleExecuteUpload}
-                  disabled={uploading}
-                  className="px-6 py-2.5 bg-[#1B4332] text-white rounded-xl text-xs font-black tracking-wider uppercase hover:bg-[#143024] transition-all shadow-md cursor-pointer flex items-center gap-2 disabled:opacity-50"
-                >
-                  {uploading ? (
-                    <>
-                      <RefreshCw size={14} className="animate-spin" /> Uploading...
-                    </>
-                  ) : (
-                    <>
-                      <Upload size={14} /> Save {uploadModal.typeLabel}
-                    </>
-                  )}
-                </button>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
+      {/* Shared Upload Modal Dialog */}
+      {renderUploadModal()}
     </div>
   );
 }
