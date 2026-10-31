@@ -3,6 +3,7 @@ import path from 'path';
 
 export interface PyqFileItem {
   url: string;
+  driveFileId?: string;
   fileName: string;
   fileSize?: string;
   uploadedAt: string;
@@ -79,11 +80,12 @@ export function savePyqFileRecord(params: {
   subjectKey: 'maths' | 'gat' | 'english' | 'gs';
   fileType: 'paper' | 'key';
   url: string;
+  driveFileId?: string;
   fileName: string;
   fileSize?: string;
 }): PyqSessionData {
   const all = getAllPyqSessions();
-  const { sessionId, exam, session, year, title, subjectKey, fileType, url, fileName, fileSize } = params;
+  const { sessionId, exam, session, year, title, subjectKey, fileType, url, driveFileId, fileName, fileSize } = params;
 
   if (!all[sessionId]) {
     all[sessionId] = {
@@ -104,6 +106,7 @@ export function savePyqFileRecord(params: {
 
   const fileItem: PyqFileItem = {
     url,
+    driveFileId,
     fileName,
     fileSize: fileSize || 'PDF Document',
     uploadedAt: new Date().toISOString(),

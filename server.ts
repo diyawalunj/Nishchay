@@ -44,6 +44,12 @@ import {
   saveNote,
   deleteNote
 } from './notes-db';
+import {
+  uploadPdfToDrive,
+  deletePdfFromDrive,
+  extractDriveFileId,
+  isDriveConfigured
+} from './google-drive';
 import { parseDailyNewsPost, getLocalTodayDate } from './n-intel-parser';
 import { SAMPLE_NINTEL_POST } from './n-intel-sample-data';
 
@@ -963,7 +969,7 @@ app.get('/api/pyq', (req: Request, res: Response) => {
 });
 
 // Upload a question paper or answer key PDF directly from computer (Admin Only)
-app.post('/api/pyq/upload', uploadLimiter, authenticate as any, (req: AuthRequest, res: Response) => {
+app.post('/api/pyq/upload', uploadLimiter, authenticate as any, async (req: AuthRequest, res: Response) => {
   if (!req.user?.isAdmin) {
     return res.status(403).json({ success: false, error: 'Access denied: Administrator privileges required.' });
   }
@@ -1002,20 +1008,41 @@ app.post('/api/pyq/upload', uploadLimiter, authenticate as any, (req: AuthReques
       return res.status(400).json({ success: false, error: 'Invalid file signature. Only authentic PDF documents are allowed.' });
     }
 
-    if (!fs.existsSync(PYQ_UPLOADS_DIR)) {
-      fs.mkdirSync(PYQ_UPLOADS_DIR, { recursive: true });
+    let publicUrl: string = '';
+    let driveFileId: string | undefined;
+
+    // Automated Google Drive Upload
+    if (isDriveConfigured()) {
+      try {
+        const driveFileName = `${title || sessionId} - ${String(subjectKey).toUpperCase()} ${fileType === 'key' ? 'Answer Key' : 'Question Paper'}.pdf`;
+        const driveResult = await uploadPdfToDrive({
+          buffer,
+          fileName: driveFileName,
+        });
+        publicUrl = driveResult.url;
+        driveFileId = driveResult.fileId;
+      } catch (driveErr: any) {
+        console.warn('⚠️ Google Drive upload failed, falling back to local disk storage:', driveErr?.message);
+      }
     }
 
-    const cleanSession = String(sessionId).replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 50);
-    const cleanSubject = String(subjectKey).replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 20);
-    const cleanType = String(fileType).replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 10);
-    const randomHex = crypto.randomBytes(8).toString('hex');
-    const safeFileName = `${cleanSession}-${cleanSubject}-${cleanType}-${Date.now()}-${randomHex}.pdf`;
-    const targetPath = path.join(PYQ_UPLOADS_DIR, safeFileName);
+    // Local Storage Fallback if Google Drive is not configured or fails
+    if (!publicUrl) {
+      if (!fs.existsSync(PYQ_UPLOADS_DIR)) {
+        fs.mkdirSync(PYQ_UPLOADS_DIR, { recursive: true });
+      }
 
-    fs.writeFileSync(targetPath, buffer, { flag: 'wx' });
+      const cleanSession = String(sessionId).replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 50);
+      const cleanSubject = String(subjectKey).replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 20);
+      const cleanType = String(fileType).replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 10);
+      const randomHex = crypto.randomBytes(8).toString('hex');
+      const safeFileName = `${cleanSession}-${cleanSubject}-${cleanType}-${Date.now()}-${randomHex}.pdf`;
+      const targetPath = path.join(PYQ_UPLOADS_DIR, safeFileName);
 
-    const publicUrl = `/uploads/pyq/${safeFileName}`;
+      fs.writeFileSync(targetPath, buffer, { flag: 'wx' });
+      publicUrl = `/uploads/pyq/${safeFileName}`;
+    }
+
     const sessionRecord = savePyqFileRecord({
       sessionId,
       exam: exam || (sessionId.startsWith('nda') ? 'NDA' : 'CDS'),
@@ -1025,11 +1052,12 @@ app.post('/api/pyq/upload', uploadLimiter, authenticate as any, (req: AuthReques
       subjectKey,
       fileType,
       url: publicUrl,
-      fileName: originalName || safeFileName,
+      driveFileId,
+      fileName: originalName || (title ? `${title}.pdf` : 'Paper.pdf'),
       fileSize: fileSize || `${(buffer.length / (1024 * 1024)).toFixed(2)} MB`,
     });
 
-    res.json({ success: true, url: publicUrl, session: sessionRecord });
+    res.json({ success: true, url: publicUrl, driveFileId, session: sessionRecord });
   } catch (err: any) {
     console.error('Error handling PYQ upload:', err);
     res.status(500).json({ success: false, error: 'Failed to process file upload.' });
@@ -1096,9 +1124,18 @@ app.post('/api/pyq/delete', authenticate as any, (req: AuthRequest, res: Respons
       return res.status(400).json({ success: false, error: 'Missing required parameters.' });
     }
 
-    // Clean up local file from disk if it was an uploaded file
+    // Clean up file: check Google Drive first, or remove from local disk
     const currentSessions = getAllPyqSessions();
     const existingFile = currentSessions[sessionId]?.subjects?.[subjectKey as 'maths' | 'gat' | 'english' | 'gs']?.[fileType as 'paper' | 'key'];
+    if (existingFile?.driveFileId) {
+      deletePdfFromDrive(existingFile.driveFileId).catch((e) => console.warn('Could not delete PYQ from Drive:', e));
+    } else if (existingFile?.url) {
+      const driveId = extractDriveFileId(existingFile.url);
+      if (driveId) {
+        deletePdfFromDrive(driveId).catch((e) => console.warn('Could not delete PYQ from Drive:', e));
+      }
+    }
+
     if (existingFile?.url && existingFile.url.startsWith('/uploads/pyq/')) {
       const filename = path.basename(existingFile.url);
       const diskPath = path.join(PYQ_UPLOADS_DIR, filename);
@@ -1140,7 +1177,7 @@ app.get('/api/notes', (req: Request, res: Response) => {
 });
 
 // Upload a note PDF file (Admin Only)
-app.post('/api/notes/upload', uploadLimiter, authenticate as any, (req: AuthRequest, res: Response) => {
+app.post('/api/notes/upload', uploadLimiter, authenticate as any, async (req: AuthRequest, res: Response) => {
   if (!req.user?.isAdmin) {
     return res.status(403).json({ success: false, error: 'Access denied: Administrator privileges required.' });
   }
@@ -1164,14 +1201,35 @@ app.post('/api/notes/upload', uploadLimiter, authenticate as any, (req: AuthRequ
       return res.status(400).json({ success: false, error: 'File rejected: Not a valid PDF document.' });
     }
 
-    const timestamp = Date.now();
-    const cleanSubject = subjectId.toLowerCase().replace(/[^a-z0-9]/g, '-');
-    const sanitizedTitle = (originalName || title || 'note').replace(/[^a-zA-Z0-9.-]/g, '_').replace(/\.pdf$/i, '');
-    const safeFileName = `${cleanSubject}-${timestamp}-${sanitizedTitle}.pdf`;
-    const targetPath = path.join(NOTES_UPLOADS_DIR, safeFileName);
+    let publicUrl: string = '';
+    let driveFileId: string | undefined;
 
-    fs.writeFileSync(targetPath, buffer);
-    const publicUrl = `/uploads/notes/${safeFileName}`;
+    // Automated Google Drive Upload
+    if (isDriveConfigured()) {
+      try {
+        const driveFileName = `${subjectTitle} - ${title}.pdf`;
+        const driveResult = await uploadPdfToDrive({
+          buffer,
+          fileName: driveFileName,
+        });
+        publicUrl = driveResult.url;
+        driveFileId = driveResult.fileId;
+      } catch (driveErr: any) {
+        console.warn('⚠️ Google Drive upload failed, falling back to local storage:', driveErr?.message);
+      }
+    }
+
+    // Local Storage Fallback if Google Drive is not configured or fails
+    if (!publicUrl) {
+      const timestamp = Date.now();
+      const cleanSubject = subjectId.toLowerCase().replace(/[^a-z0-9]/g, '-');
+      const sanitizedTitle = (originalName || title || 'note').replace(/[^a-zA-Z0-9.-]/g, '_').replace(/\.pdf$/i, '');
+      const safeFileName = `${cleanSubject}-${timestamp}-${sanitizedTitle}.pdf`;
+      const targetPath = path.join(NOTES_UPLOADS_DIR, safeFileName);
+
+      fs.writeFileSync(targetPath, buffer);
+      publicUrl = `/uploads/notes/${safeFileName}`;
+    }
 
     const note = saveNote({
       subjectId,
@@ -1179,6 +1237,7 @@ app.post('/api/notes/upload', uploadLimiter, authenticate as any, (req: AuthRequ
       title,
       category,
       url: publicUrl,
+      driveFileId,
       fileName: originalName || `${title}.pdf`,
       fileSize: fileSize || `${(buffer.length / (1024 * 1024)).toFixed(2)} MB`,
     });
@@ -1233,6 +1292,15 @@ app.post('/api/notes/delete', authenticate as any, (req: AuthRequest, res: Respo
     }
 
     const note = getNoteById(id);
+    if (note?.driveFileId) {
+      deletePdfFromDrive(note.driveFileId).catch((e) => console.warn('Could not delete note from Drive:', e));
+    } else if (note?.url) {
+      const driveId = extractDriveFileId(note.url);
+      if (driveId) {
+        deletePdfFromDrive(driveId).catch((e) => console.warn('Could not delete note from Drive:', e));
+      }
+    }
+
     if (note?.url && note.url.startsWith('/uploads/notes/')) {
       const filename = path.basename(note.url);
       const diskPath = path.join(NOTES_UPLOADS_DIR, filename);
@@ -1283,6 +1351,7 @@ async function setupServer() {
   console.log('GOOGLE_SERVICE_ACCOUNT_EMAIL:', GOOGLE_SERVICE_ACCOUNT_EMAIL ? '✅ Present' : '❌ Missing');
   console.log('GOOGLE_PRIVATE_KEY:', GOOGLE_PRIVATE_KEY ? '✅ Present' : '❌ Missing');
   console.log('GOOGLE_SHEET_ID_CONTACT:', (GOOGLE_SHEET_ID_CONTACT || '1gGWQxXAuKCpt99m6efSBwaDUqLFJn_7f-WnESPOnmQY') ? '✅ Present' : '❌ Missing');
+  console.log('GOOGLE_DRIVE_FOLDER_ID:', process.env.GOOGLE_DRIVE_FOLDER_ID ? '✅ Present (Google Drive Uploads Active)' : '⚠️ Not Set (Using Local Storage fallback)');
   console.log('---------------------------------');
 
   // Seed sample N-INTEL edition if empty

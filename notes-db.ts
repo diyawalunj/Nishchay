@@ -8,6 +8,7 @@ export interface SubjectNote {
   title: string; // Note display title
   category?: string; // Optional chapter / topic name
   url: string; // File URL (e.g. /uploads/notes/filename.pdf or Google Drive link)
+  driveFileId?: string; // Optional Google Drive File ID
   fileName: string;
   fileSize?: string;
   uploadedAt: string;
@@ -71,6 +72,7 @@ export function saveNote(data: {
   title: string;
   category?: string;
   url: string;
+  driveFileId?: string;
   fileName: string;
   fileSize?: string;
 }): SubjectNote {
@@ -83,6 +85,7 @@ export function saveNote(data: {
     title: data.title.trim(),
     category: data.category?.trim() || undefined,
     url: data.url,
+    driveFileId: data.driveFileId,
     fileName: data.fileName,
     fileSize: data.fileSize || 'PDF Document',
     uploadedAt: new Date().toISOString(),
