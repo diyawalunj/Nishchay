@@ -32,6 +32,11 @@ import {
   deleteArticle,
   incrementDownloadCount
 } from './articles-db';
+import {
+  getAllPyqSessions,
+  savePyqFileRecord,
+  deletePyqFileRecord
+} from './pyq-db';
 import { parseDailyNewsPost, getLocalTodayDate } from './n-intel-parser';
 import { SAMPLE_NINTEL_POST } from './n-intel-sample-data';
 
@@ -113,8 +118,9 @@ app.use(
   })
 );
 
-// Request body size limit (prevent denial of service via large payloads)
-app.use(express.json({ limit: '10mb' }));
+// Request body size limit (support PDF uploads up to 50MB)
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
 // Rate Limiters
 const globalApiLimiter = rateLimit({
@@ -160,16 +166,25 @@ const publishLimiter = rateLimit({
 
 // Secure static uploads directory with Sandboxing and nosniff
 const UPLOADS_DIR = path.join(process.cwd(), 'public', 'uploads');
+const PYQ_UPLOADS_DIR = path.join(UPLOADS_DIR, 'pyq');
 if (!fs.existsSync(UPLOADS_DIR)) {
   fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+}
+if (!fs.existsSync(PYQ_UPLOADS_DIR)) {
+  fs.mkdirSync(PYQ_UPLOADS_DIR, { recursive: true });
 }
 app.use(
   '/uploads',
   express.static(UPLOADS_DIR, {
     dotfiles: 'ignore',
-    setHeaders: (res) => {
+    setHeaders: (res, filePath) => {
       res.setHeader('X-Content-Type-Options', 'nosniff');
-      res.setHeader('Content-Security-Policy', "default-src 'none'; sandbox");
+      if (filePath.toLowerCase().endsWith('.pdf')) {
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', 'inline');
+      } else {
+        res.setHeader('Content-Security-Policy', "default-src 'none'; sandbox");
+      }
     }
   })
 );
@@ -912,6 +927,142 @@ app.get('/api/n-intel/audit', authenticate as any, (req: AuthRequest, res) => {
   } catch (error: any) {
     console.error('Error fetching audit logs:', error);
     res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/* ==========================================================================
+   PYQ PAPERS & ANSWER KEYS API (Self-Uploaded Archive)
+   ========================================================================== */
+
+// Get all uploaded PYQ sessions and file metadata
+app.get('/api/pyq', (req: Request, res: Response) => {
+  try {
+    const sessions = getAllPyqSessions();
+    res.json({ success: true, sessions });
+  } catch (err: any) {
+    console.error('Error retrieving PYQ sessions:', err);
+    res.status(500).json({ success: false, error: err.message || 'Failed to load PYQ papers' });
+  }
+});
+
+// Upload a question paper or answer key PDF directly from computer
+app.post('/api/pyq/upload', (req: Request, res: Response) => {
+  try {
+    const {
+      sessionId,
+      exam,
+      session,
+      year,
+      title,
+      subjectKey,
+      fileType,
+      fileBase64,
+      originalName,
+      fileSize
+    } = req.body;
+
+    if (!sessionId || !subjectKey || !fileType || !fileBase64) {
+      return res.status(400).json({ success: false, error: 'Missing required upload parameters.' });
+    }
+
+    const matches = fileBase64.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
+    let buffer: Buffer;
+    if (matches && matches.length === 3) {
+      buffer = Buffer.from(matches[2], 'base64');
+    } else {
+      buffer = Buffer.from(fileBase64, 'base64');
+    }
+
+    if (buffer.length > 50 * 1024 * 1024) {
+      return res.status(400).json({ success: false, error: 'File size exceeds maximum 50MB limit.' });
+    }
+
+    if (!fs.existsSync(PYQ_UPLOADS_DIR)) {
+      fs.mkdirSync(PYQ_UPLOADS_DIR, { recursive: true });
+    }
+
+    const cleanSession = String(sessionId).replace(/[^a-zA-Z0-9_-]/g, '');
+    const cleanSubject = String(subjectKey).replace(/[^a-zA-Z0-9_-]/g, '');
+    const cleanType = String(fileType).replace(/[^a-zA-Z0-9_-]/g, '');
+    const safeFileName = `${cleanSession}-${cleanSubject}-${cleanType}-${Date.now()}.pdf`;
+    const targetPath = path.join(PYQ_UPLOADS_DIR, safeFileName);
+
+    fs.writeFileSync(targetPath, buffer);
+
+    const publicUrl = `/uploads/pyq/${safeFileName}`;
+    const sessionRecord = savePyqFileRecord({
+      sessionId,
+      exam: exam || (sessionId.startsWith('nda') ? 'NDA' : 'CDS'),
+      session: session || 'I',
+      year: Number(year) || 2026,
+      title: title || sessionId,
+      subjectKey,
+      fileType,
+      url: publicUrl,
+      fileName: originalName || safeFileName,
+      fileSize: fileSize || `${(buffer.length / (1024 * 1024)).toFixed(2)} MB`,
+    });
+
+    res.json({ success: true, url: publicUrl, session: sessionRecord });
+  } catch (err: any) {
+    console.error('Error handling PYQ upload:', err);
+    res.status(500).json({ success: false, error: 'Failed to process file upload.' });
+  }
+});
+
+// Link an external PDF or Drive URL
+app.post('/api/pyq/link', (req: Request, res: Response) => {
+  try {
+    const {
+      sessionId,
+      exam,
+      session,
+      year,
+      title,
+      subjectKey,
+      fileType,
+      url,
+      fileName,
+      fileSize
+    } = req.body;
+
+    if (!sessionId || !subjectKey || !fileType || !url) {
+      return res.status(400).json({ success: false, error: 'Missing required parameters.' });
+    }
+
+    const sessionRecord = savePyqFileRecord({
+      sessionId,
+      exam: exam || (sessionId.startsWith('nda') ? 'NDA' : 'CDS'),
+      session: session || 'I',
+      year: Number(year) || 2026,
+      title: title || sessionId,
+      subjectKey,
+      fileType,
+      url,
+      fileName: fileName || `${title || sessionId} ${subjectKey} ${fileType}`,
+      fileSize: fileSize || 'Drive Link',
+    });
+
+    res.json({ success: true, session: sessionRecord });
+  } catch (err: any) {
+    console.error('Error linking PYQ URL:', err);
+    res.status(500).json({ success: false, error: err.message || 'Failed to save link.' });
+  }
+});
+
+// Delete an uploaded file or link
+app.post('/api/pyq/delete', (req: Request, res: Response) => {
+  try {
+    const { sessionId, subjectKey, fileType } = req.body;
+    if (!sessionId || !subjectKey || !fileType) {
+      return res.status(400).json({ success: false, error: 'Missing required parameters.' });
+    }
+
+    const sessionRecord = deletePyqFileRecord({ sessionId, subjectKey, fileType });
+    res.json({ success: true, session: sessionRecord });
+  } catch (err: any) {
+    console.error('Error deleting PYQ file:', err);
+    res.status(500).json({ success: false, error: err.message || 'Failed to delete file.' });
   }
 });
 
