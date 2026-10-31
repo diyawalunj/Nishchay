@@ -149,7 +149,7 @@ export const signInWithGoogle = async () => {
     // Ensure we don't have multiple popups opening
     const result = await signInWithPopup(auth, googleProvider);
     const user = result.user;
-    
+
     // Sync user to Firestore
     const userRef = doc(db, 'users', user.uid);
     let userDoc;
@@ -159,7 +159,7 @@ export const signInWithGoogle = async () => {
       // If we can't read the doc (e.g. rules), we still have the user object
       console.warn("Could not fetch user doc, might be a new user or rules issue", e);
     }
-    
+
     if (!userDoc?.exists()) {
       try {
         const isAdmin = checkIfAdmin(user);
@@ -174,7 +174,7 @@ export const signInWithGoogle = async () => {
         console.error("Failed to sync user to Firestore", e);
       }
     }
-    
+
     return user;
   } catch (error: any) {
     // Handle specific Firebase Auth errors

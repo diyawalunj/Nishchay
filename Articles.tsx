@@ -17,7 +17,7 @@ const CATEGORIES = [
   'Defence & Strategic Affairs',
   'Internal Security',
   'Polity & Governance',
-  'Geopolitics & Bilateral',
+  'Geopolitics & Bilateral Relations',
   'Economy & Trade',
   'Science & Technology'
 ];
@@ -129,7 +129,7 @@ export default function Articles() {
     setEditingArticle(art);
     setTitle(art.title);
     setBannerImageUrl(art.bannerImageUrl);
-    
+
     const standardCategories = CATEGORIES.filter(c => c !== 'All');
     if (art.category && !standardCategories.includes(art.category)) {
       setCategory('Custom');
@@ -425,11 +425,10 @@ export default function Articles() {
                 <button
                   key={cat}
                   onClick={() => setSelectedCategory(cat)}
-                  className={`px-5 py-2.5 rounded-full text-xs font-black uppercase tracking-wider whitespace-nowrap transition-all cursor-pointer ${
-                    isActive
+                  className={`px-5 py-2.5 rounded-full text-xs font-black uppercase tracking-wider whitespace-nowrap transition-all cursor-pointer ${isActive
                       ? 'bg-[#1B4332] text-white shadow-md shadow-[#1B4332]/25 scale-105'
                       : 'bg-white hover:bg-gray-100 text-gray-700 border border-gray-200/80'
-                  }`}
+                    }`}
                 >
                   {cat}
                 </button>
@@ -510,7 +509,7 @@ export default function Articles() {
                       }}
                     />
                     <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-60 group-hover:opacity-80 transition-opacity" />
-                    
+
                     {/* Category Badge on Banner */}
                     <div className="absolute top-4 left-4 z-10">
                       <span className="px-3 py-1 bg-white/90 backdrop-blur-md text-[#1B4332] text-[10px] font-black uppercase tracking-widest rounded-full border border-white/20 shadow-xs">
@@ -610,320 +609,320 @@ export default function Articles() {
             className="bg-white rounded-3xl max-w-3xl w-full p-6 sm:p-10 shadow-2xl border border-gray-100 my-auto max-h-[90vh] overflow-y-auto text-left relative"
           >
             <div className="flex items-center justify-between pb-4 border-b border-gray-100 mb-6">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 bg-[#1B4332]/10 text-[#1B4332] rounded-xl flex items-center justify-center">
-                    <FileText size={20} />
-                  </div>
-                  <div>
-                    <h2 className="text-xl font-black text-gray-900">
-                      {editingArticle ? 'Edit Article' : 'Upload Strategic Article'}
-                    </h2>
-                    <p className="text-xs text-gray-500 font-medium">
-                      Compulsory banner image and editorial formatting for newspaper op-ed layout.
-                    </p>
-                  </div>
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-[#1B4332]/10 text-[#1B4332] rounded-xl flex items-center justify-center">
+                  <FileText size={20} />
                 </div>
-                <button
-                  onClick={() => setIsUploadModalOpen(false)}
-                  className="w-8 h-8 rounded-full bg-gray-100 hover:bg-gray-200 text-gray-600 flex items-center justify-center transition-colors"
-                >
-                  <X size={16} />
-                </button>
+                <div>
+                  <h2 className="text-xl font-black text-gray-900">
+                    {editingArticle ? 'Edit Article' : 'Upload Strategic Article'}
+                  </h2>
+                  <p className="text-xs text-gray-500 font-medium">
+                    Compulsory banner image and editorial formatting for newspaper op-ed layout.
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsUploadModalOpen(false)}
+                className="w-8 h-8 rounded-full bg-gray-100 hover:bg-gray-200 text-gray-600 flex items-center justify-center transition-colors"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            {formError && (
+              <div className="mb-6 p-4 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs font-bold flex items-center gap-2">
+                <AlertCircle size={16} className="shrink-0" />
+                <span>{formError}</span>
+              </div>
+            )}
+
+            {formSuccess && (
+              <div className="mb-6 p-4 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-bold flex items-center gap-2">
+                <Check size={16} className="shrink-0" />
+                <span>{formSuccess}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleSubmitArticle} className="space-y-6">
+              {/* 1. Article Title */}
+              <div>
+                <label className="block text-xs font-black uppercase tracking-wider text-gray-700 mb-2">
+                  Article Headline / Title <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Tied by geography, divided by politics"
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:border-[#1B4332] focus:bg-white focus:ring-0 outline-none text-sm font-bold text-gray-800"
+                />
               </div>
 
-              {formError && (
-                <div className="mb-6 p-4 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs font-bold flex items-center gap-2">
-                  <AlertCircle size={16} className="shrink-0" />
-                  <span>{formError}</span>
+              {/* 2. COMPULSORY BANNER IMAGE */}
+              <div className="p-5 rounded-2xl bg-amber-50/60 border-2 border-dashed border-amber-300">
+                <div className="flex items-center justify-between mb-2">
+                  <label className="text-xs font-black uppercase tracking-wider text-amber-950 flex items-center gap-2">
+                    <Upload size={14} className="text-amber-700" />
+                    <span>Compulsory Banner Image <span className="text-red-600 font-black">*</span></span>
+                  </label>
+                  <span className="text-[10px] font-black uppercase tracking-wider bg-amber-200/70 text-amber-900 px-2.5 py-0.5 rounded-full">
+                    Required Field
+                  </span>
                 </div>
-              )}
+                <p className="text-[11px] font-medium text-amber-800 mb-3">
+                  Every article must have a high-impact horizontal banner image displayed at the top of the feed and in the PDF export.
+                </p>
 
-              {formSuccess && (
-                <div className="mb-6 p-4 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-bold flex items-center gap-2">
-                  <Check size={16} className="shrink-0" />
-                  <span>{formSuccess}</span>
+                <div className="flex flex-col sm:flex-row gap-3">
+                  <input
+                    type="url"
+                    required
+                    placeholder="Paste image URL (https://...)"
+                    value={bannerImageUrl}
+                    onChange={(e) => setBannerImageUrl(e.target.value)}
+                    className="flex-1 px-4 py-2.5 bg-white border border-amber-200 rounded-xl focus:border-[#1B4332] outline-none text-xs font-bold text-gray-800 placeholder:text-gray-400"
+                  />
+
+                  <input
+                    type="file"
+                    ref={fileInputRef}
+                    onChange={handleBannerFileUpload}
+                    accept="image/*"
+                    className="hidden"
+                  />
+
+                  <button
+                    type="button"
+                    disabled={isUploadingBanner}
+                    onClick={() => fileInputRef.current?.click()}
+                    className="px-4 py-2.5 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-black tracking-wider uppercase flex items-center justify-center gap-2 transition-all cursor-pointer disabled:opacity-50"
+                  >
+                    <Upload size={13} />
+                    <span>{isUploadingBanner ? 'Uploading...' : 'Upload File'}</span>
+                  </button>
                 </div>
-              )}
 
-              <form onSubmit={handleSubmitArticle} className="space-y-6">
-                {/* 1. Article Title */}
+                {/* Banner Image Live Preview */}
+                {bannerImageUrl && (
+                  <div className="mt-4 relative aspect-[16/8] rounded-xl overflow-hidden border border-amber-300 shadow-sm bg-gray-100">
+                    <img
+                      src={bannerImageUrl}
+                      alt="Banner Preview"
+                      className="w-full h-full object-cover"
+                      onError={() => setFormError('The banner image URL could not be loaded. Please verify the URL.')}
+                    />
+                    <div className="absolute bottom-2 left-2 px-2.5 py-0.5 bg-black/70 text-white text-[10px] font-bold rounded-md">
+                      Banner Preview Loaded
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* 3. Category & Date Grid */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-start">
                 <div>
                   <label className="block text-xs font-black uppercase tracking-wider text-gray-700 mb-2">
-                    Article Headline / Title <span className="text-red-500">*</span>
+                    Category / Topic Domain <span className="text-red-500">*</span>
                   </label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="e.g. Tied by geography, divided by politics"
-                    value={title}
-                    onChange={(e) => setTitle(e.target.value)}
-                    className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:border-[#1B4332] focus:bg-white focus:ring-0 outline-none text-sm font-bold text-gray-800"
-                  />
-                </div>
+                  <select
+                    value={isCustomCategory ? 'Custom' : category}
+                    onChange={(e) => {
+                      if (e.target.value === 'Custom') {
+                        setIsCustomCategory(true);
+                      } else {
+                        setIsCustomCategory(false);
+                        setCategory(e.target.value);
+                      }
+                    }}
+                    className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:border-[#1B4332] outline-none text-xs font-bold text-gray-800"
+                  >
+                    {CATEGORIES.filter(c => c !== 'All').map(c => (
+                      <option key={c} value={c}>{c}</option>
+                    ))}
+                    <option value="Custom">+ Custom / Other Topic Domain...</option>
+                  </select>
 
-                {/* 2. COMPULSORY BANNER IMAGE */}
-                <div className="p-5 rounded-2xl bg-amber-50/60 border-2 border-dashed border-amber-300">
-                  <div className="flex items-center justify-between mb-2">
-                    <label className="text-xs font-black uppercase tracking-wider text-amber-950 flex items-center gap-2">
-                      <Upload size={14} className="text-amber-700" />
-                      <span>Compulsory Banner Image <span className="text-red-600 font-black">*</span></span>
-                    </label>
-                    <span className="text-[10px] font-black uppercase tracking-wider bg-amber-200/70 text-amber-900 px-2.5 py-0.5 rounded-full">
-                      Required Field
-                    </span>
-                  </div>
-                  <p className="text-[11px] font-medium text-amber-800 mb-3">
-                    Every article must have a high-impact horizontal banner image displayed at the top of the feed and in the PDF export.
-                  </p>
-
-                  <div className="flex flex-col sm:flex-row gap-3">
-                    <input
-                      type="url"
-                      required
-                      placeholder="Paste image URL (https://...)"
-                      value={bannerImageUrl}
-                      onChange={(e) => setBannerImageUrl(e.target.value)}
-                      className="flex-1 px-4 py-2.5 bg-white border border-amber-200 rounded-xl focus:border-[#1B4332] outline-none text-xs font-bold text-gray-800 placeholder:text-gray-400"
-                    />
-
-                    <input
-                      type="file"
-                      ref={fileInputRef}
-                      onChange={handleBannerFileUpload}
-                      accept="image/*"
-                      className="hidden"
-                    />
-
-                    <button
-                      type="button"
-                      disabled={isUploadingBanner}
-                      onClick={() => fileInputRef.current?.click()}
-                      className="px-4 py-2.5 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-black tracking-wider uppercase flex items-center justify-center gap-2 transition-all cursor-pointer disabled:opacity-50"
-                    >
-                      <Upload size={13} />
-                      <span>{isUploadingBanner ? 'Uploading...' : 'Upload File'}</span>
-                    </button>
-                  </div>
-
-                  {/* Banner Image Live Preview */}
-                  {bannerImageUrl && (
-                    <div className="mt-4 relative aspect-[16/8] rounded-xl overflow-hidden border border-amber-300 shadow-sm bg-gray-100">
-                      <img
-                        src={bannerImageUrl}
-                        alt="Banner Preview"
-                        className="w-full h-full object-cover"
-                        onError={() => setFormError('The banner image URL could not be loaded. Please verify the URL.')}
-                      />
-                      <div className="absolute bottom-2 left-2 px-2.5 py-0.5 bg-black/70 text-white text-[10px] font-bold rounded-md">
-                        Banner Preview Loaded
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                {/* 3. Category & Date Grid */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-start">
-                  <div>
-                    <label className="block text-xs font-black uppercase tracking-wider text-gray-700 mb-2">
-                      Category / Topic Domain <span className="text-red-500">*</span>
-                    </label>
-                    <select
-                      value={isCustomCategory ? 'Custom' : category}
-                      onChange={(e) => {
-                        if (e.target.value === 'Custom') {
-                          setIsCustomCategory(true);
-                        } else {
-                          setIsCustomCategory(false);
-                          setCategory(e.target.value);
-                        }
-                      }}
-                      className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:border-[#1B4332] outline-none text-xs font-bold text-gray-800"
-                    >
-                      {CATEGORIES.filter(c => c !== 'All').map(c => (
-                        <option key={c} value={c}>{c}</option>
-                      ))}
-                      <option value="Custom">+ Custom / Other Topic Domain...</option>
-                    </select>
-
-                    {isCustomCategory && (
-                      <div className="mt-2.5">
-                        <label className="block text-[10px] font-black uppercase tracking-wider text-[#1B4332] mb-1">
-                          Specify Custom Topic Domain <span className="text-red-500">*</span>
-                        </label>
-                        <input
-                          type="text"
-                          required
-                          placeholder="e.g. Maritime Strategy, Air Power, Nuclear Geopolitics..."
-                          value={customCategory}
-                          onChange={(e) => setCustomCategory(e.target.value)}
-                          className="w-full px-4 py-2.5 bg-white border-2 border-[#1B4332]/40 rounded-xl focus:border-[#1B4332] outline-none text-xs font-bold text-gray-800 placeholder:text-gray-400 shadow-xs"
-                          autoFocus
-                        />
-                        <span className="text-[10px] text-gray-400 font-medium block mt-1">
-                          Articles under this topic will automatically get their own filter pill on the feed.
-                        </span>
-                      </div>
-                    )}
-                  </div>
-
-                  <div>
-                    <div className="flex items-center justify-between mb-2">
-                      <label className="block text-xs font-black uppercase tracking-wider text-gray-700">
-                        Publication Date
-                      </label>
-                      <span className="text-[10px] font-bold text-[#1B4332] bg-[#1B4332]/10 px-2.5 py-0.5 rounded-full flex items-center gap-1">
-                        <Check size={11} />
-                        <span>Today</span>
-                      </span>
-                    </div>
-                    <input
-                      type="date"
-                      value={publishDate}
-                      onChange={(e) => setPublishDate(e.target.value)}
-                      className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:border-[#1B4332] outline-none text-xs font-bold text-gray-800"
-                    />
-                    <span className="text-[10px] text-gray-400 font-medium block mt-1">
-                      Automatically defaults to today's date. You can change it if backdating an article.
-                    </span>
-                  </div>
-                </div>
-
-                {/* 4. Author Information */}
-                <div className="p-5 rounded-2xl bg-gray-50 border border-gray-200/80 space-y-4">
-                  <div className="text-xs font-black uppercase tracking-wider text-gray-700 flex items-center gap-2">
-                    <User size={14} className="text-[#1B4332]" />
-                    <span>Author Credentials</span>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-[11px] font-bold text-gray-600 mb-1">
-                        Author Name <span className="text-red-500">*</span>
+                  {isCustomCategory && (
+                    <div className="mt-2.5">
+                      <label className="block text-[10px] font-black uppercase tracking-wider text-[#1B4332] mb-1">
+                        Specify Custom Topic Domain <span className="text-red-500">*</span>
                       </label>
                       <input
                         type="text"
                         required
-                        placeholder="e.g. Mohammed Ayoob"
-                        value={authorName}
-                        onChange={(e) => setAuthorName(e.target.value)}
-                        className="w-full px-3.5 py-2 bg-white border border-gray-200 rounded-xl text-xs font-bold text-gray-800"
+                        placeholder="e.g. Maritime Strategy, Air Power, Nuclear Geopolitics..."
+                        value={customCategory}
+                        onChange={(e) => setCustomCategory(e.target.value)}
+                        className="w-full px-4 py-2.5 bg-white border-2 border-[#1B4332]/40 rounded-xl focus:border-[#1B4332] outline-none text-xs font-bold text-gray-800 placeholder:text-gray-400 shadow-xs"
+                        autoFocus
                       />
+                      <span className="text-[10px] text-gray-400 font-medium block mt-1">
+                        Articles under this topic will automatically get their own filter pill on the feed.
+                      </span>
                     </div>
+                  )}
+                </div>
 
-                    <div>
-                      <label className="block text-[11px] font-bold text-gray-600 mb-1">
-                        Author Avatar / Photo URL (Optional)
-                      </label>
-                      <input
-                        type="url"
-                        placeholder="https://..."
-                        value={authorAvatarUrl}
-                        onChange={(e) => setAuthorAvatarUrl(e.target.value)}
-                        className="w-full px-3.5 py-2 bg-white border border-gray-200 rounded-xl text-xs font-bold text-gray-800"
-                      />
-                    </div>
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="block text-xs font-black uppercase tracking-wider text-gray-700">
+                      Publication Date
+                    </label>
+                    <span className="text-[10px] font-bold text-[#1B4332] bg-[#1B4332]/10 px-2.5 py-0.5 rounded-full flex items-center gap-1">
+                      <Check size={11} />
+                      <span>Today</span>
+                    </span>
+                  </div>
+                  <input
+                    type="date"
+                    value={publishDate}
+                    onChange={(e) => setPublishDate(e.target.value)}
+                    className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:border-[#1B4332] outline-none text-xs font-bold text-gray-800"
+                  />
+                  <span className="text-[10px] text-gray-400 font-medium block mt-1">
+                    Automatically defaults to today's date. You can change it if backdating an article.
+                  </span>
+                </div>
+              </div>
+
+              {/* 4. Author Information */}
+              <div className="p-5 rounded-2xl bg-gray-50 border border-gray-200/80 space-y-4">
+                <div className="text-xs font-black uppercase tracking-wider text-gray-700 flex items-center gap-2">
+                  <User size={14} className="text-[#1B4332]" />
+                  <span>Author Credentials</span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-[11px] font-bold text-gray-600 mb-1">
+                      Author Name <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="e.g. Mohammed Ayoob"
+                      value={authorName}
+                      onChange={(e) => setAuthorName(e.target.value)}
+                      className="w-full px-3.5 py-2 bg-white border border-gray-200 rounded-xl text-xs font-bold text-gray-800"
+                    />
                   </div>
 
                   <div>
                     <label className="block text-[11px] font-bold text-gray-600 mb-1">
-                      Author Designation / Academic Affiliation
+                      Author Avatar / Photo URL (Optional)
                     </label>
                     <input
-                      type="text"
-                      placeholder="e.g. Professor Emeritus of International Relations, Michigan State University"
-                      value={authorRole}
-                      onChange={(e) => setAuthorRole(e.target.value)}
+                      type="url"
+                      placeholder="https://..."
+                      value={authorAvatarUrl}
+                      onChange={(e) => setAuthorAvatarUrl(e.target.value)}
                       className="w-full px-3.5 py-2 bg-white border border-gray-200 rounded-xl text-xs font-bold text-gray-800"
                     />
                   </div>
                 </div>
 
-                {/* 5. Central Thesis / Pull Quote */}
+                <div>
+                  <label className="block text-[11px] font-bold text-gray-600 mb-1">
+                    Author Designation / Academic Affiliation
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Professor Emeritus of International Relations, Michigan State University"
+                    value={authorRole}
+                    onChange={(e) => setAuthorRole(e.target.value)}
+                    className="w-full px-3.5 py-2 bg-white border border-gray-200 rounded-xl text-xs font-bold text-gray-800"
+                  />
+                </div>
+              </div>
+
+              {/* 5. Central Thesis / Pull Quote */}
+              <div>
+                <label className="block text-xs font-black uppercase tracking-wider text-gray-700 mb-2">
+                  Central Thesis / Key Pull Quote
+                </label>
+                <textarea
+                  rows={2}
+                  placeholder="e.g. India and Bangladesh must overcome mistrust and pursue pragmatic neighbourhood cooperation."
+                  value={pullQuote}
+                  onChange={(e) => setPullQuote(e.target.value)}
+                  className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:border-[#1B4332] outline-none text-xs font-bold text-gray-800"
+                />
+              </div>
+
+              {/* 6. Article Content & Highlighting Syntax */}
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="text-xs font-black uppercase tracking-wider text-gray-700">
+                    Editorial Content <span className="text-red-500">*</span>
+                  </label>
+                  <span className="text-[10px] font-bold text-gray-500">
+                    Use <code className="bg-yellow-100 text-yellow-900 px-1 py-0.5 rounded">==yellow==</code> or <code className="bg-emerald-100 text-emerald-900 px-1 py-0.5 rounded">^^green^^</code> for exam highlights
+                  </span>
+                </div>
+                <textarea
+                  rows={12}
+                  required
+                  placeholder="Write article paragraphs... Use ### Subheading for editorial sub-sections, ==text== for yellow exam highlights, and ^^text^^ for green exam highlights."
+                  value={content}
+                  onChange={(e) => setContent(e.target.value)}
+                  className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:border-[#1B4332] focus:bg-white outline-none text-xs font-medium text-gray-800 leading-relaxed font-mono"
+                />
+              </div>
+
+              {/* 7. Tags & Source Reference */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-black uppercase tracking-wider text-gray-700 mb-2">
-                    Central Thesis / Key Pull Quote
+                    Tags (comma-separated)
                   </label>
-                  <textarea
-                    rows={2}
-                    placeholder="e.g. India and Bangladesh must overcome mistrust and pursue pragmatic neighbourhood cooperation."
-                    value={pullQuote}
-                    onChange={(e) => setPullQuote(e.target.value)}
-                    className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:border-[#1B4332] outline-none text-xs font-bold text-gray-800"
+                  <input
+                    type="text"
+                    placeholder="India-Bangladesh, Foreign Policy, 1971 War"
+                    value={tags}
+                    onChange={(e) => setTags(e.target.value)}
+                    className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-bold text-gray-800"
                   />
                 </div>
 
-                {/* 6. Article Content & Highlighting Syntax */}
                 <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <label className="text-xs font-black uppercase tracking-wider text-gray-700">
-                      Editorial Content <span className="text-red-500">*</span>
-                    </label>
-                    <span className="text-[10px] font-bold text-gray-500">
-                      Use <code className="bg-yellow-100 text-yellow-900 px-1 py-0.5 rounded">==yellow==</code> or <code className="bg-emerald-100 text-emerald-900 px-1 py-0.5 rounded">^^green^^</code> for exam highlights
-                    </span>
-                  </div>
-                  <textarea
-                    rows={12}
-                    required
-                    placeholder="Write article paragraphs... Use ### Subheading for editorial sub-sections, ==text== for yellow exam highlights, and ^^text^^ for green exam highlights."
-                    value={content}
-                    onChange={(e) => setContent(e.target.value)}
-                    className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:border-[#1B4332] focus:bg-white outline-none text-xs font-medium text-gray-800 leading-relaxed font-mono"
+                  <label className="block text-xs font-black uppercase tracking-wider text-gray-700 mb-2">
+                    Source / Reference (Optional)
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Strategic Studies Review"
+                    value={sourceReference}
+                    onChange={(e) => setSourceReference(e.target.value)}
+                    className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-bold text-gray-800"
                   />
                 </div>
+              </div>
 
-                {/* 7. Tags & Source Reference */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-black uppercase tracking-wider text-gray-700 mb-2">
-                      Tags (comma-separated)
-                    </label>
-                    <input
-                      type="text"
-                      placeholder="India-Bangladesh, Foreign Policy, 1971 War"
-                      value={tags}
-                      onChange={(e) => setTags(e.target.value)}
-                      className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-bold text-gray-800"
-                    />
-                  </div>
+              {/* Form Action Buttons */}
+              <div className="pt-4 border-t border-gray-100 flex items-center justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => setIsUploadModalOpen(false)}
+                  className="px-6 py-3 rounded-xl bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-black tracking-wider uppercase transition-colors"
+                >
+                  Cancel
+                </button>
 
-                  <div>
-                    <label className="block text-xs font-black uppercase tracking-wider text-gray-700 mb-2">
-                      Source / Reference (Optional)
-                    </label>
-                    <input
-                      type="text"
-                      placeholder="e.g. Strategic Studies Review"
-                      value={sourceReference}
-                      onChange={(e) => setSourceReference(e.target.value)}
-                      className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-bold text-gray-800"
-                    />
-                  </div>
-                </div>
-
-                {/* Form Action Buttons */}
-                <div className="pt-4 border-t border-gray-100 flex items-center justify-end gap-3">
-                  <button
-                    type="button"
-                    onClick={() => setIsUploadModalOpen(false)}
-                    className="px-6 py-3 rounded-xl bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-black tracking-wider uppercase transition-colors"
-                  >
-                    Cancel
-                  </button>
-
-                  <button
-                    type="submit"
-                    disabled={isSubmitting}
-                    className="px-8 py-3 rounded-xl bg-[#1B4332] hover:bg-[#143024] text-white text-xs font-black tracking-widest uppercase transition-all shadow-lg shadow-[#1B4332]/25 cursor-pointer disabled:opacity-50"
-                  >
-                    {isSubmitting ? 'Publishing...' : (editingArticle ? 'Save Changes' : 'Publish Article')}
-                  </button>
-                </div>
-              </form>
-            </motion.div>
-          </div>,
-          document.body
-        )}
+                <button
+                  type="submit"
+                  disabled={isSubmitting}
+                  className="px-8 py-3 rounded-xl bg-[#1B4332] hover:bg-[#143024] text-white text-xs font-black tracking-widest uppercase transition-all shadow-lg shadow-[#1B4332]/25 cursor-pointer disabled:opacity-50"
+                >
+                  {isSubmitting ? 'Publishing...' : (editingArticle ? 'Save Changes' : 'Publish Article')}
+                </button>
+              </div>
+            </form>
+          </motion.div>
+        </div>,
+        document.body
+      )}
 
       {/* ── ADMIN DELETE CONFIRMATION MODAL (Rendered via Portal directly to body) ── */}
       {mounted && deletingArticle && createPortal(
