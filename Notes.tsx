@@ -255,6 +255,7 @@ export default function Notes() {
     subjectTitle: string,
     fileType: 'paper' | 'key'
   ) => {
+    if (!isAdmin) return;
     setUploadModal({
       isOpen: true,
       paper,
@@ -311,6 +312,10 @@ export default function Notes() {
   // Execute Upload
   const handleExecuteUpload = async () => {
     if (!uploadModal) return;
+    if (!isAdmin) {
+      setUploadError('Only verified administrators are authorized to upload papers.');
+      return;
+    }
     setUploading(true);
     setUploadError('');
     setUploadSuccess('');
@@ -406,6 +411,8 @@ export default function Notes() {
     fileType: 'paper' | 'key',
     label: string
   ) => {
+    if (!isAdmin) return;
+
     if (!confirm(`Are you sure you want to remove this ${fileType === 'paper' ? 'Question Paper' : 'Answer Key'} for ${label}?`)) {
       return;
     }
@@ -580,14 +587,16 @@ export default function Notes() {
                       Year {selectedPaper.year}
                     </span>
                     <span className="px-3 py-1 bg-emerald-50 text-emerald-700 text-[10px] font-black tracking-widest uppercase rounded-full flex items-center gap-1">
-                      <FileUp size={12} /> Self-Uploaded Collection
+                      <FileUp size={12} /> {isAdmin ? 'Admin Archive Console' : 'Official Defence Archive'}
                     </span>
                   </div>
                   <h1 className="text-4xl md:text-5xl font-black text-[#1A1A1A] tracking-tighter">
                     {selectedPaper.title}
                   </h1>
                   <p className="text-gray-500 font-medium text-base md:text-lg mt-1">
-                    Upload & download Question Papers and Official Answer Keys for each subject
+                    {isAdmin
+                      ? 'Upload, replace, and manage Question Papers and Official Answer Keys for each subject'
+                      : 'Download and practice official Question Papers and Answer Keys for each subject'}
                   </p>
                 </div>
               </div>
@@ -659,29 +668,37 @@ export default function Notes() {
                                 >
                                   <Download size={13} /> View / Download
                                 </a>
-                                <button
-                                  onClick={() => openUploadModal(selectedPaper, sub.key, sub.title, 'paper')}
-                                  title="Replace File"
-                                  className="p-2 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-xl transition-all cursor-pointer"
-                                >
-                                  <RefreshCw size={13} />
-                                </button>
-                                <button
-                                  onClick={() => handleDeleteFile(selectedPaper.id, sub.key, 'paper', `${selectedPaper.title} ${sub.title}`)}
-                                  title="Delete File"
-                                  className="p-2 bg-red-50 hover:bg-red-100 text-red-600 rounded-xl transition-all cursor-pointer"
-                                >
-                                  <Trash2 size={13} />
-                                </button>
+                                {isAdmin && (
+                                  <>
+                                    <button
+                                      onClick={() => openUploadModal(selectedPaper, sub.key, sub.title, 'paper')}
+                                      title="Replace File"
+                                      className="p-2 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-xl transition-all cursor-pointer"
+                                    >
+                                      <RefreshCw size={13} />
+                                    </button>
+                                    <button
+                                      onClick={() => handleDeleteFile(selectedPaper.id, sub.key, 'paper', `${selectedPaper.title} ${sub.title}`)}
+                                      title="Delete File"
+                                      className="p-2 bg-red-50 hover:bg-red-100 text-red-600 rounded-xl transition-all cursor-pointer"
+                                    >
+                                      <Trash2 size={13} />
+                                    </button>
+                                  </>
+                                )}
                               </div>
                             </div>
-                          ) : (
+                          ) : isAdmin ? (
                             <button
                               onClick={() => openUploadModal(selectedPaper, sub.key, sub.title, 'paper')}
                               className="w-full mt-1 flex items-center justify-center gap-2 px-3 py-2.5 bg-[#1B4332] text-white rounded-xl text-xs font-black tracking-wider uppercase hover:bg-[#143024] transition-all cursor-pointer shadow-xs hover:shadow"
                             >
                               <Upload size={14} /> Upload Question Paper
                             </button>
+                          ) : (
+                            <div className="w-full mt-1 py-2.5 px-3 rounded-xl bg-gray-50 border border-dashed border-gray-200 text-center text-xs font-semibold text-gray-400">
+                              Paper releasing soon
+                            </div>
                           )}
                         </div>
 
@@ -717,29 +734,37 @@ export default function Notes() {
                                 >
                                   <Download size={13} /> View / Download Key
                                 </a>
-                                <button
-                                  onClick={() => openUploadModal(selectedPaper, sub.key, sub.title, 'key')}
-                                  title="Replace Key"
-                                  className="p-2 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-xl transition-all cursor-pointer"
-                                >
-                                  <RefreshCw size={13} />
-                                </button>
-                                <button
-                                  onClick={() => handleDeleteFile(selectedPaper.id, sub.key, 'key', `${selectedPaper.title} ${sub.title}`)}
-                                  title="Delete Key"
-                                  className="p-2 bg-red-50 hover:bg-red-100 text-red-600 rounded-xl transition-all cursor-pointer"
-                                >
-                                  <Trash2 size={13} />
-                                </button>
+                                {isAdmin && (
+                                  <>
+                                    <button
+                                      onClick={() => openUploadModal(selectedPaper, sub.key, sub.title, 'key')}
+                                      title="Replace Key"
+                                      className="p-2 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-xl transition-all cursor-pointer"
+                                    >
+                                      <RefreshCw size={13} />
+                                    </button>
+                                    <button
+                                      onClick={() => handleDeleteFile(selectedPaper.id, sub.key, 'key', `${selectedPaper.title} ${sub.title}`)}
+                                      title="Delete Key"
+                                      className="p-2 bg-red-50 hover:bg-red-100 text-red-600 rounded-xl transition-all cursor-pointer"
+                                    >
+                                      <Trash2 size={13} />
+                                    </button>
+                                  </>
+                                )}
                               </div>
                             </div>
-                          ) : (
+                          ) : isAdmin ? (
                             <button
                               onClick={() => openUploadModal(selectedPaper, sub.key, sub.title, 'key')}
                               className="w-full mt-1 flex items-center justify-center gap-2 px-3 py-2.5 bg-white border border-gray-300 text-gray-800 rounded-xl text-xs font-black tracking-wider uppercase hover:bg-gray-100 transition-all cursor-pointer shadow-xs"
                             >
                               <Upload size={14} className="text-[#1B3A5B]" /> Upload Answer Key
                             </button>
+                          ) : (
+                            <div className="w-full mt-1 py-2.5 px-3 rounded-xl bg-gray-50 border border-dashed border-gray-200 text-center text-xs font-semibold text-gray-400">
+                              Answer key releasing soon
+                            </div>
                           )}
                         </div>
                       </div>
@@ -756,9 +781,13 @@ export default function Notes() {
                   <Sparkles size={22} />
                 </div>
                 <div>
-                  <h4 className="font-bold text-gray-900 text-base">Direct Self-Upload System</h4>
+                  <h4 className="font-bold text-gray-900 text-base">
+                    {isAdmin ? 'Direct Admin Repository' : 'Official Nishchay Repository'}
+                  </h4>
                   <p className="text-gray-600 text-xs md:text-sm mt-0.5">
-                    Upload your downloaded question papers and official answer keys. Files are stored directly in your Nishchay repository and instantly accessible for revision.
+                    {isAdmin
+                      ? 'As an authorized administrator, you can upload, replace, and manage question papers and answer keys directly.'
+                      : 'All question papers and answer keys are verified by NDA/CDS-qualified mentors. Download and practice at your pace.'}
                   </p>
                 </div>
               </div>
@@ -1002,7 +1031,7 @@ export default function Notes() {
                   {/* Card Action Footer */}
                   <div className="relative z-10 pt-4 border-t border-gray-100 flex items-center justify-between text-xs font-bold text-gray-700 group-hover:text-[#1B4332] transition-colors">
                     <span className="tracking-wide uppercase text-[11px] font-black">
-                      {uploadStatus.count > 0 ? 'Manage & Download' : 'Upload Papers'}
+                      {uploadStatus.count > 0 ? (isAdmin ? 'Manage & Download' : 'View & Download') : (isAdmin ? 'Upload Papers' : 'View Session')}
                     </span>
                     <div className="w-8 h-8 rounded-full bg-gray-50 group-hover:bg-[#1B4332] group-hover:text-white flex items-center justify-center transition-all">
                       <ChevronRight size={16} />
@@ -1213,7 +1242,9 @@ export default function Notes() {
               </div>
               <h3 className="text-2xl font-black text-gray-900 mb-3 tracking-tighter">No notes uploaded yet</h3>
               <p className="text-gray-500 max-w-md mx-auto font-medium leading-relaxed">
-                This folder is empty. Click the upload button above to add PDF notes, study materials, or quick revision sheets into this directory.
+                {isAdmin
+                  ? 'This folder is empty. Click the upload button above to add PDF notes, study materials, or quick revision sheets into this directory.'
+                  : 'Study materials and notes for this subject are currently being prepared by our mentors and will be available soon.'}
               </p>
             </div>
           </div>
@@ -1335,10 +1366,10 @@ export default function Notes() {
       </section>
 
       {/* ─────────────────────────────────────────────────────────────
-          UPLOAD MODAL DIALOG (For Question Papers & Answer Keys)
+          UPLOAD MODAL DIALOG (For Question Papers & Answer Keys - Admin Only)
          ───────────────────────────────────────────────────────────── */}
       <AnimatePresence>
-        {uploadModal && (
+        {uploadModal && isAdmin && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
             <motion.div
               initial={{ opacity: 0, scale: 0.95, y: 20 }}
