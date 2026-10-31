@@ -999,8 +999,12 @@ app.post('/api/pyq/upload', uploadLimiter, authenticate as any, async (req: Auth
       buffer = Buffer.from(fileBase64, 'base64');
     }
 
-    if (buffer.length > 50 * 1024 * 1024) {
-      return res.status(400).json({ success: false, error: 'File size exceeds maximum 50MB limit.' });
+    const MAX_DIRECT_UPLOAD_BYTES = 4.5 * 1024 * 1024;
+    if (buffer.length > MAX_DIRECT_UPLOAD_BYTES) {
+      return res.status(400).json({
+        success: false,
+        error: 'File size exceeds maximum 4 MB limit for direct upload. Please compress your PDF or use the Drive link option.'
+      });
     }
 
     // Security: Verify PDF Magic Bytes (%PDF- header)
@@ -1194,8 +1198,12 @@ app.post('/api/notes/upload', uploadLimiter, authenticate as any, async (req: Au
     const base64Data = fileBase64.replace(/^data:application\/pdf;base64,/, '').replace(/^data:.*?;base64,/, '');
     const buffer = Buffer.from(base64Data, 'base64');
 
-    if (buffer.length > 50 * 1024 * 1024) {
-      return res.status(400).json({ success: false, error: 'File size exceeds 50MB ceiling.' });
+    const MAX_DIRECT_UPLOAD_BYTES = 4.5 * 1024 * 1024;
+    if (buffer.length > MAX_DIRECT_UPLOAD_BYTES) {
+      return res.status(400).json({
+        success: false,
+        error: 'File size exceeds maximum 4 MB limit for direct upload. Please compress your PDF or use the Drive link option.'
+      });
     }
 
     // Verify PDF Magic Bytes (%PDF-)

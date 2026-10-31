@@ -341,10 +341,39 @@ export default function Notes() {
     setUploadSuccess('');
   };
 
-  // Handle file selection
+  const MAX_FILE_SIZE_MB = 4;
+  const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
+
+  // Handle file selection with 4MB limit check and popup alert
   const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
+
+      // Check 4MB size ceiling
+      if (file.size > MAX_FILE_SIZE_BYTES) {
+        const actualMb = (file.size / (1024 * 1024)).toFixed(1);
+        alert(
+          `⚠️ File Size Limit Exceeded (${actualMb} MB)\n\n` +
+          `The maximum allowed file size for direct uploads is ${MAX_FILE_SIZE_MB} MB.\n\n` +
+          `How to proceed:\n` +
+          `1. Compress your PDF in seconds using iLovePDF.com (recommended), or\n` +
+          `2. Upload the file to your Google Drive and paste its link in the "Paste PDF / Drive Link" tab.`
+        );
+        e.target.value = '';
+        setSelectedFile(null);
+        setUploadError(`File too large (${actualMb} MB). Maximum allowed size is ${MAX_FILE_SIZE_MB} MB.`);
+        return;
+      }
+
+      // Check PDF type
+      if (file.type && file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) {
+        alert('⚠️ Invalid File Type\n\nPlease select a valid PDF document (.pdf).');
+        e.target.value = '';
+        setSelectedFile(null);
+        setUploadError('Only PDF files are supported.');
+        return;
+      }
+
       setSelectedFile(file);
       setUploadError('');
     }
@@ -392,6 +421,12 @@ export default function Notes() {
         if (uploadTab === 'file') {
           if (!selectedFile) {
             throw new Error('Please select a PDF file to upload.');
+          }
+
+          if (selectedFile.size > MAX_FILE_SIZE_BYTES) {
+            const actualMb = (selectedFile.size / (1024 * 1024)).toFixed(1);
+            alert(`⚠️ File Size Limit Exceeded (${actualMb} MB)\n\nThe maximum allowed file size for direct uploads is ${MAX_FILE_SIZE_MB} MB. Please compress your PDF or use the "Paste PDF / Drive Link" tab.`);
+            throw new Error(`File size (${actualMb} MB) exceeds ${MAX_FILE_SIZE_MB} MB limit.`);
           }
 
           const base64Data = await fileToBase64(selectedFile);
@@ -460,6 +495,12 @@ export default function Notes() {
       if (uploadTab === 'file') {
         if (!selectedFile) {
           throw new Error('Please select a PDF file to upload.');
+        }
+
+        if (selectedFile.size > MAX_FILE_SIZE_BYTES) {
+          const actualMb = (selectedFile.size / (1024 * 1024)).toFixed(1);
+          alert(`⚠️ File Size Limit Exceeded (${actualMb} MB)\n\nThe maximum allowed file size for direct uploads is ${MAX_FILE_SIZE_MB} MB. Please compress your PDF or use the "Paste PDF / Drive Link" tab.`);
+          throw new Error(`File size (${actualMb} MB) exceeds ${MAX_FILE_SIZE_MB} MB limit.`);
         }
 
         const base64Data = await fileToBase64(selectedFile);
@@ -1718,6 +1759,9 @@ export default function Notes() {
                           {uploadModal.mode === 'subject'
                             ? `Select the PDF note file for ${uploadModal.subjectTitle}`
                             : `Select the downloaded ${uploadModal.subjectTitle} ${uploadModal.typeLabel}`}
+                        </p>
+                        <p className="text-[11px] font-semibold text-emerald-800/80 mt-2 bg-emerald-50 inline-block px-2.5 py-0.5 rounded-full">
+                          Max direct upload: 4 MB • For larger files use "Paste PDF / Drive Link"
                         </p>
                       </div>
                     )}
