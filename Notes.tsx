@@ -299,6 +299,15 @@ export default function Notes() {
     });
   };
 
+  // Helper to obtain authenticated headers
+  const getAuthHeaders = async () => {
+    const token = await auth.currentUser?.getIdToken();
+    return {
+      'Content-Type': 'application/json',
+      ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+    };
+  };
+
   // Execute Upload
   const handleExecuteUpload = async () => {
     if (!uploadModal) return;
@@ -307,6 +316,7 @@ export default function Notes() {
     setUploadSuccess('');
 
     try {
+      const headers = await getAuthHeaders();
       if (uploadTab === 'file') {
         if (!selectedFile) {
           throw new Error('Please select a PDF file to upload.');
@@ -315,7 +325,7 @@ export default function Notes() {
         const base64Data = await fileToBase64(selectedFile);
         const res = await fetch('/api/pyq/upload', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers,
           body: JSON.stringify({
             sessionId: uploadModal.paper.id,
             exam: uploadModal.paper.exam,
@@ -352,7 +362,7 @@ export default function Notes() {
 
         const res = await fetch('/api/pyq/link', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers,
           body: JSON.stringify({
             sessionId: uploadModal.paper.id,
             exam: uploadModal.paper.exam,
@@ -401,9 +411,10 @@ export default function Notes() {
     }
 
     try {
+      const headers = await getAuthHeaders();
       const res = await fetch('/api/pyq/delete', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({ sessionId, subjectKey, fileType }),
       });
       const data = await res.json();

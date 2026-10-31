@@ -945,8 +945,11 @@ app.get('/api/pyq', (req: Request, res: Response) => {
   }
 });
 
-// Upload a question paper or answer key PDF directly from computer
-app.post('/api/pyq/upload', (req: Request, res: Response) => {
+// Upload a question paper or answer key PDF directly from computer (Admin Only)
+app.post('/api/pyq/upload', uploadLimiter, authenticate as any, (req: AuthRequest, res: Response) => {
+  if (!req.user?.isAdmin) {
+    return res.status(403).json({ success: false, error: 'Access denied: Administrator privileges required.' });
+  }
   try {
     const {
       sessionId,
@@ -977,17 +980,23 @@ app.post('/api/pyq/upload', (req: Request, res: Response) => {
       return res.status(400).json({ success: false, error: 'File size exceeds maximum 50MB limit.' });
     }
 
+    // Security: Verify PDF Magic Bytes (%PDF- header)
+    if (buffer.length < 5 || buffer[0] !== 0x25 || buffer[1] !== 0x50 || buffer[2] !== 0x44 || buffer[3] !== 0x46) {
+      return res.status(400).json({ success: false, error: 'Invalid file signature. Only authentic PDF documents are allowed.' });
+    }
+
     if (!fs.existsSync(PYQ_UPLOADS_DIR)) {
       fs.mkdirSync(PYQ_UPLOADS_DIR, { recursive: true });
     }
 
-    const cleanSession = String(sessionId).replace(/[^a-zA-Z0-9_-]/g, '');
-    const cleanSubject = String(subjectKey).replace(/[^a-zA-Z0-9_-]/g, '');
-    const cleanType = String(fileType).replace(/[^a-zA-Z0-9_-]/g, '');
-    const safeFileName = `${cleanSession}-${cleanSubject}-${cleanType}-${Date.now()}.pdf`;
+    const cleanSession = String(sessionId).replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 50);
+    const cleanSubject = String(subjectKey).replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 20);
+    const cleanType = String(fileType).replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 10);
+    const randomHex = crypto.randomBytes(8).toString('hex');
+    const safeFileName = `${cleanSession}-${cleanSubject}-${cleanType}-${Date.now()}-${randomHex}.pdf`;
     const targetPath = path.join(PYQ_UPLOADS_DIR, safeFileName);
 
-    fs.writeFileSync(targetPath, buffer);
+    fs.writeFileSync(targetPath, buffer, { flag: 'wx' });
 
     const publicUrl = `/uploads/pyq/${safeFileName}`;
     const sessionRecord = savePyqFileRecord({
@@ -1010,8 +1019,12 @@ app.post('/api/pyq/upload', (req: Request, res: Response) => {
   }
 });
 
-// Link an external PDF or Drive URL
-app.post('/api/pyq/link', (req: Request, res: Response) => {
+// Link an external PDF or Drive URL (Admin Only)
+app.post('/api/pyq/link', authenticate as any, (req: AuthRequest, res: Response) => {
+  if (!req.user?.isAdmin) {
+    return res.status(403).json({ success: false, error: 'Access denied: Administrator privileges required.' });
+  }
+
   try {
     const {
       sessionId,
@@ -1030,6 +1043,10 @@ app.post('/api/pyq/link', (req: Request, res: Response) => {
       return res.status(400).json({ success: false, error: 'Missing required parameters.' });
     }
 
+    if (!isValidUrlOrPath(url)) {
+      return res.status(400).json({ success: false, error: 'Invalid URL. Only valid HTTP/HTTPS URLs are accepted.' });
+    }
+
     const sessionRecord = savePyqFileRecord({
       sessionId,
       exam: exam || (sessionId.startsWith('nda') ? 'NDA' : 'CDS'),
@@ -1046,23 +1063,42 @@ app.post('/api/pyq/link', (req: Request, res: Response) => {
     res.json({ success: true, session: sessionRecord });
   } catch (err: any) {
     console.error('Error linking PYQ URL:', err);
-    res.status(500).json({ success: false, error: err.message || 'Failed to save link.' });
+    res.status(500).json({ success: false, error: 'Failed to save link.' });
   }
 });
 
-// Delete an uploaded file or link
-app.post('/api/pyq/delete', (req: Request, res: Response) => {
+// Delete an uploaded file or link (Admin Only)
+app.post('/api/pyq/delete', authenticate as any, (req: AuthRequest, res: Response) => {
+  if (!req.user?.isAdmin) {
+    return res.status(403).json({ success: false, error: 'Access denied: Administrator privileges required.' });
+  }
+
   try {
     const { sessionId, subjectKey, fileType } = req.body;
     if (!sessionId || !subjectKey || !fileType) {
       return res.status(400).json({ success: false, error: 'Missing required parameters.' });
     }
 
+    // Clean up local file from disk if it was an uploaded file
+    const currentSessions = getAllPyqSessions();
+    const existingFile = currentSessions[sessionId]?.subjects?.[subjectKey as 'maths' | 'gat' | 'english' | 'gs']?.[fileType as 'paper' | 'key'];
+    if (existingFile?.url && existingFile.url.startsWith('/uploads/pyq/')) {
+      const filename = path.basename(existingFile.url);
+      const diskPath = path.join(PYQ_UPLOADS_DIR, filename);
+      if (fs.existsSync(diskPath)) {
+        try {
+          fs.unlinkSync(diskPath);
+        } catch (cleanupErr) {
+          console.warn('Could not remove PYQ file from disk:', cleanupErr);
+        }
+      }
+    }
+
     const sessionRecord = deletePyqFileRecord({ sessionId, subjectKey, fileType });
     res.json({ success: true, session: sessionRecord });
   } catch (err: any) {
     console.error('Error deleting PYQ file:', err);
-    res.status(500).json({ success: false, error: err.message || 'Failed to delete file.' });
+    res.status(500).json({ success: false, error: 'Failed to delete file.' });
   }
 });
 
