@@ -10,6 +10,7 @@ export default function Header() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [user, setUser] = useState<User | null>(null);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
+  const [isSigningIn, setIsSigningIn] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
   const location = useLocation();
 
@@ -21,16 +22,20 @@ export default function Header() {
   }, []);
 
   const handleSignIn = async () => {
+    if (isSigningIn) return;
     if (!isFirebaseConfigured) {
       setAuthError("Firebase setup is incomplete. Please wait for the developer to finish configuration.");
       return;
     }
+    setIsSigningIn(true);
+    setAuthError(null);
     try {
-      setAuthError(null);
       await signInWithGoogle();
     } catch (error: any) {
       console.error("Sign in error:", error);
       setAuthError(error.message || "Failed to sign in. Please try again.");
+    } finally {
+      setIsSigningIn(false);
     }
   };
 
@@ -178,23 +183,43 @@ export default function Header() {
                 </AnimatePresence>
               </div>
             ) : (
-              <motion.button 
-                whileHover={{ scale: 1.05, boxShadow: "0 10px 20px rgba(0,0,0,0.1)" }}
-                whileTap={{ scale: 0.95 }}
-                onClick={handleSignIn}
-                className={`px-7 py-2.5 rounded-full text-sm font-black tracking-widest transition-all duration-300 whitespace-nowrap relative ${
-                  shouldBeSolid
-                    ? 'bg-[#1B4332] text-white hover:bg-[#2D6A4F]' 
-                    : 'bg-[#4CAF50] text-white hover:bg-[#45a049] shadow-[0_0_20px_rgba(76,175,80,0.3)]'
-                }`}
-              >
-                SIGN IN
+              <div className="relative">
+                <motion.button 
+                  whileHover={{ scale: isSigningIn ? 1 : 1.05, boxShadow: "0 10px 20px rgba(0,0,0,0.1)" }}
+                  whileTap={{ scale: isSigningIn ? 1 : 0.95 }}
+                  onClick={handleSignIn}
+                  disabled={isSigningIn}
+                  className={`px-7 py-2.5 rounded-full text-sm font-black tracking-widest transition-all duration-300 whitespace-nowrap flex items-center gap-2 cursor-pointer disabled:opacity-75 ${
+                    shouldBeSolid
+                      ? 'bg-[#1B4332] text-white hover:bg-[#2D6A4F]' 
+                      : 'bg-[#4CAF50] text-white hover:bg-[#45a049] shadow-[0_0_20px_rgba(76,175,80,0.3)]'
+                  }`}
+                >
+                  {isSigningIn ? (
+                    <>
+                      <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      SIGNING IN...
+                    </>
+                  ) : (
+                    'SIGN IN'
+                  )}
+                </motion.button>
                 {authError && (
-                  <div className="absolute top-full right-0 mt-2 w-64 bg-red-50 text-red-600 text-[10px] p-2 rounded-lg border border-red-100 shadow-lg font-bold z-[60]">
-                    {authError}
+                  <div className="absolute top-full right-0 mt-3 w-80 bg-red-50 text-red-700 text-xs p-3.5 rounded-2xl border border-red-200 shadow-xl font-bold z-[100] flex items-start gap-2">
+                    <span className="flex-1 leading-relaxed">{authError}</span>
+                    <button 
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setAuthError(null);
+                      }}
+                      className="text-red-400 hover:text-red-700 cursor-pointer p-0.5 shrink-0"
+                    >
+                      ✕
+                    </button>
                   </div>
                 )}
-              </motion.button>
+              </div>
             )}
 
             {/* Mobile Menu Toggle */}
@@ -248,9 +273,17 @@ export default function Header() {
               ) : (
                 <button 
                   onClick={handleSignIn}
-                  className="w-full mt-4 bg-[#1B4332] text-white py-4 rounded-xl font-bold tracking-widest whitespace-nowrap"
+                  disabled={isSigningIn}
+                  className="w-full mt-4 bg-[#1B4332] text-white py-4 rounded-xl font-bold tracking-widest whitespace-nowrap flex items-center justify-center gap-2 disabled:opacity-75"
                 >
-                  SIGN IN
+                  {isSigningIn ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      SIGNING IN...
+                    </>
+                  ) : (
+                    'SIGN IN'
+                  )}
                 </button>
               )}
               {authError && !user && (

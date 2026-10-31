@@ -62,7 +62,9 @@ app.use(
           "'unsafe-inline'",
           "'unsafe-eval'",
           "https://apis.google.com",
-          "https://*.firebaseapp.com"
+          "https://*.firebaseapp.com",
+          "https://*.gstatic.com",
+          "https://accounts.google.com"
         ],
         connectSrc: [
           "'self'",
@@ -70,6 +72,8 @@ app.use(
           "https://*.firebaseio.com",
           "https://identitytoolkit.googleapis.com",
           "https://securetoken.googleapis.com",
+          "https://*.google.com",
+          "https://accounts.google.com",
           "https://*.unsplash.com",
           "ws:",
           "wss:"
@@ -78,10 +82,12 @@ app.use(
         styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
         fontSrc: ["'self'", "https://fonts.gstatic.com", "data:"],
         objectSrc: ["'none'"],
-        frameSrc: ["'self'", "https://*.firebaseapp.com", "https://*.google.com"],
+        frameSrc: ["'self'", "https://*.firebaseapp.com", "https://*.google.com", "https://accounts.google.com"],
         upgradeInsecureRequests: process.env.NODE_ENV === 'production' ? [] : null,
       },
     },
+    // Essential for Firebase signInWithPopup so the authentication popup can communicate with the opener window
+    crossOriginOpenerPolicy: { policy: "same-origin-allow-popups" },
     crossOriginEmbedderPolicy: false,
     crossOriginResourcePolicy: { policy: "cross-origin" },
     frameguard: { action: 'sameorigin' },

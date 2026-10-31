@@ -36,6 +36,7 @@ export const db = (() => {
 })();
 
 export const googleProvider = new GoogleAuthProvider();
+googleProvider.setCustomParameters({ prompt: 'select_account' });
 
 // Error Handling Spec for Firestore Operations
 export enum OperationType {
@@ -177,20 +178,30 @@ export const signInWithGoogle = async () => {
 
     return user;
   } catch (error: any) {
+    console.error('Sign-in error details:', error?.code, error?.message, error);
+
     // Handle specific Firebase Auth errors
-    if (error.code === 'auth/popup-closed-by-user' || error.code === 'auth/cancelled-popup-request') {
+    if (error?.code === 'auth/popup-closed-by-user' || error?.code === 'auth/cancelled-popup-request') {
       // User closed the popup or clicked sign-in twice — not an error, just ignore
       return null;
-    } else if (error.code === 'auth/popup-blocked') {
+    } else if (error?.code === 'auth/popup-blocked') {
       throw new Error("Sign-in popup was blocked by your browser. Please allow popups for this site.");
-    } else if (error.code === 'auth/configuration-not-found') {
-      throw new Error("Google Sign-In is not enabled. Please contact the administrator.");
-    } else if (error.code === 'auth/network-request-failed') {
+    } else if (error?.code === 'auth/unauthorized-domain') {
+      const currentHost = typeof window !== 'undefined' ? window.location.hostname : 'current domain';
+      throw new Error(`Domain "${currentHost}" is not authorized in Firebase Console. Please add "${currentHost}" under Firebase Console -> Authentication -> Settings -> Authorized domains.`);
+    } else if (error?.code === 'auth/operation-not-allowed') {
+      throw new Error("Google Sign-In is disabled in Firebase. Please enable Google provider in Firebase Console -> Authentication -> Sign-in method.");
+    } else if (error?.code === 'auth/configuration-not-found') {
+      throw new Error("Google Sign-In configuration not found in Firebase. Please enable Google under Authentication in Firebase Console.");
+    } else if (error?.code === 'auth/invalid-api-key') {
+      throw new Error("Firebase API key is invalid or restricted. Please check your Firebase project configuration.");
+    } else if (error?.code === 'auth/network-request-failed') {
       throw new Error("Network error. Please check your internet connection and try again.");
+    } else if (error?.message && (error.message.includes('Cross-Origin-Opener-Policy') || error.message.includes('COOP'))) {
+      throw new Error("Browser cross-origin security blocked the sign-in popup. Please refresh the page and try again.");
     }
-    // Generic fallback — never show raw Firebase errors to the user
-    console.error('Sign-in error:', error.code, error.message);
-    throw new Error("Something went wrong during sign-in. Please try again.");
+
+    throw new Error(error?.message || "Something went wrong during sign-in. Please try again.");
   }
 };
 
