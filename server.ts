@@ -1014,10 +1014,12 @@ app.post('/api/pyq/upload', uploadLimiter, authenticate as any, async (req: Auth
     // Automated Google Drive Upload
     if (isDriveConfigured()) {
       try {
+        const subfolderName = `PYQ - ${exam || 'NDA'}`;
         const driveFileName = `${title || sessionId} - ${String(subjectKey).toUpperCase()} ${fileType === 'key' ? 'Answer Key' : 'Question Paper'}.pdf`;
         const driveResult = await uploadPdfToDrive({
           buffer,
           fileName: driveFileName,
+          subfolderName,
         });
         publicUrl = driveResult.url;
         driveFileId = driveResult.fileId;
@@ -1207,10 +1209,11 @@ app.post('/api/notes/upload', uploadLimiter, authenticate as any, async (req: Au
     // Automated Google Drive Upload
     if (isDriveConfigured()) {
       try {
-        const driveFileName = `${subjectTitle} - ${title}.pdf`;
+        const driveFileName = `${title}.pdf`;
         const driveResult = await uploadPdfToDrive({
           buffer,
           fileName: driveFileName,
+          subfolderName: subjectTitle.trim(),
         });
         publicUrl = driveResult.url;
         driveFileId = driveResult.fileId;
