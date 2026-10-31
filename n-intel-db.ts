@@ -39,10 +39,23 @@ function loadStories(): NIntelStory[] {
   }
 }
 
-function saveStories(stories: NIntelStory[]): void {
+function atomicWriteJsonSync(filePath: string, data: any): void {
   ensureDataDir();
+  const tempPath = `${filePath}.${Date.now()}.${Math.random().toString(36).substring(2, 8)}.tmp`;
+  try {
+    fs.writeFileSync(tempPath, JSON.stringify(data, null, 2), 'utf-8');
+    fs.renameSync(tempPath, filePath);
+  } catch (err) {
+    if (fs.existsSync(tempPath)) {
+      try { fs.unlinkSync(tempPath); } catch {}
+    }
+    throw err;
+  }
+}
+
+function saveStories(stories: NIntelStory[]): void {
   storiesCache = stories;
-  fs.writeFileSync(STORIES_FILE, JSON.stringify(stories, null, 2), 'utf-8');
+  atomicWriteJsonSync(STORIES_FILE, stories);
 }
 
 function loadBatches(): NIntelBatch[] {
@@ -64,9 +77,8 @@ function loadBatches(): NIntelBatch[] {
 }
 
 function saveBatches(batches: NIntelBatch[]): void {
-  ensureDataDir();
   batchesCache = batches;
-  fs.writeFileSync(BATCHES_FILE, JSON.stringify(batches, null, 2), 'utf-8');
+  atomicWriteJsonSync(BATCHES_FILE, batches);
 }
 
 function loadAudit(): NIntelAuditLog[] {
@@ -88,9 +100,8 @@ function loadAudit(): NIntelAuditLog[] {
 }
 
 function saveAudit(logs: NIntelAuditLog[]): void {
-  ensureDataDir();
   auditCache = logs;
-  fs.writeFileSync(AUDIT_FILE, JSON.stringify(logs, null, 2), 'utf-8');
+  atomicWriteJsonSync(AUDIT_FILE, logs);
 }
 
 function addAuditLog(action: 'PUBLISH' | 'EDIT' | 'DELETE' | 'RESTORE', adminEmail: string, details: string, storyId?: string, batchId?: string) {
@@ -224,14 +235,21 @@ export function updateStory(id: string, updates: Partial<NIntelStory>, adminEmai
 
   // Category key sync
   let categoryKey = current.categoryKey;
-  if (updates.category) {
+  if (typeof updates.category === 'string' && updates.category.trim()) {
     categoryKey = updates.category.toLowerCase().replace(/[^a-z0-9]+/g, '-');
   }
 
+  // Security: Explicit field whitelisting prevents mass assignment and internal state tampering
+  // (e.g. id, batchId, isDeleted, deletedAt, deletedBy, createdAt, orderInBatch cannot be manipulated)
   const updated: NIntelStory = {
     ...current,
-    ...updates,
+    headline: typeof updates.headline === 'string' ? updates.headline.trim() : current.headline,
+    content: typeof updates.content === 'string' ? updates.content.trim() : current.content,
+    category: typeof updates.category === 'string' ? updates.category.trim() : current.category,
     categoryKey,
+    sourceName: updates.sourceName !== undefined ? updates.sourceName : current.sourceName,
+    sourceUrl: updates.sourceUrl !== undefined ? updates.sourceUrl : current.sourceUrl,
+    isDefence: typeof updates.isDefence === 'boolean' ? updates.isDefence : current.isDefence,
     updatedAt: new Date().toISOString(),
     lastEditedBy: adminEmail
   };

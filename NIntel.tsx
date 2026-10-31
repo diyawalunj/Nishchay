@@ -648,8 +648,6 @@ export default function NIntel() {
       }
       const headers: Record<string, string> = {};
       if (token) headers['Authorization'] = `Bearer ${token}`;
-      const email = auth.currentUser?.email || (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' ? 'diyawalunj@gmail.com' : undefined);
-      if (email) headers['x-user-email'] = email;
 
       const res = await fetch(`/api/n-intel/stories/${encodeURIComponent(storyToDelete.id)}`, {
         method: 'DELETE',

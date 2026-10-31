@@ -126,8 +126,6 @@ export default function NIntelAdmin() {
       const token = await getAuthToken();
       const headers: Record<string, string> = {};
       if (token) headers['Authorization'] = `Bearer ${token}`;
-      const email = user?.email || auth.currentUser?.email || (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' ? 'diyawalunj@gmail.com' : undefined);
-      if (email) headers['x-user-email'] = email;
 
       let url = '/api/n-intel/stories?includeDeleted=true';
       if (filterDate) url += `&date=${encodeURIComponent(filterDate)}`;
@@ -309,8 +307,6 @@ export default function NIntelAdmin() {
         'Content-Type': 'application/json'
       };
       if (token) headers['Authorization'] = `Bearer ${token}`;
-      const email = user?.email || auth.currentUser?.email || (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' ? 'diyawalunj@gmail.com' : undefined);
-      if (email) headers['x-user-email'] = email;
 
       const res = await fetch(`/api/n-intel/stories/${encodeURIComponent(editingStory.id)}`, {
         method: 'PATCH',
@@ -357,8 +353,6 @@ export default function NIntelAdmin() {
       const token = await getAuthToken();
       const headers: Record<string, string> = {};
       if (token) headers['Authorization'] = `Bearer ${token}`;
-      const email = user?.email || auth.currentUser?.email || (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' ? 'diyawalunj@gmail.com' : undefined);
-      if (email) headers['x-user-email'] = email;
 
       const url = `/api/n-intel/stories/${encodeURIComponent(deletingStory.id)}`;
 
@@ -389,8 +383,6 @@ export default function NIntelAdmin() {
       const token = await getAuthToken();
       const headers: Record<string, string> = {};
       if (token) headers['Authorization'] = `Bearer ${token}`;
-      const email = user?.email || auth.currentUser?.email || (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' ? 'diyawalunj@gmail.com' : undefined);
-      if (email) headers['x-user-email'] = email;
 
       const res = await fetch(`/api/n-intel/stories/${encodeURIComponent(story.id)}/restore`, {
         method: 'POST',
@@ -417,8 +409,6 @@ export default function NIntelAdmin() {
       const token = await getAuthToken();
       const headers: Record<string, string> = {};
       if (token) headers['Authorization'] = `Bearer ${token}`;
-      const email = user?.email || auth.currentUser?.email || (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' ? 'diyawalunj@gmail.com' : undefined);
-      if (email) headers['x-user-email'] = email;
 
       const res = await fetch('/api/n-intel/trash/empty', {
         method: 'DELETE',

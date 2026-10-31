@@ -116,10 +116,23 @@ Dhaka, for its part, cannot wish away geography. No relationship with Beijing, I
   }
 }
 
-function saveArticles(articles: Article[]): void {
+function atomicWriteJsonSync(filePath: string, data: any): void {
   ensureDataDir();
+  const tempPath = `${filePath}.${Date.now()}.${Math.random().toString(36).substring(2, 8)}.tmp`;
+  try {
+    fs.writeFileSync(tempPath, JSON.stringify(data, null, 2), 'utf-8');
+    fs.renameSync(tempPath, filePath);
+  } catch (err) {
+    if (fs.existsSync(tempPath)) {
+      try { fs.unlinkSync(tempPath); } catch {}
+    }
+    throw err;
+  }
+}
+
+function saveArticles(articles: Article[]): void {
   articlesCache = articles;
-  fs.writeFileSync(ARTICLES_FILE, JSON.stringify(articles, null, 2), 'utf-8');
+  atomicWriteJsonSync(ARTICLES_FILE, articles);
 }
 
 export function getAllArticles(): Article[] {
@@ -186,13 +199,26 @@ export function updateArticle(id: string, updates: Partial<Article>): Article | 
   if (index === -1) return null;
 
   const current = articles[index];
+  
+  // Security: Explicit field whitelisting to prevent Mass Assignment & State Tampering
+  // Protected fields like id, slug, viewsCount, pdfDownloadCount, createdAt, and authorEmail cannot be overwritten
   const updated: Article = {
     ...current,
-    ...updates,
+    title: typeof updates.title === 'string' ? updates.title.trim() : current.title,
+    bannerImageUrl: typeof updates.bannerImageUrl === 'string' ? updates.bannerImageUrl.trim() : current.bannerImageUrl,
+    category: typeof updates.category === 'string' ? updates.category.trim() : current.category,
+    authorName: typeof updates.authorName === 'string' ? updates.authorName.trim() : current.authorName,
+    authorRole: typeof updates.authorRole === 'string' ? updates.authorRole.trim() : current.authorRole,
+    authorAvatarUrl: updates.authorAvatarUrl !== undefined ? updates.authorAvatarUrl : current.authorAvatarUrl,
+    publishDate: typeof updates.publishDate === 'string' ? updates.publishDate.trim() : current.publishDate,
+    pullQuote: updates.pullQuote !== undefined ? updates.pullQuote : current.pullQuote,
+    content: typeof updates.content === 'string' ? updates.content.trim() : current.content,
+    tags: Array.isArray(updates.tags) ? updates.tags : current.tags,
+    sourceReference: updates.sourceReference !== undefined ? updates.sourceReference : current.sourceReference,
     updatedAt: new Date().toISOString()
   };
 
-  if (updates.content) {
+  if (updates.content && typeof updates.content === 'string') {
     updated.readingTime = calculateReadingTime(updates.content);
   }
 
@@ -203,8 +229,27 @@ export function updateArticle(id: string, updates: Partial<Article>): Article | 
 
 export function deleteArticle(id: string): boolean {
   const articles = loadArticles();
+  const index = articles.findIndex(a => a.id === id);
+  if (index === -1) return false;
+  const articleToDelete = articles[index];
+
+  // Security: Clean up orphaned uploaded banner images to prevent storage exhaustion
+  if (articleToDelete.bannerImageUrl && articleToDelete.bannerImageUrl.startsWith('/uploads/')) {
+    const filename = path.basename(articleToDelete.bannerImageUrl);
+    // Strict basename check prevents path traversal
+    if (/^banner-\d+-[a-f0-9]+\.(png|jpg|webp)$/i.test(filename)) {
+      const filePath = path.join(process.cwd(), 'public', 'uploads', filename);
+      if (fs.existsSync(filePath)) {
+        try {
+          fs.unlinkSync(filePath);
+        } catch (err) {
+          console.warn('Could not remove orphaned banner on article deletion:', err);
+        }
+      }
+    }
+  }
+
   const filtered = articles.filter(a => a.id !== id);
-  if (filtered.length === articles.length) return false;
   saveArticles(filtered);
   return true;
 }

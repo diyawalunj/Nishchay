@@ -14,16 +14,6 @@ service cloud.firestore {
     //   - photoURL: string (optional) - URL of user's profile photo.
     //   - role: string (optional, enum: ['admin', 'user']) - User's role.
     //
-    // Collection: doubts
-    // Document ID: {doubtId}
-    // Fields:
-    //   - uid: string (required) - UID of the user who submitted.
-    //   - name: string (required) - User's name.
-    //   - email: string (required, format: email) - User's email.
-    //   - subject: string (required) - Subject of the doubt.
-    //   - message: string (required) - Content of the doubt.
-    //   - createdAt: timestamp (required) - Time of creation.
-    //
     // ===============================================================
 
     // ===============================================================
@@ -74,18 +64,6 @@ service cloud.firestore {
              (!('photoURL' in data) || (data.photoURL is string)) &&
              (!('role' in data) || (data.role in ['admin', 'user']));
     }
-    
-    function isValidDoubt(data) {
-      return hasRequiredFields(['uid', 'name', 'email', 'subject', 'message', 'createdAt', 'status']) &&
-             hasOnlyAllowedFields(['uid', 'name', 'email', 'subject', 'message', 'createdAt', 'status']) &&
-             data.uid is string && data.uid == request.auth.uid &&
-             data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
-             data.email is string && isValidEmail(data.email) &&
-             data.subject is string && data.subject.size() > 0 && data.subject.size() < 200 &&
-             data.message is string && data.message.size() > 0 && data.message.size() < 5000 &&
-             data.createdAt is timestamp &&
-             data.status in ['pending', 'resolved'];
-    }
 
     // ===============================================================
     // Rules
@@ -97,21 +75,6 @@ service cloud.firestore {
                       (request.resource.data.role == 'user' || isAdmin());
       allow update: if isOwner(userId) && isValidUser(request.resource.data) && 
                       (request.resource.data.role == resource.data.role || isAdmin());
-    }
-    
-    match /doubts/{doubtId} {
-      allow read: if isAdmin() || (isAuthenticated() && resource.data.uid == request.auth.uid);
-      allow create: if isAuthenticated() && isValidDoubt(request.resource.data);
-      allow update: if isAdmin() || (isAuthenticated() && resource.data.uid == request.auth.uid);
-      allow delete: if isAdmin() || (isAuthenticated() && resource.data.uid == request.auth.uid);
-
-      match /messages/{messageId} {
-        allow read: if isAdmin() || (isAuthenticated() && get(/databases/$(database)/documents/doubts/$(doubtId)).data.uid == request.auth.uid);
-        allow create: if isAuthenticated() && 
-          (isAdmin() || get(/databases/$(database)/documents/doubts/$(doubtId)).data.uid == request.auth.uid) &&
-          request.resource.data.keys().hasAll(['text', 'senderId', 'senderName', 'createdAt', 'isAdmin']) &&
-          request.resource.data.senderId == request.auth.uid;
-      }
     }
   }
 }

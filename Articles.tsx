@@ -181,8 +181,6 @@ export default function Articles() {
         }
         const headers: Record<string, string> = { 'Content-Type': 'application/json' };
         if (token) headers['Authorization'] = `Bearer ${token}`;
-        const email = auth.currentUser?.email || (window.location.hostname === 'localhost' ? 'diyawalunj@gmail.com' : undefined);
-        if (email) headers['x-user-email'] = email;
 
         const res = await fetch('/api/articles/upload-banner', {
           method: 'POST',
@@ -242,8 +240,6 @@ export default function Articles() {
       }
       const headers: Record<string, string> = { 'Content-Type': 'application/json' };
       if (token) headers['Authorization'] = `Bearer ${token}`;
-      const email = auth.currentUser?.email || (window.location.hostname === 'localhost' ? 'diyawalunj@gmail.com' : undefined);
-      if (email) headers['x-user-email'] = email;
 
       const payload = {
         title: title.trim(),
@@ -296,8 +292,6 @@ export default function Articles() {
       }
       const headers: Record<string, string> = {};
       if (token) headers['Authorization'] = `Bearer ${token}`;
-      const email = auth.currentUser?.email || (window.location.hostname === 'localhost' ? 'diyawalunj@gmail.com' : undefined);
-      if (email) headers['x-user-email'] = email;
 
       const res = await fetch(`/api/articles/${deletingArticle.id}`, {
         method: 'DELETE',
