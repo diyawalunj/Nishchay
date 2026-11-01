@@ -423,16 +423,6 @@ export default function Notes() {
     }
   };
 
-  // Convert File to Base64
-  const fileToBase64 = (file: File): Promise<string> => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.readAsDataURL(file);
-      reader.onload = () => resolve(reader.result as string);
-      reader.onerror = (err) => reject(err);
-    });
-  };
-
   // Helper to obtain authenticated headers
   const getAuthHeaders = async () => {
     const token = await auth.currentUser?.getIdToken(true);
@@ -493,18 +483,26 @@ export default function Notes() {
             throw new Error(`File size (${actualMb} MB) exceeds 4 MB limit.`);
           }
 
-          const base64Data = await fileToBase64(selectedFile);
-          const res = await fetch('/api/notes/upload', {
+          const token = await auth.currentUser?.getIdToken(true);
+          if (!token) throw new Error('Authentication session not found.');
+
+          const queryParams = new URLSearchParams({
+            subjectId: uploadModal.subjectId,
+            subjectTitle: uploadModal.subjectTitle,
+            title: noteTitle.trim(),
+            originalName: selectedFile.name,
+            fileSize: `${(selectedFile.size / (1024 * 1024)).toFixed(2)} MB`,
+          });
+
+          // Send file directly as raw binary (0% Base64 expansion to stay safely under Vercel serverless limit)
+          const res = await fetch(`/api/notes/upload?${queryParams.toString()}`, {
             method: 'POST',
-            headers,
-            body: JSON.stringify({
-              subjectId: uploadModal.subjectId,
-              subjectTitle: uploadModal.subjectTitle,
-              title: noteTitle.trim(),
-              fileBase64: base64Data,
-              originalName: selectedFile.name,
-              fileSize: `${(selectedFile.size / (1024 * 1024)).toFixed(2)} MB`,
-            }),
+            headers: {
+              'Content-Type': 'application/pdf',
+              'Authorization': `Bearer ${token}`,
+              'X-Original-Name': encodeURIComponent(selectedFile.name),
+            },
+            body: selectedFile,
           });
 
           const data = await parseApiResponse(res, 'Note upload failed');
@@ -559,22 +557,30 @@ export default function Notes() {
           throw new Error(`File size (${actualMb} MB) exceeds 4 MB limit.`);
         }
 
-        const base64Data = await fileToBase64(selectedFile);
-        const res = await fetch('/api/pyq/upload', {
+        const token = await auth.currentUser?.getIdToken(true);
+        if (!token) throw new Error('Authentication session not found.');
+
+        const queryParams = new URLSearchParams({
+          sessionId: uploadModal.paper.id,
+          exam: uploadModal.paper.exam,
+          session: uploadModal.paper.session,
+          year: String(uploadModal.paper.year),
+          title: uploadModal.paper.title,
+          subjectKey: uploadModal.subjectKey,
+          fileType: uploadModal.fileType,
+          originalName: selectedFile.name,
+          fileSize: `${(selectedFile.size / (1024 * 1024)).toFixed(2)} MB`,
+        });
+
+        // Send file directly as raw binary (0% Base64 expansion to stay safely under Vercel serverless limit)
+        const res = await fetch(`/api/pyq/upload?${queryParams.toString()}`, {
           method: 'POST',
-          headers,
-          body: JSON.stringify({
-            sessionId: uploadModal.paper.id,
-            exam: uploadModal.paper.exam,
-            session: uploadModal.paper.session,
-            year: uploadModal.paper.year,
-            title: uploadModal.paper.title,
-            subjectKey: uploadModal.subjectKey,
-            fileType: uploadModal.fileType,
-            fileBase64: base64Data,
-            originalName: selectedFile.name,
-            fileSize: `${(selectedFile.size / (1024 * 1024)).toFixed(2)} MB`,
-          }),
+          headers: {
+            'Content-Type': 'application/pdf',
+            'Authorization': `Bearer ${token}`,
+            'X-Original-Name': encodeURIComponent(selectedFile.name),
+          },
+          body: selectedFile,
         });
 
         const data = await parseApiResponse(res, 'PYQ paper upload failed');

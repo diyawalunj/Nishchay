@@ -134,13 +134,15 @@ app.use(
     },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization']
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Original-Name']
   })
 );
 
-// Request body size limit (support PDF uploads up to 150MB to accommodate Base64 overhead)
-app.use(express.json({ limit: '150mb' }));
-app.use(express.urlencoded({ extended: true, limit: '150mb' }));
+// Raw binary body parser for PDFs to prevent Base64 expansion on Serverless runtimes
+app.use(express.raw({ type: 'application/pdf', limit: '10mb' }));
+// Request body size limit
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
 // Middleware to catch 413 Payload Too Large / JSON parse errors from body-parser and return clean JSON
 app.use((err: any, req: Request, res: Response, next: NextFunction) => {
@@ -1008,29 +1010,29 @@ app.post('/api/pyq/upload', uploadLimiter, authenticate as any, async (req: Auth
     return res.status(403).json({ success: false, error: 'Access denied: Administrator privileges required.' });
   }
   try {
-    const {
-      sessionId,
-      exam,
-      session,
-      year,
-      title,
-      subjectKey,
-      fileType,
-      fileBase64,
-      originalName,
-      fileSize
-    } = req.body;
+    const sessionId = ((req.query.sessionId as string) || req.body?.sessionId || '').trim();
+    const exam = ((req.query.exam as string) || req.body?.exam || (sessionId.startsWith('nda') ? 'NDA' : 'CDS')) as 'NDA' | 'CDS';
+    const session = ((req.query.session as string) || req.body?.session || 'I') as 'I' | 'II';
+    const year = Number(req.query.year || req.body?.year) || 2026;
+    const title = ((req.query.title as string) || req.body?.title || sessionId).trim();
+    const subjectKey = ((req.query.subjectKey as string) || req.body?.subjectKey || '') as 'maths' | 'gat' | 'english' | 'gs';
+    const fileType = ((req.query.fileType as string) || req.body?.fileType || '') as 'paper' | 'key';
+    const rawOrigName = (req.headers['x-original-name'] as string) || (req.query.originalName as string) || req.body?.originalName;
+    const originalName = rawOrigName ? decodeURIComponent(rawOrigName) : (title ? `${title}.pdf` : 'Paper.pdf');
+    const fileSize = (req.query.fileSize as string) || req.body?.fileSize;
 
-    if (!sessionId || !subjectKey || !fileType || !fileBase64) {
-      return res.status(400).json({ success: false, error: 'Missing required upload parameters.' });
+    if (!sessionId || !subjectKey || !fileType) {
+      return res.status(400).json({ success: false, error: 'Missing required upload parameters (sessionId, subjectKey, fileType).' });
     }
 
-    const matches = fileBase64.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
     let buffer: Buffer;
-    if (matches && matches.length === 3) {
-      buffer = Buffer.from(matches[2], 'base64');
+    if (Buffer.isBuffer(req.body)) {
+      buffer = req.body;
+    } else if (req.body?.fileBase64) {
+      const base64Data = req.body.fileBase64.replace(/^data:application\/pdf;base64,/, '').replace(/^data:.*?;base64,/, '');
+      buffer = Buffer.from(base64Data, 'base64');
     } else {
-      buffer = Buffer.from(fileBase64, 'base64');
+      return res.status(400).json({ success: false, error: 'No PDF file received in request.' });
     }
 
     const MAX_DIRECT_UPLOAD_BYTES = 4.5 * 1024 * 1024;
@@ -1233,14 +1235,27 @@ app.post('/api/notes/upload', uploadLimiter, authenticate as any, async (req: Au
   }
 
   try {
-    const { subjectId, subjectTitle, title, category, fileBase64, originalName, fileSize } = req.body;
+    const subjectId = ((req.query.subjectId as string) || req.body?.subjectId || '').trim();
+    const subjectTitle = ((req.query.subjectTitle as string) || req.body?.subjectTitle || '').trim();
+    const title = ((req.query.title as string) || req.body?.title || '').trim();
+    const category = ((req.query.category as string) || req.body?.category || '').trim() || undefined;
+    const rawOrigName = (req.headers['x-original-name'] as string) || (req.query.originalName as string) || req.body?.originalName;
+    const originalName = rawOrigName ? decodeURIComponent(rawOrigName) : `${title}.pdf`;
+    const fileSize = (req.query.fileSize as string) || req.body?.fileSize;
 
-    if (!subjectId || !subjectTitle || !title || !fileBase64) {
-      return res.status(400).json({ success: false, error: 'Missing required fields (subjectId, subjectTitle, title, fileBase64).' });
+    if (!subjectId || !subjectTitle || !title) {
+      return res.status(400).json({ success: false, error: 'Missing required note metadata (subjectId, subjectTitle, title).' });
     }
 
-    const base64Data = fileBase64.replace(/^data:application\/pdf;base64,/, '').replace(/^data:.*?;base64,/, '');
-    const buffer = Buffer.from(base64Data, 'base64');
+    let buffer: Buffer;
+    if (Buffer.isBuffer(req.body)) {
+      buffer = req.body;
+    } else if (req.body?.fileBase64) {
+      const base64Data = req.body.fileBase64.replace(/^data:application\/pdf;base64,/, '').replace(/^data:.*?;base64,/, '');
+      buffer = Buffer.from(base64Data, 'base64');
+    } else {
+      return res.status(400).json({ success: false, error: 'No PDF file received in request.' });
+    }
 
     const MAX_DIRECT_UPLOAD_BYTES = 4.5 * 1024 * 1024;
     if (buffer.length > MAX_DIRECT_UPLOAD_BYTES) {
@@ -1422,11 +1437,13 @@ async function setupServer() {
   console.log('GOOGLE_DRIVE_FOLDER_ID:', process.env.GOOGLE_DRIVE_FOLDER_ID ? '✅ Present (Google Drive Uploads Active)' : '⚠️ Not Set (Using Local Storage fallback)');
   console.log('---------------------------------');
 
-  // Seed sample N-INTEL edition if empty
-  try {
-    seedSampleDataIfEmpty(SAMPLE_NINTEL_POST);
-  } catch (err) {
-    console.warn('⚠️ Could not seed sample N-INTEL data:', err);
+  // Seed sample N-INTEL edition if empty (local dev only)
+  if (!process.env.VERCEL) {
+    try {
+      seedSampleDataIfEmpty(SAMPLE_NINTEL_POST);
+    } catch (err) {
+      console.warn('⚠️ Could not seed sample N-INTEL data:', err);
+    }
   }
 
   if (process.env.NODE_ENV !== 'production' && !process.env.VERCEL) {
