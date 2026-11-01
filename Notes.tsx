@@ -1017,7 +1017,7 @@ export default function Notes() {
           <div
             className={`rounded-[2.5rem] p-8 md:p-12 shadow-2xl relative overflow-hidden mb-10 border text-white ${
               isNda
-                ? 'bg-gradient-to-br from-[#312E81] via-[#4338CA] to-[#1E1B4B] border-indigo-400/25 shadow-[#312E81]/25'
+                ? 'bg-gradient-to-br from-[#991B1B] via-[#C52222] to-[#6E1010] border-rose-400/30 shadow-[#991B1B]/25'
                 : 'bg-gradient-to-br from-[#B45309] via-[#D97706] to-[#78350F] border-amber-400/25 shadow-[#B45309]/25'
             }`}
           >
@@ -1035,7 +1035,7 @@ export default function Notes() {
               <div className="flex items-center gap-6">
                 <div className="w-20 h-20 md:w-24 md:h-24 bg-white/15 backdrop-blur-xl rounded-3xl flex items-center justify-center text-white border border-white/25 shadow-2xl ring-1 ring-white/20 shrink-0">
                   {isNda ? (
-                    <Shield size={44} className="text-indigo-200 drop-shadow-md" />
+                    <Shield size={44} className="text-white drop-shadow-md" />
                   ) : (
                     <Award size={44} className="text-amber-200 drop-shadow-md" />
                   )}
@@ -1321,7 +1321,7 @@ export default function Notes() {
           <div
             className={`rounded-[2.5rem] p-8 md:p-12 shadow-2xl relative overflow-hidden mb-10 border text-white ${
               isNda
-                ? 'bg-gradient-to-br from-[#312E81] via-[#4338CA] to-[#1E1B4B] border-indigo-400/25 shadow-[#312E81]/25'
+                ? 'bg-gradient-to-br from-[#991B1B] via-[#C52222] to-[#6E1010] border-rose-400/30 shadow-[#991B1B]/25'
                 : 'bg-gradient-to-br from-[#B45309] via-[#D97706] to-[#78350F] border-amber-400/25 shadow-[#B45309]/25'
             }`}
           >
@@ -1339,7 +1339,7 @@ export default function Notes() {
               <div className="flex items-center gap-6">
                 <div className="w-20 h-20 md:w-24 md:h-24 bg-white/15 backdrop-blur-xl rounded-3xl flex items-center justify-center text-white border border-white/25 shadow-2xl ring-1 ring-white/20 shrink-0">
                   {isNda ? (
-                    <Shield size={44} className="text-indigo-200 drop-shadow-md" />
+                    <Shield size={44} className="text-white drop-shadow-md" />
                   ) : (
                     <Award size={44} className="text-amber-200 drop-shadow-md" />
                   )}
@@ -1674,18 +1674,18 @@ export default function Notes() {
 
           {/* The 2 Sub-Cards: 1st "NDA", 2nd "CDS" */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8 md:gap-10">
-            {/* 1st Card: NDA (Imperial Indigo / Royal Violet) */}
+            {/* 1st Card: NDA (Cadet Crimson / Heroic Ruby Red) */}
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.1 }}
               whileHover={{ y: -12 }}
               onClick={() => setSelectedExam('NDA')}
-              className="bg-gradient-to-br from-[#312E81] via-[#4338CA] to-[#1E1B4B] border border-indigo-400/30 p-8 md:p-12 rounded-[2.5rem] md:rounded-[3rem] text-white transition-all duration-500 flex flex-col justify-between group cursor-pointer shadow-2xl shadow-[#312E81]/30 hover:shadow-[#312E81]/50 relative overflow-hidden min-h-[380px]"
+              className="bg-gradient-to-br from-[#991B1B] via-[#C52222] to-[#6E1010] border border-rose-400/35 p-8 md:p-12 rounded-[2.5rem] md:rounded-[3rem] text-white transition-all duration-500 flex flex-col justify-between group cursor-pointer shadow-2xl shadow-[#991B1B]/30 hover:shadow-[#991B1B]/50 relative overflow-hidden min-h-[380px]"
             >
               {/* Ambient Sheen & Glow Orbs */}
-              <div className="absolute inset-x-0 top-0 h-32 bg-gradient-to-b from-white/15 to-transparent pointer-events-none" />
-              <div className="absolute -top-12 -right-12 w-48 h-48 rounded-full bg-white/10 blur-2xl pointer-events-none" />
+              <div className="absolute inset-x-0 top-0 h-32 bg-gradient-to-b from-white/20 via-white/5 to-transparent pointer-events-none" />
+              <div className="absolute -top-12 -right-12 w-48 h-48 rounded-full bg-white/15 blur-2xl pointer-events-none" />
 
               <div className="absolute -right-8 -bottom-8 opacity-[0.08] group-hover:opacity-[0.18] transition-opacity duration-500">
                 <Shield size={220} />
@@ -1693,26 +1693,26 @@ export default function Notes() {
 
               <div className="relative z-10">
                 <div className="flex items-center justify-between mb-8">
-                  <div className="w-20 h-20 bg-white/15 backdrop-blur-xl rounded-3xl flex items-center justify-center premium-zoom group-hover:scale-110 group-hover:rotate-6 border border-white/25 shadow-xl ring-1 ring-white/20">
-                    <Shield size={40} className="text-indigo-200 drop-shadow-md" />
+                  <div className="w-20 h-20 bg-white/20 backdrop-blur-xl rounded-3xl flex items-center justify-center premium-zoom group-hover:scale-110 group-hover:rotate-6 border border-white/30 shadow-xl ring-1 ring-white/25">
+                    <Shield size={40} className="text-white drop-shadow-md" />
                   </div>
-                  <span className="px-4 py-1.5 bg-white/15 backdrop-blur-md border border-white/25 rounded-full text-white text-[10px] font-black tracking-widest uppercase shadow-xs">
+                  <span className="px-4 py-1.5 bg-white/20 backdrop-blur-md border border-white/30 rounded-full text-white text-[10px] font-black tracking-widest uppercase shadow-xs">
                     12 Sessions
                   </span>
                 </div>
 
                 <h3 className="text-4xl md:text-5xl font-black mb-2 tracking-tighter drop-shadow-sm">NDA</h3>
-                <p className="text-white/90 font-bold text-sm tracking-wide mb-3">
+                <p className="text-white/95 font-bold text-sm tracking-wide mb-3">
                   National Defence Academy & Naval Academy
                 </p>
-                <p className="text-white/70 text-xs font-medium leading-relaxed max-w-md mb-8">
+                <p className="text-white/80 text-xs font-medium leading-relaxed max-w-md mb-8">
                   Session papers from 2021 to 2026. Manage and download Mathematics (Paper 1) and General Ability Test (GAT) papers with answer keys.
                 </p>
               </div>
 
-              <div className="relative z-10 flex items-center justify-between pt-6 border-t border-white/15">
-                <span className="text-white/80 text-xs font-black tracking-[0.2em] uppercase">Maths & GAT Papers</span>
-                <button className="px-8 py-3.5 bg-white text-[#312E81] rounded-2xl text-xs font-black tracking-widest uppercase hover:bg-indigo-50 transition-all duration-300 shadow-lg flex items-center gap-2 group-hover:scale-105">
+              <div className="relative z-10 flex items-center justify-between pt-6 border-t border-white/20">
+                <span className="text-white/90 text-xs font-black tracking-[0.2em] uppercase">Maths & GAT Papers</span>
+                <button className="px-8 py-3.5 bg-white text-[#991B1B] rounded-2xl text-xs font-black tracking-widest uppercase hover:bg-rose-50 transition-all duration-300 shadow-lg flex items-center gap-2 group-hover:scale-105">
                   Open NDA <ArrowRight size={14} />
                 </button>
               </div>
