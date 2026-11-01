@@ -44,12 +44,6 @@ import {
   saveNote,
   deleteNote
 } from './notes-db';
-import {
-  uploadPdfToDrive,
-  deletePdfFromDrive,
-  extractDriveFileId,
-  isDriveConfigured
-} from './google-drive';
 import { parseDailyNewsPost, getLocalTodayDate } from './n-intel-parser';
 import { SAMPLE_NINTEL_POST } from './n-intel-sample-data';
 
@@ -194,15 +188,6 @@ const contactLimiter = rateLimit({
   message: { success: false, error: 'Submission limit reached. Please wait before submitting another message.' }
 });
 
-const uploadLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 30, // 30 uploads per 15 min per IP
-  standardHeaders: true,
-  legacyHeaders: false,
-  validate: false,
-  message: { success: false, error: 'Upload limit exceeded. Please try again later.' }
-});
-
 const downloadLimiter = rateLimit({
   windowMs: 1 * 60 * 1000, // 1 minute
   max: 50, // 50 increments per minute per IP
@@ -222,41 +207,29 @@ const publishLimiter = rateLimit({
 });
 
 const IS_VERCEL = Boolean(process.env.VERCEL);
-// Secure static uploads directory with Sandboxing and nosniff
 const UPLOADS_DIR = IS_VERCEL
   ? path.join(os.tmpdir(), 'nishchay_uploads')
   : path.join(process.cwd(), 'public', 'uploads');
-const PYQ_UPLOADS_DIR = path.join(UPLOADS_DIR, 'pyq');
-const NOTES_UPLOADS_DIR = path.join(UPLOADS_DIR, 'notes');
 
 try {
   if (!fs.existsSync(UPLOADS_DIR)) {
     fs.mkdirSync(UPLOADS_DIR, { recursive: true });
   }
-  if (!fs.existsSync(PYQ_UPLOADS_DIR)) {
-    fs.mkdirSync(PYQ_UPLOADS_DIR, { recursive: true });
-  }
-  if (!fs.existsSync(NOTES_UPLOADS_DIR)) {
-    fs.mkdirSync(NOTES_UPLOADS_DIR, { recursive: true });
-  }
 } catch (fsErr) {
-  console.warn('Could not initialize local upload directories:', fsErr);
+  console.warn('Could not initialize uploads directory:', fsErr);
 }
+
 app.use(
   '/uploads',
   express.static(UPLOADS_DIR, {
     dotfiles: 'ignore',
-    setHeaders: (res, filePath) => {
+    setHeaders: (res) => {
       res.setHeader('X-Content-Type-Options', 'nosniff');
-      if (filePath.toLowerCase().endsWith('.pdf')) {
-        res.setHeader('Content-Type', 'application/pdf');
-        res.setHeader('Content-Disposition', 'inline');
-      } else {
-        res.setHeader('Content-Security-Policy', "default-src 'none'; sandbox");
-      }
     }
   })
 );
+
+
 
 // Initialize Firebase Admin for token verification
 try {
@@ -668,7 +641,7 @@ app.post('/api/articles/:id/download', downloadLimiter, (req, res) => {
 });
 
 // Admin Only: Upload Banner Image with Signature/Magic-Byte Validation
-app.post('/api/articles/upload-banner', uploadLimiter, authenticate as any, (req: AuthRequest, res) => {
+app.post('/api/articles/upload-banner', publishLimiter, authenticate as any, (req: AuthRequest, res) => {
   if (!req.user?.isAdmin) {
     return res.status(403).json({ success: false, error: 'Access denied: Admin privileges required.' });
   }
@@ -1024,126 +997,6 @@ app.get('/api/pyq', (req: Request, res: Response) => {
   }
 });
 
-// Upload a question paper or answer key PDF directly from computer (Admin Only)
-app.post('/api/pyq/upload', uploadLimiter, authenticate as any, async (req: AuthRequest, res: Response) => {
-  if (!req.user?.isAdmin) {
-    return res.status(403).json({ success: false, error: 'Access denied: Administrator privileges required.' });
-  }
-  try {
-    const sessionId = ((req.query.sessionId as string) || req.body?.sessionId || '').trim();
-    const exam = ((req.query.exam as string) || req.body?.exam || (sessionId.startsWith('nda') ? 'NDA' : 'CDS')) as 'NDA' | 'CDS';
-    const session = ((req.query.session as string) || req.body?.session || 'I') as 'I' | 'II';
-    const year = Number(req.query.year || req.body?.year) || 2026;
-    const title = ((req.query.title as string) || req.body?.title || sessionId).trim();
-    const subjectKey = ((req.query.subjectKey as string) || req.body?.subjectKey || '') as 'maths' | 'gat' | 'english' | 'gs';
-    const fileType = ((req.query.fileType as string) || req.body?.fileType || '') as 'paper' | 'key';
-    const rawOrigName = (req.headers['x-original-name'] as string) || (req.query.originalName as string) || req.body?.originalName;
-    const originalName = rawOrigName ? decodeURIComponent(rawOrigName) : (title ? `${title}.pdf` : 'Paper.pdf');
-    const fileSize = (req.query.fileSize as string) || req.body?.fileSize;
-
-    if (!sessionId || !subjectKey || !fileType) {
-      return res.status(400).json({ success: false, error: 'Missing required upload parameters (sessionId, subjectKey, fileType).' });
-    }
-
-    let buffer: Buffer;
-    if (Buffer.isBuffer(req.body)) {
-      buffer = req.body;
-    } else if (req.body?.fileBase64) {
-      const base64Data = req.body.fileBase64.replace(/^data:application\/pdf;base64,/, '').replace(/^data:.*?;base64,/, '');
-      buffer = Buffer.from(base64Data, 'base64');
-    } else {
-      return res.status(400).json({ success: false, error: 'No PDF file received in request.' });
-    }
-
-    const MAX_DIRECT_UPLOAD_BYTES = 4.5 * 1024 * 1024;
-    if (buffer.length > MAX_DIRECT_UPLOAD_BYTES) {
-      return res.status(400).json({
-        success: false,
-        error: 'File size exceeds maximum 4 MB limit for direct upload. Please use the Google Drive link option.'
-      });
-    }
-
-    // Security: Verify PDF Magic Bytes (%PDF- header)
-    if (buffer.length < 5 || buffer[0] !== 0x25 || buffer[1] !== 0x50 || buffer[2] !== 0x44 || buffer[3] !== 0x46) {
-      return res.status(400).json({ success: false, error: 'Invalid file signature. Only authentic PDF documents are allowed.' });
-    }
-
-    let publicUrl: string = '';
-    let driveFileId: string | undefined;
-    let driveErrorMsg: string | undefined;
-
-    // Automated Google Drive Upload
-    if (isDriveConfigured()) {
-      try {
-        const subfolderName = `PYQ - ${exam || 'NDA'}`;
-        const driveFileName = `${title || sessionId} - ${String(subjectKey).toUpperCase()} ${fileType === 'key' ? 'Answer Key' : 'Question Paper'}.pdf`;
-        const driveResult = await uploadPdfToDrive({
-          buffer,
-          fileName: driveFileName,
-          subfolderName,
-        });
-        publicUrl = driveResult.url;
-        driveFileId = driveResult.fileId;
-      } catch (driveErr: any) {
-        driveErrorMsg = driveErr?.message || String(driveErr);
-        console.warn('⚠️ Google Drive upload failed, falling back to local disk storage:', driveErrorMsg);
-      }
-    }
-
-    // On Vercel, ephemeral local disk is not persistent across serverless containers.
-    if (!publicUrl && process.env.VERCEL) {
-      const errDetail = driveErrorMsg
-        ? `Google Drive upload failed: ${driveErrorMsg}`
-        : 'Google Drive is not fully configured on Vercel. Direct PDF upload requires all 3 environment variables in Vercel: GOOGLE_SERVICE_ACCOUNT_EMAIL, GOOGLE_PRIVATE_KEY, and GOOGLE_DRIVE_FOLDER_ID. Please set them in your Vercel project settings, or use the "Paste PDF / Drive Link" tab.';
-      return res.status(400).json({ success: false, error: errDetail });
-    }
-
-    // Local Storage Fallback if Google Drive is not configured or fails
-    if (!publicUrl) {
-      try {
-        if (!fs.existsSync(PYQ_UPLOADS_DIR)) {
-          fs.mkdirSync(PYQ_UPLOADS_DIR, { recursive: true });
-        }
-
-        const cleanSession = String(sessionId).replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 50);
-        const cleanSubject = String(subjectKey).replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 20);
-        const cleanType = String(fileType).replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 10);
-        const randomHex = crypto.randomBytes(8).toString('hex');
-        const safeFileName = `${cleanSession}-${cleanSubject}-${cleanType}-${Date.now()}-${randomHex}.pdf`;
-        const targetPath = path.join(PYQ_UPLOADS_DIR, safeFileName);
-
-        fs.writeFileSync(targetPath, buffer, { flag: 'wx' });
-        publicUrl = `/uploads/pyq/${safeFileName}`;
-      } catch (writeErr: any) {
-        console.error('Local PYQ storage write failed:', writeErr);
-        return res.status(500).json({
-          success: false,
-          error: 'Failed to store file on local disk.'
-        });
-      }
-    }
-
-    const sessionRecord = savePyqFileRecord({
-      sessionId,
-      exam: exam || (sessionId.startsWith('nda') ? 'NDA' : 'CDS'),
-      session: session || 'I',
-      year: Number(year) || 2026,
-      title: title || sessionId,
-      subjectKey,
-      fileType,
-      url: publicUrl,
-      driveFileId,
-      fileName: originalName || (title ? `${title}.pdf` : 'Paper.pdf'),
-      fileSize: fileSize || `${(buffer.length / (1024 * 1024)).toFixed(2)} MB`,
-    });
-
-    res.json({ success: true, url: publicUrl, driveFileId, session: sessionRecord });
-  } catch (err: any) {
-    console.error('Error handling PYQ upload:', err);
-    res.status(500).json({ success: false, error: 'Failed to process file upload.' });
-  }
-});
-
 // Link an external PDF or Drive URL (Admin Only)
 app.post('/api/pyq/link', authenticate as any, (req: AuthRequest, res: Response) => {
   if (!req.user?.isAdmin) {
@@ -1204,30 +1057,6 @@ app.post('/api/pyq/delete', authenticate as any, (req: AuthRequest, res: Respons
       return res.status(400).json({ success: false, error: 'Missing required parameters.' });
     }
 
-    // Clean up file: check Google Drive first, or remove from local disk
-    const currentSessions = getAllPyqSessions();
-    const existingFile = currentSessions[sessionId]?.subjects?.[subjectKey as 'maths' | 'gat' | 'english' | 'gs']?.[fileType as 'paper' | 'key'];
-    if (existingFile?.driveFileId) {
-      deletePdfFromDrive(existingFile.driveFileId).catch((e) => console.warn('Could not delete PYQ from Drive:', e));
-    } else if (existingFile?.url) {
-      const driveId = extractDriveFileId(existingFile.url);
-      if (driveId) {
-        deletePdfFromDrive(driveId).catch((e) => console.warn('Could not delete PYQ from Drive:', e));
-      }
-    }
-
-    if (existingFile?.url && existingFile.url.startsWith('/uploads/pyq/')) {
-      const filename = path.basename(existingFile.url);
-      const diskPath = path.join(PYQ_UPLOADS_DIR, filename);
-      if (fs.existsSync(diskPath)) {
-        try {
-          fs.unlinkSync(diskPath);
-        } catch (cleanupErr) {
-          console.warn('Could not remove PYQ file from disk:', cleanupErr);
-        }
-      }
-    }
-
     const sessionRecord = deletePyqFileRecord({ sessionId, subjectKey, fileType });
     res.json({ success: true, session: sessionRecord });
   } catch (err: any) {
@@ -1253,118 +1082,6 @@ app.get('/api/notes', (req: Request, res: Response) => {
   } catch (err: any) {
     console.error('Error fetching subject notes:', err);
     res.status(500).json({ success: false, error: 'Failed to retrieve notes.' });
-  }
-});
-
-// Upload a note PDF file (Admin Only)
-app.post('/api/notes/upload', uploadLimiter, authenticate as any, async (req: AuthRequest, res: Response) => {
-  if (!req.user?.isAdmin) {
-    return res.status(403).json({ success: false, error: 'Access denied: Administrator privileges required.' });
-  }
-
-  try {
-    const subjectId = ((req.query.subjectId as string) || req.body?.subjectId || '').trim();
-    const subjectTitle = ((req.query.subjectTitle as string) || req.body?.subjectTitle || '').trim();
-    const title = ((req.query.title as string) || req.body?.title || '').trim();
-    const category = ((req.query.category as string) || req.body?.category || '').trim() || undefined;
-    const rawOrigName = (req.headers['x-original-name'] as string) || (req.query.originalName as string) || req.body?.originalName;
-    const originalName = rawOrigName ? decodeURIComponent(rawOrigName) : `${title}.pdf`;
-    const fileSize = (req.query.fileSize as string) || req.body?.fileSize;
-
-    if (!subjectId || !subjectTitle || !title) {
-      return res.status(400).json({ success: false, error: 'Missing required note metadata (subjectId, subjectTitle, title).' });
-    }
-
-    let buffer: Buffer;
-    if (Buffer.isBuffer(req.body)) {
-      buffer = req.body;
-    } else if (req.body?.fileBase64) {
-      const base64Data = req.body.fileBase64.replace(/^data:application\/pdf;base64,/, '').replace(/^data:.*?;base64,/, '');
-      buffer = Buffer.from(base64Data, 'base64');
-    } else {
-      return res.status(400).json({ success: false, error: 'No PDF file received in request.' });
-    }
-
-    const MAX_DIRECT_UPLOAD_BYTES = 4.5 * 1024 * 1024;
-    if (buffer.length > MAX_DIRECT_UPLOAD_BYTES) {
-      return res.status(400).json({
-        success: false,
-        error: 'File size exceeds maximum 4 MB limit for direct upload. Please use the Google Drive link option.'
-      });
-    }
-
-    // Verify PDF Magic Bytes (%PDF-)
-    if (buffer.length < 5 || buffer[0] !== 0x25 || buffer[1] !== 0x50 || buffer[2] !== 0x44 || buffer[3] !== 0x46) {
-      return res.status(400).json({ success: false, error: 'File rejected: Not a valid PDF document.' });
-    }
-
-    let publicUrl: string = '';
-    let driveFileId: string | undefined;
-    let driveErrorMsg: string | undefined;
-
-    // Automated Google Drive Upload
-    if (isDriveConfigured()) {
-      try {
-        const driveFileName = `${title}.pdf`;
-        const driveResult = await uploadPdfToDrive({
-          buffer,
-          fileName: driveFileName,
-          subfolderName: subjectTitle.trim(),
-        });
-        publicUrl = driveResult.url;
-        driveFileId = driveResult.fileId;
-      } catch (driveErr: any) {
-        driveErrorMsg = driveErr?.message || String(driveErr);
-        console.warn('⚠️ Google Drive upload failed, falling back to local storage:', driveErrorMsg);
-      }
-    }
-
-    // On Vercel, ephemeral local disk is not persistent across serverless containers.
-    if (!publicUrl && process.env.VERCEL) {
-      const errDetail = driveErrorMsg
-        ? `Google Drive upload failed: ${driveErrorMsg}`
-        : 'Google Drive is not fully configured on Vercel. Direct PDF upload requires all 3 environment variables in Vercel: GOOGLE_SERVICE_ACCOUNT_EMAIL, GOOGLE_PRIVATE_KEY, and GOOGLE_DRIVE_FOLDER_ID. Please set them in your Vercel project settings, or use the "Paste PDF / Drive Link" tab.';
-      return res.status(400).json({ success: false, error: errDetail });
-    }
-
-    // Local Storage Fallback if Google Drive is not configured or fails
-    if (!publicUrl) {
-      try {
-        if (!fs.existsSync(NOTES_UPLOADS_DIR)) {
-          fs.mkdirSync(NOTES_UPLOADS_DIR, { recursive: true });
-        }
-        const timestamp = Date.now();
-        const cleanSubject = subjectId.toLowerCase().replace(/[^a-z0-9]/g, '-');
-        const sanitizedTitle = (originalName || title || 'note').replace(/[^a-zA-Z0-9.-]/g, '_').replace(/\.pdf$/i, '');
-        const safeFileName = `${cleanSubject}-${timestamp}-${sanitizedTitle}.pdf`;
-        const targetPath = path.join(NOTES_UPLOADS_DIR, safeFileName);
-
-        fs.writeFileSync(targetPath, buffer);
-        publicUrl = `/uploads/notes/${safeFileName}`;
-      } catch (writeErr: any) {
-        console.error('Local note storage write failed:', writeErr);
-        return res.status(500).json({
-          success: false,
-          error: 'Failed to store note on local disk.'
-        });
-      }
-    }
-
-    const note = saveNote({
-      subjectId,
-      subjectTitle,
-      title,
-      category,
-      url: publicUrl,
-      driveFileId,
-      fileName: originalName || `${title}.pdf`,
-      fileSize: fileSize || `${(buffer.length / (1024 * 1024)).toFixed(2)} MB`,
-    });
-
-    res.json({ success: true, note });
-  } catch (err: any) {
-    console.error('Error uploading subject note:', err);
-    res.status(500).json({ success: false, error: 'Failed to process note upload.' });
   }
 });
 
@@ -1408,28 +1125,6 @@ app.post('/api/notes/delete', authenticate as any, (req: AuthRequest, res: Respo
     const { id } = req.body;
     if (!id) {
       return res.status(400).json({ success: false, error: 'Missing note ID.' });
-    }
-
-    const note = getNoteById(id);
-    if (note?.driveFileId) {
-      deletePdfFromDrive(note.driveFileId).catch((e) => console.warn('Could not delete note from Drive:', e));
-    } else if (note?.url) {
-      const driveId = extractDriveFileId(note.url);
-      if (driveId) {
-        deletePdfFromDrive(driveId).catch((e) => console.warn('Could not delete note from Drive:', e));
-      }
-    }
-
-    if (note?.url && note.url.startsWith('/uploads/notes/')) {
-      const filename = path.basename(note.url);
-      const diskPath = path.join(NOTES_UPLOADS_DIR, filename);
-      if (fs.existsSync(diskPath)) {
-        try {
-          fs.unlinkSync(diskPath);
-        } catch (cleanupErr) {
-          console.warn('Could not remove note file from disk:', cleanupErr);
-        }
-      }
     }
 
     const success = deleteNote(id);

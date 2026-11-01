@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, ChangeEvent } from 'react';
+import { useState, useEffect } from 'react';
 import { auth, onAuthStateChanged, checkIfAdmin } from './firebase';
 import type { SubjectNote } from './notes-db';
 import { motion, AnimatePresence } from 'motion/react';
@@ -8,7 +8,7 @@ import {
   Dna, Landmark, Coins, Map, BookOpen, FileCheck, Shield,
   Award, CheckCircle2, ArrowRight,
   Download, Sparkles, Folder, Check, Clock,
-  X, Trash2, RefreshCw, FileUp, Link as LinkIcon, AlertCircle
+  X, Trash2, RefreshCw, Link as LinkIcon, AlertCircle
 } from 'lucide-react';
 
 interface Subject {
@@ -260,17 +260,14 @@ export default function Notes() {
     }
   });
 
-  // Upload Modal State
+  // Upload / Link Modal State
   const [uploadModal, setUploadModal] = useState<UploadModalState | null>(null);
-  const [uploadTab, setUploadTab] = useState<'file' | 'link'>('file');
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [customLink, setCustomLink] = useState('');
   const [linkTitle, setLinkTitle] = useState('');
   const [noteTitle, setNoteTitle] = useState('');
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState('');
   const [uploadSuccess, setUploadSuccess] = useState('');
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
@@ -345,12 +342,10 @@ export default function Notes() {
       typeLabel: fileType === 'paper' ? 'Question Paper' : 'Answer Key',
     });
     setNoteTitle('');
-    setSelectedFile(null);
     setCustomLink('');
     setLinkTitle('');
     setUploadError('');
     setUploadSuccess('');
-    setUploadTab('file');
   };
 
   const openSubjectUploadModal = (subjectId: string, subjectTitle: string) => {
@@ -370,57 +365,19 @@ export default function Notes() {
       typeLabel: `${subjectTitle} Note`,
     });
     setNoteTitle('');
-    setSelectedFile(null);
     setCustomLink('');
     setLinkTitle('');
     setUploadError('');
     setUploadSuccess('');
-    setUploadTab('file');
   };
 
   const closeUploadModal = () => {
     setUploadModal(null);
     setNoteTitle('');
-    setSelectedFile(null);
     setCustomLink('');
     setLinkTitle('');
     setUploadError('');
     setUploadSuccess('');
-  };
-
-  const MAX_FILE_SIZE_MB = 4;
-  const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
-
-  // Handle file selection with 4MB limit check and popup alert
-  const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      const file = e.target.files[0];
-
-      // Check 4MB size ceiling
-      if (file.size > MAX_FILE_SIZE_BYTES) {
-        const actualMb = (file.size / (1024 * 1024)).toFixed(1);
-        alert(
-          `⚠️ File Size Limit Exceeded (${actualMb} MB)\n\n` +
-          `The maximum allowed file size for direct uploads is 4 MB. For larger files, please use the "Paste PDF / Drive Link" option.`
-        );
-        e.target.value = '';
-        setSelectedFile(null);
-        setUploadError(`File too large (${actualMb} MB). Maximum allowed size is 4 MB.`);
-        return;
-      }
-
-      // Check PDF type
-      if (file.type && file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) {
-        alert('⚠️ Invalid File Type\n\nPlease select a valid PDF document (.pdf).');
-        e.target.value = '';
-        setSelectedFile(null);
-        setUploadError('Only PDF files are supported.');
-        return;
-      }
-
-      setSelectedFile(file);
-      setUploadError('');
-    }
   };
 
   // Helper to obtain authenticated headers
@@ -455,11 +412,11 @@ export default function Notes() {
     throw new Error(rawText ? rawText.slice(0, 150) : `${fallbackErrMsg} (HTTP ${res.status})`);
   };
 
-  // Execute Upload
+  // Execute Link Submission
   const handleExecuteUpload = async () => {
     if (!uploadModal) return;
     if (!isAdmin) {
-      setUploadError('Only verified administrators are authorized to upload files.');
+      setUploadError('Only verified administrators are authorized to link files.');
       return;
     }
     setUploading(true);
@@ -469,179 +426,76 @@ export default function Notes() {
     try {
       const headers = await getAuthHeaders();
 
-      // 1. Subject Note Upload Mode
+      // 1. Subject Note Mode
       if (uploadModal.mode === 'subject') {
         if (!noteTitle.trim()) {
           throw new Error('Please enter a title for the note.');
         }
-
-        if (uploadTab === 'file') {
-          if (!selectedFile) {
-            throw new Error('Please select a PDF file to upload.');
-          }
-
-          if (selectedFile.size > MAX_FILE_SIZE_BYTES) {
-            const actualMb = (selectedFile.size / (1024 * 1024)).toFixed(1);
-            alert(`⚠️ File Size Limit Exceeded (${actualMb} MB)\n\nThe maximum allowed file size for direct uploads is 4 MB. Please use "Paste PDF / Drive Link" for larger documents.`);
-            throw new Error(`File size (${actualMb} MB) exceeds 4 MB limit.`);
-          }
-
-          const token = await auth.currentUser?.getIdToken(true);
-          if (!token) throw new Error('Authentication session not found.');
-
-          const queryParams = new URLSearchParams({
-            subjectId: uploadModal.subjectId,
-            subjectTitle: uploadModal.subjectTitle,
-            title: noteTitle.trim(),
-            originalName: selectedFile.name,
-            fileSize: `${(selectedFile.size / (1024 * 1024)).toFixed(2)} MB`,
-          });
-
-          // Send file directly as raw binary (0% Base64 expansion to stay safely under Vercel serverless limit)
-          const res = await fetch(`/api/notes/upload?${queryParams.toString()}`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/pdf',
-              'Authorization': `Bearer ${token}`,
-              'X-Original-Name': encodeURIComponent(selectedFile.name),
-            },
-            body: selectedFile,
-          });
-
-          const data = await parseApiResponse(res, 'Note upload failed');
-
-          const updatedNotes = [data.note, ...allSubjectNotes.filter((n) => n.id !== data.note.id)];
-          setAllSubjectNotes(updatedNotes);
-          localStorage.setItem('nishchay_subject_notes', JSON.stringify(updatedNotes));
-
-          setUploadSuccess(`"${noteTitle}" uploaded successfully!`);
-          setTimeout(() => closeUploadModal(), 1200);
-        } else {
-          // Link submission
-          if (!customLink.trim()) {
-            throw new Error('Please enter a valid PDF or Google Drive link.');
-          }
-
-          const res = await fetch('/api/notes/link', {
-            method: 'POST',
-            headers,
-            body: JSON.stringify({
-              subjectId: uploadModal.subjectId,
-              subjectTitle: uploadModal.subjectTitle,
-              title: noteTitle.trim(),
-              url: customLink.trim(),
-              fileSize: 'Online Document',
-            }),
-          });
-
-          const data = await parseApiResponse(res, 'Failed to save note link');
-
-          const updatedNotes = [data.note, ...allSubjectNotes.filter((n) => n.id !== data.note.id)];
-          setAllSubjectNotes(updatedNotes);
-          localStorage.setItem('nishchay_subject_notes', JSON.stringify(updatedNotes));
-
-          setUploadSuccess(`"${noteTitle}" link saved!`);
-          setTimeout(() => closeUploadModal(), 1200);
-        }
-        return;
-      }
-
-      // 2. PYQ Paper / Key Upload Mode
-      if (!uploadModal.paper) return;
-
-      if (uploadTab === 'file') {
-        if (!selectedFile) {
-          throw new Error('Please select a PDF file to upload.');
-        }
-
-        if (selectedFile.size > MAX_FILE_SIZE_BYTES) {
-          const actualMb = (selectedFile.size / (1024 * 1024)).toFixed(1);
-          alert(`⚠️ File Size Limit Exceeded (${actualMb} MB)\n\nThe maximum allowed file size for direct uploads is 4 MB. Please use "Paste PDF / Drive Link" for larger documents.`);
-          throw new Error(`File size (${actualMb} MB) exceeds 4 MB limit.`);
-        }
-
-        const token = await auth.currentUser?.getIdToken(true);
-        if (!token) throw new Error('Authentication session not found.');
-
-        const queryParams = new URLSearchParams({
-          sessionId: uploadModal.paper.id,
-          exam: uploadModal.paper.exam,
-          session: uploadModal.paper.session,
-          year: String(uploadModal.paper.year),
-          title: uploadModal.paper.title,
-          subjectKey: uploadModal.subjectKey,
-          fileType: uploadModal.fileType,
-          originalName: selectedFile.name,
-          fileSize: `${(selectedFile.size / (1024 * 1024)).toFixed(2)} MB`,
-        });
-
-        // Send file directly as raw binary (0% Base64 expansion to stay safely under Vercel serverless limit)
-        const res = await fetch(`/api/pyq/upload?${queryParams.toString()}`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/pdf',
-            'Authorization': `Bearer ${token}`,
-            'X-Original-Name': encodeURIComponent(selectedFile.name),
-          },
-          body: selectedFile,
-        });
-
-        const data = await parseApiResponse(res, 'PYQ paper upload failed');
-
-        const updatedSessions = {
-          ...pyqSessions,
-          [uploadModal.paper.id]: data.session,
-        };
-        setPyqSessions(updatedSessions);
-        localStorage.setItem('nishchay_pyq_papers', JSON.stringify(updatedSessions));
-
-        setUploadSuccess(`${uploadModal.typeLabel} uploaded successfully!`);
-        setTimeout(() => closeUploadModal(), 1200);
-      } else {
-        // Link submission
         if (!customLink.trim()) {
-          throw new Error('Please enter a valid PDF or Drive link.');
+          throw new Error('Please enter a valid Google Drive or PDF link.');
         }
 
-        const res = await fetch('/api/pyq/link', {
+        const res = await fetch('/api/notes/link', {
           method: 'POST',
           headers,
           body: JSON.stringify({
-            sessionId: uploadModal.paper.id,
-            exam: uploadModal.paper.exam,
-            session: uploadModal.paper.session,
-            year: uploadModal.paper.year,
-            title: uploadModal.paper.title,
-            subjectKey: uploadModal.subjectKey,
-            fileType: uploadModal.fileType,
+            subjectId: uploadModal.subjectId,
+            subjectTitle: uploadModal.subjectTitle,
+            title: noteTitle.trim(),
             url: customLink.trim(),
-            fileName: linkTitle.trim() || `${uploadModal.paper.title} ${uploadModal.subjectTitle} ${uploadModal.typeLabel}`,
-            fileSize: 'Online Document',
+            fileSize: 'Google Drive Link',
           }),
         });
 
-        const data = await parseApiResponse(res, 'Failed to save PYQ link');
+        const data = await parseApiResponse(res, 'Failed to save note link');
 
-        const updatedSessions = {
-          ...pyqSessions,
-          [uploadModal.paper.id]: data.session,
-        };
-        setPyqSessions(updatedSessions);
-        localStorage.setItem('nishchay_pyq_papers', JSON.stringify(updatedSessions));
+        const updatedNotes = [data.note, ...allSubjectNotes.filter((n) => n.id !== data.note.id)];
+        setAllSubjectNotes(updatedNotes);
+        localStorage.setItem('nishchay_subject_notes', JSON.stringify(updatedNotes));
 
-        setUploadSuccess(`${uploadModal.typeLabel} link saved!`);
+        setUploadSuccess(`"${noteTitle}" link saved successfully!`);
         setTimeout(() => closeUploadModal(), 1200);
+        return;
       }
+
+      // 2. PYQ Paper / Key Mode
+      if (!uploadModal.paper) return;
+
+      if (!customLink.trim()) {
+        throw new Error('Please enter a valid Google Drive or PDF link.');
+      }
+
+      const res = await fetch('/api/pyq/link', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          sessionId: uploadModal.paper.id,
+          exam: uploadModal.paper.exam,
+          session: uploadModal.paper.session,
+          year: uploadModal.paper.year,
+          title: uploadModal.paper.title,
+          subjectKey: uploadModal.subjectKey,
+          fileType: uploadModal.fileType,
+          url: customLink.trim(),
+          fileName: linkTitle.trim() || `${uploadModal.paper.title} ${uploadModal.subjectTitle} ${uploadModal.typeLabel}`,
+          fileSize: 'Google Drive Link',
+        }),
+      });
+
+      const data = await parseApiResponse(res, 'Failed to save PYQ link');
+
+      const updatedSessions = {
+        ...pyqSessions,
+        [uploadModal.paper.id]: data.session,
+      };
+      setPyqSessions(updatedSessions);
+      localStorage.setItem('nishchay_pyq_papers', JSON.stringify(updatedSessions));
+
+      setUploadSuccess(`${uploadModal.typeLabel} link saved successfully!`);
+      setTimeout(() => closeUploadModal(), 1200);
     } catch (err: any) {
-      console.error('Upload error:', err);
-      const msg = err?.message || '';
-      if (msg.includes('Failed to fetch') || msg.includes('NetworkError') || err?.name === 'TypeError') {
-        setUploadError(
-          'Upload payload exceeded hosting provider limit (Failed to fetch). Serverless hosting (like Vercel) terminates direct file uploads larger than 4.5 MB. Please use the "Paste PDF / Drive Link" tab for this document.'
-        );
-      } else {
-        setUploadError(msg || 'Upload operation failed.');
-      }
+      console.error('Save link error:', err);
+      setUploadError(err?.message || 'Failed to save link.');
     } finally {
       setUploading(false);
     }
@@ -752,7 +606,7 @@ export default function Notes() {
                     : `${uploadModal.paper?.title} • ${uploadModal.subjectTitle}`}
                 </span>
                 <h3 className="text-2xl font-black text-gray-900 tracking-tight mt-1">
-                  Upload {uploadModal.typeLabel}
+                  Link {uploadModal.typeLabel}
                 </h3>
               </div>
               <button
@@ -779,100 +633,39 @@ export default function Notes() {
               </div>
             )}
 
-            {/* Upload Type Tabs */}
-            <div className="flex items-center gap-2 p-1 bg-gray-100 rounded-xl mb-6">
-              <button
-                onClick={() => setUploadTab('file')}
-                className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
-                  uploadTab === 'file' ? 'bg-white text-gray-900 shadow-xs' : 'text-gray-500 hover:text-gray-800'
-                }`}
-              >
-                <FileUp size={14} /> Upload PDF File
-              </button>
-              <button
-                onClick={() => setUploadTab('link')}
-                className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
-                  uploadTab === 'link' ? 'bg-white text-gray-900 shadow-xs' : 'text-gray-500 hover:text-gray-800'
-                }`}
-              >
-                <LinkIcon size={14} /> Paste PDF / Drive Link
-              </button>
-            </div>
-
-            {/* Tab 1: File Upload */}
-            {uploadTab === 'file' ? (
-              <div>
+            {/* Google Drive / PDF Link Input */}
+            <div className="space-y-4">
+              <div className="p-4 rounded-2xl bg-emerald-50/50 border border-emerald-100">
+                <label className="block text-xs font-black uppercase tracking-wider text-[#1B4332] mb-1.5 flex items-center gap-1.5">
+                  <LinkIcon size={14} /> Google Drive or PDF Link <span className="text-red-500">*</span>
+                </label>
                 <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept=".pdf,application/pdf"
-                  onChange={handleFileChange}
-                  className="hidden"
+                  type="url"
+                  placeholder="https://drive.google.com/file/d/... or direct PDF link"
+                  value={customLink}
+                  onChange={(e) => setCustomLink(e.target.value)}
+                  className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl text-xs font-bold text-gray-800 outline-none focus:border-[#1B4332] transition-all shadow-xs"
                 />
-                <div
-                  onClick={() => fileInputRef.current?.click()}
-                  className="border-2 border-dashed border-gray-200 hover:border-[#1B4332] rounded-2xl p-8 text-center cursor-pointer transition-all bg-gray-50/60 hover:bg-emerald-50/20 group"
-                >
-                  <div className="w-14 h-14 bg-white rounded-2xl flex items-center justify-center mx-auto mb-3 text-gray-400 group-hover:text-[#1B4332] shadow-xs group-hover:scale-105 transition-all">
-                    <FileUp size={28} />
-                  </div>
-                  {selectedFile ? (
-                    <div>
-                      <p className="text-sm font-bold text-gray-900 truncate max-w-xs mx-auto">
-                        {selectedFile.name}
-                      </p>
-                      <p className="text-xs text-gray-500 mt-1 font-medium">
-                        {(selectedFile.size / (1024 * 1024)).toFixed(2)} MB • Ready to upload
-                      </p>
-                    </div>
-                  ) : (
-                    <div>
-                      <p className="text-sm font-bold text-gray-800">
-                        Click to browse PDF from device
-                      </p>
-                      <p className="text-xs text-gray-400 mt-1">
-                        {uploadModal.mode === 'subject'
-                          ? `Select the PDF note file for ${uploadModal.subjectTitle}`
-                          : `Select the downloaded ${uploadModal.subjectTitle} ${uploadModal.typeLabel}`}
-                      </p>
-                      <p className="text-[11px] font-semibold text-emerald-800/80 mt-2 bg-emerald-50 inline-block px-2.5 py-0.5 rounded-full border border-emerald-200/60">
-                        Max direct upload: 4 MB • For larger files use "Paste PDF / Drive Link"
-                      </p>
-                    </div>
-                  )}
-                </div>
+                <p className="text-[11px] text-gray-500 mt-2 font-medium leading-relaxed">
+                  💡 In Google Drive, right-click your PDF → <strong>Share</strong> → set access to <strong>"Anyone with the link can view"</strong> → copy and paste the link here.
+                </p>
               </div>
-            ) : (
-              /* Tab 2: URL / Drive Link */
-              <div className="space-y-4">
+
+              {uploadModal.mode === 'pyq' && (
                 <div>
                   <label className="block text-xs font-black uppercase tracking-wider text-gray-600 mb-1.5">
-                    PDF Link or Google Drive Link
+                    Display Title (Optional)
                   </label>
                   <input
-                    type="url"
-                    placeholder="https://drive.google.com/file/d/... or direct PDF link"
-                    value={customLink}
-                    onChange={(e) => setCustomLink(e.target.value)}
+                    type="text"
+                    placeholder={`e.g. ${uploadModal.paper?.title} ${uploadModal.subjectTitle} ${uploadModal.typeLabel}`}
+                    value={linkTitle}
+                    onChange={(e) => setLinkTitle(e.target.value)}
                     className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-xs font-bold text-gray-800 outline-none focus:border-[#1B4332] focus:bg-white transition-all"
                   />
                 </div>
-                {uploadModal.mode === 'pyq' && (
-                  <div>
-                    <label className="block text-xs font-black uppercase tracking-wider text-gray-600 mb-1.5">
-                      Display Title (Optional)
-                    </label>
-                    <input
-                      type="text"
-                      placeholder={`e.g. ${uploadModal.paper?.title} ${uploadModal.subjectTitle} ${uploadModal.typeLabel}`}
-                      value={linkTitle}
-                      onChange={(e) => setLinkTitle(e.target.value)}
-                      className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-xs font-bold text-gray-800 outline-none focus:border-[#1B4332] focus:bg-white transition-all"
-                    />
-                  </div>
-                )}
-              </div>
-            )}
+              )}
+            </div>
 
             {/* Status messages */}
             {uploadError && (
@@ -904,11 +697,11 @@ export default function Notes() {
               >
                 {uploading ? (
                   <>
-                    <RefreshCw size={14} className="animate-spin" /> Uploading...
+                    <RefreshCw size={14} className="animate-spin" /> Saving Link...
                   </>
                 ) : (
                   <>
-                    <Upload size={14} /> Save {uploadModal.typeLabel}
+                    <LinkIcon size={14} /> Save Link
                   </>
                 )}
               </button>
