@@ -18,11 +18,10 @@ interface Subject {
   icon: any;
   color?: string;
   gradient: string;
-  border: string;
-  glowBg: string;
-  accentIcon: string;
+  shadow: string;
+  border?: string;
   badge?: string;
-  description: string;
+  description?: string;
 }
 
 interface ExamPaper {
@@ -80,10 +79,9 @@ const SUBJECTS: Subject[] = [
     count: '24 Papers • NDA & CDS',
     icon: FileCheck,
     color: 'bg-[#1B4332]',
-    gradient: 'from-[#0A2619] via-[#123826] to-[#071911]',
-    border: 'border-emerald-500/40 hover:border-emerald-400',
-    glowBg: 'bg-emerald-500',
-    accentIcon: 'text-emerald-400',
+    gradient: 'from-[#1B4332] via-[#245A43] to-[#143728]',
+    shadow: 'shadow-lg shadow-[#1B4332]/25 hover:shadow-2xl hover:shadow-[#1B4332]/40',
+    border: 'border-emerald-400/25',
     badge: 'PYQ Archive',
     description: 'Official UPSC Question Papers & Answer Keys (2021 – 2026)',
   },
@@ -93,10 +91,9 @@ const SUBJECTS: Subject[] = [
     count: '50+ PDFs',
     icon: Calculator,
     color: 'bg-[#2D5A27]',
-    gradient: 'from-[#0D261B] via-[#163D2B] to-[#091B13]',
-    border: 'border-emerald-500/30 hover:border-emerald-400',
-    glowBg: 'bg-emerald-400',
-    accentIcon: 'text-emerald-300',
+    gradient: 'from-[#2D5A27] via-[#3B7233] to-[#20441C]',
+    shadow: 'shadow-lg shadow-[#2D5A27]/25 hover:shadow-2xl hover:shadow-[#2D5A27]/40',
+    border: 'border-lime-400/25',
     description: 'Calculus, Algebra, Trigonometry, Matrices & Coordinate Geometry',
   },
   {
@@ -105,10 +102,9 @@ const SUBJECTS: Subject[] = [
     count: '40+ PDFs',
     icon: Book,
     color: 'bg-[#1B3A5B]',
-    gradient: 'from-[#0E1F36] via-[#163359] to-[#0A1626]',
-    border: 'border-sky-500/30 hover:border-sky-400',
-    glowBg: 'bg-sky-500',
-    accentIcon: 'text-sky-300',
+    gradient: 'from-[#1B3A5B] via-[#254C75] to-[#132A42]',
+    shadow: 'shadow-lg shadow-[#1B3A5B]/25 hover:shadow-2xl hover:shadow-[#1B3A5B]/40',
+    border: 'border-sky-400/25',
     description: 'Grammar Rules, Vocabulary Roots, Idioms, Antonyms & Comprehension',
   },
   {
@@ -117,10 +113,9 @@ const SUBJECTS: Subject[] = [
     count: '0 PDFs',
     icon: Atom,
     color: 'bg-[#5B2A86]',
-    gradient: 'from-[#1C1233] via-[#2D1C52] to-[#130B24]',
-    border: 'border-purple-500/30 hover:border-purple-400',
-    glowBg: 'bg-purple-500',
-    accentIcon: 'text-purple-300',
+    gradient: 'from-[#5B2A86] via-[#7335A8] to-[#441F65]',
+    shadow: 'shadow-lg shadow-[#5B2A86]/25 hover:shadow-2xl hover:shadow-[#5B2A86]/40',
+    border: 'border-purple-400/25',
     description: 'Mechanics, Optics, Thermodynamics, Electromagnetism & Modern Physics',
   },
   {
@@ -129,10 +124,9 @@ const SUBJECTS: Subject[] = [
     count: '0 PDFs',
     icon: FlaskConical,
     color: 'bg-[#D64933]',
-    gradient: 'from-[#2C130F] via-[#461D17] to-[#1E0D0A]',
-    border: 'border-rose-500/30 hover:border-rose-400',
-    glowBg: 'bg-rose-500',
-    accentIcon: 'text-rose-300',
+    gradient: 'from-[#D64933] via-[#E25C47] to-[#B23824]',
+    shadow: 'shadow-lg shadow-[#D64933]/25 hover:shadow-2xl hover:shadow-[#D64933]/40',
+    border: 'border-rose-400/25',
     description: 'Periodic Classification, Chemical Bonding, Acids & Redox Reactions',
   },
   {
@@ -141,10 +135,9 @@ const SUBJECTS: Subject[] = [
     count: '0 PDFs',
     icon: Dna,
     color: 'bg-[#15822F]',
-    gradient: 'from-[#0B2618] via-[#133D27] to-[#081C11]',
-    border: 'border-teal-500/30 hover:border-teal-400',
-    glowBg: 'bg-teal-500',
-    accentIcon: 'text-teal-300',
+    gradient: 'from-[#15822F] via-[#1AA23B] to-[#106524]',
+    shadow: 'shadow-lg shadow-[#15822F]/25 hover:shadow-2xl hover:shadow-[#15822F]/40',
+    border: 'border-emerald-300/25',
     description: 'Human Physiology, Cell Biology, Genetics, Botany & Ecosystems',
   },
   {
@@ -153,10 +146,9 @@ const SUBJECTS: Subject[] = [
     count: '0 PDFs',
     icon: Coins,
     color: 'bg-[#B57C00]',
-    gradient: 'from-[#281D0B] via-[#423012] to-[#1A1307]',
-    border: 'border-amber-500/30 hover:border-amber-400',
-    glowBg: 'bg-amber-500',
-    accentIcon: 'text-amber-300',
+    gradient: 'from-[#B57C00] via-[#D49200] to-[#8C6000]',
+    shadow: 'shadow-lg shadow-[#B57C00]/25 hover:shadow-2xl hover:shadow-[#B57C00]/40',
+    border: 'border-amber-300/25',
     description: 'Indian Economy, Union Budget, Inflation, Banking & Fiscal Policies',
   },
   {
@@ -165,10 +157,9 @@ const SUBJECTS: Subject[] = [
     count: '0 PDFs',
     icon: BookOpen,
     color: 'bg-[#8A5A44]',
-    gradient: 'from-[#26150F] via-[#3E2218] to-[#1A0E0A]',
-    border: 'border-orange-500/30 hover:border-orange-400',
-    glowBg: 'bg-orange-500',
-    accentIcon: 'text-orange-300',
+    gradient: 'from-[#8A5A44] via-[#A36D53] to-[#6A4332]',
+    shadow: 'shadow-lg shadow-[#8A5A44]/25 hover:shadow-2xl hover:shadow-[#8A5A44]/40',
+    border: 'border-orange-300/25',
     description: 'Ancient Civilizations, Medieval India, Freedom Struggle & Modern Era',
   },
   {
@@ -177,10 +168,9 @@ const SUBJECTS: Subject[] = [
     count: '0 PDFs',
     icon: Landmark,
     color: 'bg-[#005B96]',
-    gradient: 'from-[#0B1E36] via-[#133257] to-[#081526]',
-    border: 'border-blue-500/30 hover:border-blue-400',
-    glowBg: 'bg-blue-500',
-    accentIcon: 'text-blue-300',
+    gradient: 'from-[#005B96] via-[#0074BF] to-[#004470]',
+    shadow: 'shadow-lg shadow-[#005B96]/25 hover:shadow-2xl hover:shadow-[#005B96]/40',
+    border: 'border-blue-300/25',
     description: 'Constitution of India, Fundamental Rights, Parliament & Judiciary',
   },
   {
@@ -189,10 +179,9 @@ const SUBJECTS: Subject[] = [
     count: '0 PDFs',
     icon: Map,
     color: 'bg-[#2E8B57]',
-    gradient: 'from-[#0C241E] via-[#143B31] to-[#091A15]',
-    border: 'border-emerald-500/30 hover:border-emerald-400',
-    glowBg: 'bg-emerald-500',
-    accentIcon: 'text-emerald-300',
+    gradient: 'from-[#2E8B57] via-[#38A869] to-[#226740]',
+    shadow: 'shadow-lg shadow-[#2E8B57]/25 hover:shadow-2xl hover:shadow-[#2E8B57]/40',
+    border: 'border-teal-300/25',
     description: 'Physical Geography, Climatology, Indian River Basins & Minerals',
   },
   {
@@ -201,10 +190,9 @@ const SUBJECTS: Subject[] = [
     count: 'Monthly Updates',
     icon: Newspaper,
     color: 'bg-[#4B5563]',
-    gradient: 'from-[#141B24] via-[#202B3A] to-[#0D1218]',
-    border: 'border-slate-400/30 hover:border-slate-200',
-    glowBg: 'bg-cyan-500',
-    accentIcon: 'text-cyan-300',
+    gradient: 'from-[#4B5563] via-[#5F6C7D] to-[#374151]',
+    shadow: 'shadow-lg shadow-[#4B5563]/25 hover:shadow-2xl hover:shadow-[#4B5563]/40',
+    border: 'border-slate-300/25',
     description: 'National & Defence News, Bilateral Exercises, Summits & Awards',
   },
   {
@@ -213,10 +201,9 @@ const SUBJECTS: Subject[] = [
     count: '10+ Guides',
     icon: Target,
     color: 'bg-[#1B3A5B]',
-    gradient: 'from-[#131B2D] via-[#1E2945] to-[#0D121E]',
-    border: 'border-indigo-500/30 hover:border-indigo-400',
-    glowBg: 'bg-indigo-500',
-    accentIcon: 'text-indigo-300',
+    gradient: 'from-[#1E293B] via-[#2D3E56] to-[#141C28]',
+    shadow: 'shadow-lg shadow-[#1E293B]/25 hover:shadow-2xl hover:shadow-[#1E293B]/40',
+    border: 'border-indigo-300/25',
     description: 'Exam Strategy, Time Management, Cutoff Analysis & SSB Blueprint',
   },
 ];
@@ -1689,9 +1676,9 @@ export default function Notes() {
           <div className="bg-white rounded-[2rem] p-8 md:p-12 shadow-[0_20px_50px_rgba(0,0,0,0.03)] border border-gray-100 mb-8">
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-12 border-b border-gray-100 pb-12">
               <div className="flex items-center gap-6">
-                <div className={`w-20 h-20 bg-gradient-to-br ${selectedSubject.gradient} rounded-3xl flex items-center justify-center text-white shadow-xl border ${selectedSubject.border} ring-1 ring-white/20 relative overflow-hidden group`}>
-                  <div className={`absolute -top-4 -right-4 w-12 h-12 rounded-full ${selectedSubject.glowBg} opacity-40 blur-xl`} />
-                  <selectedSubject.icon size={36} className={`${selectedSubject.accentIcon} relative z-10`} />
+                <div className={`w-20 h-20 bg-gradient-to-br ${selectedSubject.gradient} rounded-3xl flex items-center justify-center text-white shadow-xl ${selectedSubject.shadow} border border-white/20 relative overflow-hidden group`}>
+                  <div className="absolute inset-x-0 top-0 h-10 bg-gradient-to-b from-white/25 to-transparent pointer-events-none" />
+                  <selectedSubject.icon size={38} className="text-white relative z-10 drop-shadow-md" />
                 </div>
                 <div>
                   <h2 className="text-4xl md:text-5xl font-black text-[#1A1A1A] mb-2 tracking-tighter">{selectedSubject.title}</h2>
@@ -1869,68 +1856,54 @@ export default function Notes() {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: index * 0.04 }}
-              whileHover={{ y: -8 }}
+              whileHover={{ y: -10 }}
               onClick={() => setSelectedSubject(subject)}
-              className={`group relative rounded-[2.25rem] bg-gradient-to-br ${subject.gradient} border ${subject.border} p-8 flex flex-col justify-between overflow-hidden shadow-xl hover:shadow-[0_25px_50px_-12px_rgba(0,0,0,0.5)] transition-all duration-500 cursor-pointer text-left ring-1 ring-white/10 hover:ring-white/25 min-h-[310px]`}
+              className={`group relative rounded-[2.5rem] md:rounded-[3rem] bg-gradient-to-br ${subject.gradient} ${subject.shadow} p-8 md:p-12 text-white transition-all duration-500 flex flex-col items-center text-center cursor-pointer relative overflow-hidden border border-white/20 ring-1 ring-white/10`}
             >
-              {/* Top-Right Ambient Glow Orb */}
-              <div className={`absolute -top-12 -right-12 w-48 h-48 rounded-full ${subject.glowBg} opacity-20 blur-3xl group-hover:opacity-40 group-hover:scale-125 transition-all duration-700 pointer-events-none`} />
+              {/* Subtle Ambient Light Sheen */}
+              <div className="absolute inset-x-0 top-0 h-40 bg-gradient-to-b from-white/20 via-white/5 to-transparent pointer-events-none" />
 
-              {/* Bottom-Left Ambient Vignette Orb */}
-              <div className="absolute -bottom-16 -left-16 w-36 h-36 rounded-full bg-white/[0.03] blur-2xl group-hover:bg-white/[0.08] transition-all duration-700 pointer-events-none" />
-
-              {/* Watermark Background Subject Icon */}
-              <div className="absolute -right-6 -bottom-6 text-white opacity-[0.04] group-hover:opacity-[0.10] group-hover:scale-110 group-hover:-rotate-6 transition-all duration-700 pointer-events-none">
-                <subject.icon size={150} />
-              </div>
-
-              {/* Card Header: Glass Icon Container & Badge */}
-              <div className="flex items-center justify-between relative z-10 mb-6">
-                <div className="w-16 h-16 rounded-2xl bg-white/10 backdrop-blur-xl border border-white/20 flex items-center justify-center shadow-lg group-hover:scale-105 group-hover:rotate-3 transition-all duration-300">
-                  <subject.icon size={30} className={subject.accentIcon} />
-                </div>
-                {subject.badge ? (
-                  <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white/15 backdrop-blur-md rounded-full text-[10px] font-black tracking-widest uppercase border border-white/25 text-white shadow-sm">
-                    <Sparkles size={11} className="text-amber-300" />
+              {/* Special Badge for PYQ Papers */}
+              {subject.badge && (
+                <div className="absolute top-6 right-6 z-10">
+                  <span className="px-3.5 py-1.5 bg-white/20 backdrop-blur-md rounded-full text-[9px] font-black tracking-widest uppercase border border-white/30 text-white shadow-sm flex items-center gap-1.5">
+                    <Sparkles size={11} className="text-amber-200" />
                     {subject.badge}
                   </span>
-                ) : (
-                  <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-black/25 backdrop-blur-md rounded-full text-[10px] font-bold tracking-wider uppercase border border-white/10 text-white/70">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                    Active
-                  </span>
-                )}
-              </div>
-
-              {/* Card Body: Title & Rich Description */}
-              <div className="relative z-10 flex-1 flex flex-col justify-center">
-                <h3 className="text-2xl font-black text-white tracking-tight group-hover:translate-x-1 transition-transform duration-300">
-                  {subject.title}
-                </h3>
-                <p className="text-white/60 text-xs md:text-sm font-medium leading-relaxed line-clamp-2 mt-2 mb-6 group-hover:text-white/80 transition-colors">
-                  {subject.description}
-                </p>
-              </div>
-
-              {/* Card Footer: Live Counter & Action Button */}
-              <div className="flex items-center justify-between pt-4 border-t border-white/10 relative z-10">
-                <div className="flex items-center gap-2 text-white/75 text-xs font-semibold">
-                  <div className="w-7 h-7 rounded-lg bg-white/10 flex items-center justify-center border border-white/10">
-                    <FileText size={14} className={subject.accentIcon} />
-                  </div>
-                  <span>
-                    {subject.id === 'pyq-papers'
-                      ? subject.count
-                      : (() => {
-                          const c = allSubjectNotes.filter((n) => n.subjectId.toLowerCase() === subject.id.toLowerCase()).length;
-                          return c > 0 ? `${c} ${c === 1 ? 'PDF Note' : 'PDF Notes'}` : subject.count;
-                        })()}
-                  </span>
                 </div>
-                <div className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white/10 group-hover:bg-white text-white group-hover:text-black font-black text-[11px] tracking-wider uppercase border border-white/20 backdrop-blur-md transition-all duration-300 shadow-md">
-                  <span>Open</span>
+              )}
+
+              {/* Translucent Watermark Background Icon */}
+              <div className="absolute -right-6 -bottom-6 text-white opacity-[0.08] group-hover:opacity-[0.16] group-hover:scale-110 group-hover:-rotate-6 transition-all duration-500 pointer-events-none">
+                <subject.icon size={170} />
+              </div>
+
+              {/* Centered Frosted Glass Icon Container */}
+              <div className="w-20 h-20 bg-white/15 backdrop-blur-md rounded-3xl flex items-center justify-center mb-6 group-hover:scale-110 group-hover:rotate-6 border border-white/25 shadow-xl transition-all duration-300 relative z-10">
+                <subject.icon size={40} className="text-white drop-shadow-md" />
+              </div>
+
+              {/* Subject Title */}
+              <h3 className="text-3xl font-black mb-2 tracking-tight text-white relative z-10 drop-shadow-sm">
+                {subject.title}
+              </h3>
+
+              {/* PDF Count Subtitle */}
+              <p className="text-white/80 text-xs font-black mb-8 tracking-[0.25em] uppercase relative z-10">
+                {subject.id === 'pyq-papers'
+                  ? subject.count
+                  : (() => {
+                      const c = allSubjectNotes.filter((n) => n.subjectId.toLowerCase() === subject.id.toLowerCase()).length;
+                      return c > 0 ? `${c} ${c === 1 ? 'PDF Note' : 'PDF Notes'}` : subject.count;
+                    })()}
+              </p>
+
+              {/* Open Folder Action Button */}
+              <div className="mt-auto relative z-10">
+                <button className="px-8 py-3.5 bg-white/15 hover:bg-white text-white hover:text-[#1A1A1A] border border-white/30 backdrop-blur-md rounded-2xl text-[11px] font-black tracking-[0.2em] uppercase transition-all duration-300 shadow-md flex items-center gap-2.5 cursor-pointer group-hover:scale-105 group-hover:shadow-lg">
+                  <span>Open Folder</span>
                   <ArrowRight size={14} className="group-hover:translate-x-1 transition-transform duration-300" />
-                </div>
+                </button>
               </div>
             </motion.div>
           ))}
