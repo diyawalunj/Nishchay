@@ -710,33 +710,19 @@ export default function Notes() {
               </button>
             </div>
 
-            {/* Subject Note Title & Category Inputs */}
+            {/* Subject Note Title Input */}
             {uploadModal.mode === 'subject' && (
-              <div className="space-y-3 mb-6 p-4 rounded-2xl bg-gray-50 border border-gray-100">
-                <div>
-                  <label className="block text-xs font-black uppercase tracking-wider text-gray-600 mb-1.5">
-                    Note Title <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="e.g. Calculus Formulas, Grammar Shortcuts, Optics Summary..."
-                    value={noteTitle}
-                    onChange={(e) => setNoteTitle(e.target.value)}
-                    className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl text-xs font-bold text-gray-800 outline-none focus:border-[#1B4332] transition-all"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-black uppercase tracking-wider text-gray-600 mb-1.5">
-                    Topic / Chapter / Category (Optional)
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="e.g. Differentiation, Ancient History, Vocabulary..."
-                    value={noteCategory}
-                    onChange={(e) => setNoteCategory(e.target.value)}
-                    className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl text-xs font-bold text-gray-800 outline-none focus:border-[#1B4332] transition-all"
-                  />
-                </div>
+              <div className="mb-6 p-4 rounded-2xl bg-gray-50 border border-gray-100">
+                <label className="block text-xs font-black uppercase tracking-wider text-gray-600 mb-1.5">
+                  Note Title <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. Calculus Formulas, Grammar Shortcuts, Optics Summary..."
+                  value={noteTitle}
+                  onChange={(e) => setNoteTitle(e.target.value)}
+                  className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl text-xs font-bold text-gray-800 outline-none focus:border-[#1B4332] transition-all"
+                />
               </div>
             )}
 
