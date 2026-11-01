@@ -62,6 +62,18 @@ dotenv.config();
 const app = express();
 const PORT = 3000;
 
+// Trust Vercel / reverse-proxy headers for IP resolution and rate limiters
+app.set('trust proxy', 1);
+
+// Normalize Vercel Serverless Function rewritten paths
+app.use((req: Request, res: Response, next: NextFunction) => {
+  const realUrl = (req.headers['x-matched-path'] as string) || req.originalUrl || req.url;
+  if (realUrl && (req.url === '/api' || req.url === '/api/index' || req.url.startsWith('/api?'))) {
+    req.url = realUrl;
+  }
+  next();
+});
+
 // Security: Disable Express fingerprinting
 app.disable('x-powered-by');
 
@@ -167,6 +179,7 @@ const globalApiLimiter = rateLimit({
   max: 300, // 300 requests per 10 minutes per IP
   standardHeaders: true,
   legacyHeaders: false,
+  validate: false,
   message: { success: false, error: 'Too many requests from this network. Please slow down.' }
 });
 app.use('/api', globalApiLimiter);
@@ -176,22 +189,25 @@ const contactLimiter = rateLimit({
   max: 5, // 5 submissions per hour per IP
   standardHeaders: true,
   legacyHeaders: false,
+  validate: false,
   message: { success: false, error: 'Submission limit reached. Please wait before submitting another message.' }
 });
 
 const uploadLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 20, // 20 uploads per 15 min per IP
+  max: 30, // 30 uploads per 15 min per IP
   standardHeaders: true,
   legacyHeaders: false,
+  validate: false,
   message: { success: false, error: 'Upload limit exceeded. Please try again later.' }
 });
 
 const downloadLimiter = rateLimit({
   windowMs: 1 * 60 * 1000, // 1 minute
-  max: 30, // 30 increments per minute per IP
+  max: 50, // 50 increments per minute per IP
   standardHeaders: true,
   legacyHeaders: false,
+  validate: false,
   message: { success: false, error: 'Download limit exceeded.' }
 });
 
@@ -200,6 +216,7 @@ const publishLimiter = rateLimit({
   max: 30,
   standardHeaders: true,
   legacyHeaders: false,
+  validate: false,
   message: { success: false, error: 'Publishing rate limit exceeded.' }
 });
 
@@ -242,29 +259,31 @@ app.use(
 
 // Initialize Firebase Admin for token verification
 try {
-  const projectId = process.env.VITE_FIREBASE_PROJECT_ID || firebaseConfigJson.projectId || 'nishchay-defence';
-  const serviceEmail = process.env.FIREBASE_SERVICE_ACCOUNT_EMAIL;
-  const serviceKey = process.env.FIREBASE_PRIVATE_KEY
-    ? process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n').replace(/^"(.*)"$/, '$1').trim()
-    : undefined;
+  if (!admin.apps.length) {
+    const projectId = process.env.VITE_FIREBASE_PROJECT_ID || firebaseConfigJson.projectId || 'nishchay-defence';
+    const serviceEmail = process.env.FIREBASE_SERVICE_ACCOUNT_EMAIL;
+    const serviceKey = process.env.FIREBASE_PRIVATE_KEY
+      ? process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n').replace(/^"(.*)"$/, '$1').trim()
+      : undefined;
 
-  // If a dedicated Firebase Service Account for this project is provided, use it
-  if (serviceEmail && serviceKey && serviceKey.includes('BEGIN PRIVATE KEY')) {
-    admin.initializeApp({
-      credential: admin.credential.cert({
+    // If a dedicated Firebase Service Account for this project is provided, use it
+    if (serviceEmail && serviceKey && serviceKey.includes('BEGIN PRIVATE KEY')) {
+      admin.initializeApp({
+        credential: admin.credential.cert({
+          projectId,
+          clientEmail: serviceEmail,
+          privateKey: serviceKey
+        }),
+        projectId
+      });
+      console.log('✅ Firebase Admin initialized with dedicated Service Account for:', projectId);
+    } else {
+      // Standard initialization using Project ID (cryptographically verifies ID tokens via Google public x509 certs)
+      admin.initializeApp({
         projectId,
-        clientEmail: serviceEmail,
-        privateKey: serviceKey
-      }),
-      projectId
-    });
-    console.log('✅ Firebase Admin initialized with dedicated Service Account for:', projectId);
-  } else {
-    // Standard initialization using Project ID (cryptographically verifies ID tokens via Google public x509 certs)
-    admin.initializeApp({
-      projectId,
-    });
-    console.log('✅ Firebase Admin initialized with Project ID (public cert verification):', projectId);
+      });
+      console.log('✅ Firebase Admin initialized with Project ID (public cert verification):', projectId);
+    }
   }
 } catch (error: any) {
   console.error('❌ Firebase Admin initialization error:', error.message);
