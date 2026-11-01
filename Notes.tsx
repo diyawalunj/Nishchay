@@ -392,25 +392,24 @@ export default function Notes() {
     setUploadSuccess('');
   };
 
-  const TARGET_COMPRESS_SIZE_MB = 4;
-  const MAX_DIRECT_UPLOAD_MB = 35;
-  const MAX_DIRECT_UPLOAD_BYTES = MAX_DIRECT_UPLOAD_MB * 1024 * 1024;
+  const MAX_FILE_SIZE_MB = 4;
+  const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
 
-  // Handle file selection with 35MB ceiling and auto-compression alert for > 4MB
+  // Handle file selection with 4MB limit check and popup alert
   const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
 
-      // Check 35MB size ceiling
-      if (file.size > MAX_DIRECT_UPLOAD_BYTES) {
+      // Check 4MB size ceiling
+      if (file.size > MAX_FILE_SIZE_BYTES) {
         const actualMb = (file.size / (1024 * 1024)).toFixed(1);
         alert(
-          `⚠️ File Size Exceeds Maximum Limit (${actualMb} MB)\n\n` +
-          `The maximum allowed direct upload size is ${MAX_DIRECT_UPLOAD_MB} MB. For larger documents, please use the "Paste PDF / Drive Link" tab.`
+          `⚠️ File Size Limit Exceeded (${actualMb} MB)\n\n` +
+          `The maximum allowed file size for direct uploads is 4 MB. For larger files, please use the "Paste PDF / Drive Link" option.`
         );
         e.target.value = '';
         setSelectedFile(null);
-        setUploadError(`File too large (${actualMb} MB). Maximum allowed size is ${MAX_DIRECT_UPLOAD_MB} MB.`);
+        setUploadError(`File too large (${actualMb} MB). Maximum allowed size is 4 MB.`);
         return;
       }
 
@@ -492,10 +491,10 @@ export default function Notes() {
             throw new Error('Please select a PDF file to upload.');
           }
 
-          if (selectedFile.size > MAX_DIRECT_UPLOAD_BYTES) {
+          if (selectedFile.size > MAX_FILE_SIZE_BYTES) {
             const actualMb = (selectedFile.size / (1024 * 1024)).toFixed(1);
-            alert(`⚠️ File Size Limit Exceeded (${actualMb} MB)\n\nThe maximum allowed file size for direct uploads is ${MAX_DIRECT_UPLOAD_MB} MB. Please use "Paste PDF / Drive Link" for larger documents.`);
-            throw new Error(`File size (${actualMb} MB) exceeds ${MAX_DIRECT_UPLOAD_MB} MB limit.`);
+            alert(`⚠️ File Size Limit Exceeded (${actualMb} MB)\n\nThe maximum allowed file size for direct uploads is 4 MB. Please use "Paste PDF / Drive Link" for larger documents.`);
+            throw new Error(`File size (${actualMb} MB) exceeds 4 MB limit.`);
           }
 
           const base64Data = await fileToBase64(selectedFile);
@@ -560,10 +559,10 @@ export default function Notes() {
           throw new Error('Please select a PDF file to upload.');
         }
 
-        if (selectedFile.size > MAX_DIRECT_UPLOAD_BYTES) {
+        if (selectedFile.size > MAX_FILE_SIZE_BYTES) {
           const actualMb = (selectedFile.size / (1024 * 1024)).toFixed(1);
-          alert(`⚠️ File Size Limit Exceeded (${actualMb} MB)\n\nThe maximum allowed file size for direct uploads is ${MAX_DIRECT_UPLOAD_MB} MB. Please use "Paste PDF / Drive Link" for larger documents.`);
-          throw new Error(`File size (${actualMb} MB) exceeds ${MAX_DIRECT_UPLOAD_MB} MB limit.`);
+          alert(`⚠️ File Size Limit Exceeded (${actualMb} MB)\n\nThe maximum allowed file size for direct uploads is 4 MB. Please use "Paste PDF / Drive Link" for larger documents.`);
+          throw new Error(`File size (${actualMb} MB) exceeds 4 MB limit.`);
         }
 
         const base64Data = await fileToBase64(selectedFile);
@@ -822,17 +821,6 @@ export default function Notes() {
                       <p className="text-xs text-gray-500 mt-1 font-medium">
                         {(selectedFile.size / (1024 * 1024)).toFixed(2)} MB • Ready to upload
                       </p>
-                      {selectedFile.size > TARGET_COMPRESS_SIZE_MB * 1024 * 1024 ? (
-                        <div className="mt-2.5 inline-flex items-center gap-1.5 px-3 py-1 bg-amber-50 border border-amber-200/80 rounded-full text-[11px] font-bold text-amber-900 shadow-2xs">
-                          <Sparkles size={12} className="text-amber-600 shrink-0" />
-                          <span>Over 4 MB • Server will auto-compress to ≤ 4 MB</span>
-                        </div>
-                      ) : (
-                        <div className="mt-2.5 inline-flex items-center gap-1.5 px-3 py-1 bg-emerald-50 border border-emerald-200/80 rounded-full text-[11px] font-bold text-emerald-800 shadow-2xs">
-                          <Check size={12} className="text-emerald-600 stroke-[3] shrink-0" />
-                          <span>Within 4 MB direct limit</span>
-                        </div>
-                      )}
                     </div>
                   ) : (
                     <div>
@@ -845,7 +833,7 @@ export default function Notes() {
                           : `Select the downloaded ${uploadModal.subjectTitle} ${uploadModal.typeLabel}`}
                       </p>
                       <p className="text-[11px] font-semibold text-emerald-800/80 mt-2 bg-emerald-50 inline-block px-2.5 py-0.5 rounded-full border border-emerald-200/60">
-                        ⚡ Auto-compress: Files &gt; 4 MB (up to 35 MB) are automatically compressed on the server
+                        Max direct upload: 4 MB • For larger files use "Paste PDF / Drive Link"
                       </p>
                     </div>
                   )}
