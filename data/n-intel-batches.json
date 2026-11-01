@@ -1,0 +1,55 @@
+[
+  {
+    "id": "batch-20261030-479d892a",
+    "date": "2026-10-30",
+    "rawContentHash": "479d892ab39d7f860a6e641f4d66681eaead6b707f869a61d045957720cc592f",
+    "publishedAt": "2026-10-30T08:11:58.948Z",
+    "publishedBy": "diyawalunj@gmail.com",
+    "storyCount": 59,
+    "categories": [
+      "National Affairs",
+      "Important Appointments",
+      "Polity & Judiciary",
+      "Defence News",
+      "International Relations",
+      "World News",
+      "Sports",
+      "Economy & Banking"
+    ]
+  },
+  {
+    "id": "batch-20261029-12b10508",
+    "date": "2026-10-29",
+    "rawContentHash": "12b10508e294f2404ba3fc896fefd74b89ce9a73ee7b6401ae86ac9d2cbb38d0",
+    "publishedAt": "2026-10-29T17:21:14.362Z",
+    "publishedBy": "diyawalunj@gmail.com",
+    "storyCount": 54,
+    "categories": [
+      "National Affairs",
+      "Important Appointments",
+      "Polity & Judiciary",
+      "Defence News",
+      "International Relations",
+      "World News",
+      "Sports",
+      "Economy & Banking"
+    ]
+  },
+  {
+    "id": "batch-20261028-837fb992",
+    "date": "2026-10-28",
+    "rawContentHash": "837fb9922784040992098ee0d9207056ec5620dd2076afdedb370827516832a3",
+    "publishedAt": "2026-10-28T17:24:56.581Z",
+    "publishedBy": "system@nishchay.defence",
+    "storyCount": 55,
+    "categories": [
+      "National Affairs",
+      "Important Appointments",
+      "Polity & Judiciary",
+      "Defence News",
+      "International Relations",
+      "World News",
+      "Sports"
+    ]
+  }
+]

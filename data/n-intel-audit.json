@@ -1,0 +1,328 @@
+[
+  {
+    "id": "audit-1793347918963-7sl0",
+    "action": "PUBLISH",
+    "batchId": "batch-20261030-479d892a",
+    "adminEmail": "diyawalunj@gmail.com",
+    "timestamp": "2026-10-30T08:11:58.963Z",
+    "details": "Published 59 stories across 8 categories for 2026-10-30"
+  },
+  {
+    "id": "audit-1793303847123-dirz",
+    "action": "EDIT",
+    "storyId": "nintel-20261029-sports-52",
+    "adminEmail": "diyawalunj@gmail.com",
+    "timestamp": "2026-10-29T19:57:27.123Z",
+    "details": "Edited story [nintel-20261029-sports-52]: updated (headline, content, category, date, sourceName, sourceUrl, tags, isDefence)"
+  },
+  {
+    "id": "audit-1793303844019-9mb0",
+    "action": "EDIT",
+    "storyId": "nintel-20261029-sports-52",
+    "adminEmail": "diyawalunj@gmail.com",
+    "timestamp": "2026-10-29T19:57:24.019Z",
+    "details": "Edited story [nintel-20261029-sports-52]: updated (headline, content, category, date, sourceName, sourceUrl, tags, isDefence)"
+  },
+  {
+    "id": "audit-1793300714179-60b7",
+    "action": "DELETE",
+    "adminEmail": "diyawalunj@gmail.com",
+    "timestamp": "2026-10-29T19:05:14.179Z",
+    "details": "Emptied trash: permanently purged all 1 deleted stories."
+  },
+  {
+    "id": "audit-1793300708586-mwjt",
+    "action": "DELETE",
+    "storyId": "nintel-20261029-nation-02",
+    "adminEmail": "diyawalunj@gmail.com",
+    "timestamp": "2026-10-29T19:05:08.586Z",
+    "details": "Soft-deleted story [nintel-20261029-nation-02]: \"PM Shri Narendra Modi chaired the 54th PRAGATI meeting at Seva Teerth and reviewed Railway, PM Ekta Mall and Bulk Drug Park...\""
+  },
+  {
+    "id": "audit-1793295891376-wxp8",
+    "action": "DELETE",
+    "adminEmail": "diyawalunj@gmail.com",
+    "timestamp": "2026-10-29T17:44:51.376Z",
+    "details": "Emptied trash: permanently purged all 11 deleted stories."
+  },
+  {
+    "id": "audit-1793295436421-6il4",
+    "action": "DELETE",
+    "storyId": "nintel-20261029-nation-01",
+    "adminEmail": "diyawalunj@gmail.com",
+    "timestamp": "2026-10-29T17:37:16.421Z",
+    "details": "Permanently purged story [nintel-20261029-nation-01]: \"Union Home and Cooperation Minister Amit Shah called on President Droupadi Murmu at Rashtrapati Bhavan and is understood to...\""
+  },
+  {
+    "id": "audit-1793295345778-9bf7",
+    "action": "EDIT",
+    "storyId": "nintel-20261029-nation-01",
+    "adminEmail": "diyawalunj@gmail.com",
+    "timestamp": "2026-10-29T17:35:45.778Z",
+    "details": "Edited story [nintel-20261029-nation-01]: updated (headline, content, category, date, sourceName, sourceUrl, tags, isDefence)"
+  },
+  {
+    "id": "audit-1793294728879-vm5h",
+    "action": "RESTORE",
+    "storyId": "nintel-20261029-nation-01",
+    "adminEmail": "diyawalunj@gmail.com",
+    "timestamp": "2026-10-29T17:25:28.879Z",
+    "details": "Restored story [nintel-20261029-nation-01]: \"Union Home and Cooperation Minister Amit Shah called on President Droupadi Murmu at Rashtrapati Bhavan and is understood to...\""
+  },
+  {
+    "id": "audit-1793294678689-9lu3",
+    "action": "DELETE",
+    "storyId": "nintel-20261029-nation-01",
+    "adminEmail": "diyawalunj@gmail.com",
+    "timestamp": "2026-10-29T17:24:38.689Z",
+    "details": "Soft-deleted story [nintel-20261029-nation-01]: \"Union Home and Cooperation Minister Amit Shah called on President Droupadi Murmu at Rashtrapati Bhavan and is understood to...\""
+  },
+  {
+    "id": "audit-1793294474374-drtv",
+    "action": "PUBLISH",
+    "batchId": "batch-20261029-12b10508",
+    "adminEmail": "diyawalunj@gmail.com",
+    "timestamp": "2026-10-29T17:21:14.375Z",
+    "details": "Published 62 stories across 12 categories for 2026-10-29"
+  },
+  {
+    "id": "audit-1793294293166-3pj7",
+    "action": "RESTORE",
+    "storyId": "nintel-20261028-nation-02",
+    "adminEmail": "diyawalunj@gmail.com",
+    "timestamp": "2026-10-29T17:18:13.166Z",
+    "details": "Restored story [nintel-20261028-nation-02]: \"President Smt Droupadi Murmu has promulgated the Lakshadweep Tourism Trade (Registration, Safety and Facilitation)...\""
+  },
+  {
+    "id": "audit-1793294289227-vyqt",
+    "action": "DELETE",
+    "storyId": "nintel-20261028-nation-12",
+    "adminEmail": "diyawalunj@gmail.com",
+    "timestamp": "2026-10-29T17:18:09.227Z",
+    "details": "Soft-deleted story [nintel-20261028-nation-12]: \"The NHRC issued an advisory on ‘Women’s Safety at Work and Public Spaces’ to ten Union Ministries, the Railway Board...\""
+  },
+  {
+    "id": "audit-1793294287568-mgch",
+    "action": "DELETE",
+    "storyId": "nintel-20261028-nation-11",
+    "adminEmail": "diyawalunj@gmail.com",
+    "timestamp": "2026-10-29T17:18:07.569Z",
+    "details": "Soft-deleted story [nintel-20261028-nation-11]: \"The Civil Aviation Ministry held its first fog preparedness meeting for the coming winter, chaired by Secretary Samir Kumar Sinha.\""
+  },
+  {
+    "id": "audit-1793294287068-kgxg",
+    "action": "DELETE",
+    "storyId": "nintel-20261028-nation-10",
+    "adminEmail": "diyawalunj@gmail.com",
+    "timestamp": "2026-10-29T17:18:07.068Z",
+    "details": "Soft-deleted story [nintel-20261028-nation-10]: \"Agriculture and Farmers Welfare Minister Shivraj Singh Chouhan said that Sardar Vallabhbhai Patel’s vision, determination...\""
+  },
+  {
+    "id": "audit-1793294286668-n091",
+    "action": "DELETE",
+    "storyId": "nintel-20261028-nation-09",
+    "adminEmail": "diyawalunj@gmail.com",
+    "timestamp": "2026-10-29T17:18:06.668Z",
+    "details": "Soft-deleted story [nintel-20261028-nation-09]: \"Very severe cyclonic storm ‘Arnab’ began crossing the Andhra Pradesh–Yanam coast in the early hours with winds of 125–135...\""
+  },
+  {
+    "id": "audit-1793294286078-7qix",
+    "action": "DELETE",
+    "storyId": "nintel-20261028-nation-08",
+    "adminEmail": "diyawalunj@gmail.com",
+    "timestamp": "2026-10-29T17:18:06.078Z",
+    "details": "Soft-deleted story [nintel-20261028-nation-08]: \"Indian Railways has opened online applications for 1,265 Station Master posts under CEN No. 08/2026; any graduate can apply...\""
+  },
+  {
+    "id": "audit-1793294281086-arle",
+    "action": "DELETE",
+    "storyId": "nintel-20261028-nation-06",
+    "adminEmail": "diyawalunj@gmail.com",
+    "timestamp": "2026-10-29T17:18:01.086Z",
+    "details": "Soft-deleted story [nintel-20261028-nation-06]: \"The Rural Development Ministry is holding a two-day regional workshop under the Pradhan Mantri Awaas Yojana–Gramin (PMAY-G)...\""
+  },
+  {
+    "id": "audit-1793294281069-5m9a",
+    "action": "DELETE",
+    "storyId": "nintel-20261028-nation-07",
+    "adminEmail": "diyawalunj@gmail.com",
+    "timestamp": "2026-10-29T17:18:01.069Z",
+    "details": "Soft-deleted story [nintel-20261028-nation-07]: \"The Viksit Bharat Buildathon 2025 has entered the Guinness World Records as the “Largest Innovation Solution Competition”,...\""
+  },
+  {
+    "id": "audit-1793294281062-p1tl",
+    "action": "DELETE",
+    "storyId": "nintel-20261028-nation-06",
+    "adminEmail": "diyawalunj@gmail.com",
+    "timestamp": "2026-10-29T17:18:01.062Z",
+    "details": "Soft-deleted story [nintel-20261028-nation-06]: \"The Rural Development Ministry is holding a two-day regional workshop under the Pradhan Mantri Awaas Yojana–Gramin (PMAY-G)...\""
+  },
+  {
+    "id": "audit-1793294044123-d3vn",
+    "action": "EDIT",
+    "storyId": "nintel-20261028-nation-01",
+    "adminEmail": "diyawalunj@gmail.com",
+    "timestamp": "2026-10-29T17:14:04.123Z",
+    "details": "Edited story [nintel-20261028-nation-01]: updated (headline, content, category, date, sourceName, sourceUrl, tags, isDefence)"
+  },
+  {
+    "id": "audit-1793294044110-fpkz",
+    "action": "EDIT",
+    "storyId": "nintel-20261028-nation-01",
+    "adminEmail": "diyawalunj@gmail.com",
+    "timestamp": "2026-10-29T17:14:04.110Z",
+    "details": "Edited story [nintel-20261028-nation-01]: updated (headline, content, category, date, sourceName, sourceUrl, tags, isDefence)"
+  },
+  {
+    "id": "audit-1793281311179-ehz5",
+    "action": "DELETE",
+    "storyId": "nintel-20261028-nation-05",
+    "adminEmail": "diyawalunj@gmail.com",
+    "timestamp": "2026-10-29T13:41:51.179Z",
+    "details": "Soft-deleted story [nintel-20261028-nation-05]: \"DPIIT has launched the 6th edition of the National Startup Awards (NSA 6.\""
+  },
+  {
+    "id": "audit-1793281310152-ruou",
+    "action": "DELETE",
+    "storyId": "nintel-20261028-nation-04",
+    "adminEmail": "diyawalunj@gmail.com",
+    "timestamp": "2026-10-29T13:41:50.152Z",
+    "details": "Soft-deleted story [nintel-20261028-nation-04]: \"The Centre has introduced a ‘Concessional Local Pass’ on national highways from 1 November for non-commercial vehicle owners...\""
+  },
+  {
+    "id": "audit-1793281307164-wg8d",
+    "action": "DELETE",
+    "storyId": "nintel-20261028-nation-03",
+    "adminEmail": "diyawalunj@gmail.com",
+    "timestamp": "2026-10-29T13:41:47.164Z",
+    "details": "Soft-deleted story [nintel-20261028-nation-03]: \"PM Shri Narendra Modi inaugurated the Emerging Science, Technology and Innovation Conclave (ESTIC) 2026 at Bharat Mandapam, New Delhi.\""
+  },
+  {
+    "id": "audit-1793281258064-2wrt",
+    "action": "DELETE",
+    "storyId": "nintel-20261028-nation-02",
+    "adminEmail": "diyawalunj@gmail.com",
+    "timestamp": "2026-10-29T13:40:58.064Z",
+    "details": "Soft-deleted story [nintel-20261028-nation-02]: \"President Smt Droupadi Murmu has promulgated the Lakshadweep Tourism Trade (Registration, Safety and Facilitation)...\""
+  },
+  {
+    "id": "audit-1793281248961-zpd5",
+    "action": "DELETE",
+    "storyId": "nintel-20261028-nation-01",
+    "adminEmail": "diyawalunj@gmail.com",
+    "timestamp": "2026-10-29T13:40:48.961Z",
+    "details": "Soft-deleted story [nintel-20261028-nation-01]: \"President Smt Droupadi Murmu paid floral tributes to former President Shri K.R. Narayanan on his birth anniversary at...\""
+  },
+  {
+    "id": "audit-1793281248954-tfgx",
+    "action": "DELETE",
+    "storyId": "nintel-20261028-nation-01",
+    "adminEmail": "diyawalunj@gmail.com",
+    "timestamp": "2026-10-29T13:40:48.954Z",
+    "details": "Soft-deleted story [nintel-20261028-nation-01]: \"President Smt Droupadi Murmu paid floral tributes to former President Shri K.R. Narayanan on his birth anniversary at...\""
+  },
+  {
+    "id": "audit-1793281248947-qdp5",
+    "action": "DELETE",
+    "storyId": "nintel-20261028-nation-01",
+    "adminEmail": "diyawalunj@gmail.com",
+    "timestamp": "2026-10-29T13:40:48.947Z",
+    "details": "Soft-deleted story [nintel-20261028-nation-01]: \"President Smt Droupadi Murmu paid floral tributes to former President Shri K.R. Narayanan on his birth anniversary at...\""
+  },
+  {
+    "id": "audit-1793281248938-e2at",
+    "action": "DELETE",
+    "storyId": "nintel-20261028-nation-01",
+    "adminEmail": "diyawalunj@gmail.com",
+    "timestamp": "2026-10-29T13:40:48.938Z",
+    "details": "Soft-deleted story [nintel-20261028-nation-01]: \"President Smt Droupadi Murmu paid floral tributes to former President Shri K.R. Narayanan on his birth anniversary at...\""
+  },
+  {
+    "id": "audit-1793281248931-n315",
+    "action": "DELETE",
+    "storyId": "nintel-20261028-nation-01",
+    "adminEmail": "diyawalunj@gmail.com",
+    "timestamp": "2026-10-29T13:40:48.931Z",
+    "details": "Soft-deleted story [nintel-20261028-nation-01]: \"President Smt Droupadi Murmu paid floral tributes to former President Shri K.R. Narayanan on his birth anniversary at...\""
+  },
+  {
+    "id": "audit-1793281052551-s6lh",
+    "action": "RESTORE",
+    "storyId": "nintel-20261028-nation-01",
+    "adminEmail": "diyawalunj@gmail.com",
+    "timestamp": "2026-10-29T13:37:32.551Z",
+    "details": "Restored story [nintel-20261028-nation-01]: \"President Smt Droupadi Murmu paid floral tributes to former President Shri K.R. Narayanan on his birth anniversary at...\""
+  },
+  {
+    "id": "audit-1793281052534-zt5r",
+    "action": "DELETE",
+    "storyId": "nintel-20261028-nation-01",
+    "adminEmail": "diyawalunj@gmail.com",
+    "timestamp": "2026-10-29T13:37:32.534Z",
+    "details": "Soft-deleted story [nintel-20261028-nation-01]: \"President Smt Droupadi Murmu paid floral tributes to former President Shri K.R. Narayanan on his birth anniversary at...\""
+  },
+  {
+    "id": "audit-1793281052512-9y03",
+    "action": "EDIT",
+    "storyId": "nintel-20261028-nation-01",
+    "adminEmail": "diyawalunj@gmail.com",
+    "timestamp": "2026-10-29T13:37:32.512Z",
+    "details": "Edited story [nintel-20261028-nation-01]: updated (headline)"
+  },
+  {
+    "id": "audit-1793279946175-okfh",
+    "action": "RESTORE",
+    "storyId": "nintel-20261028-nation-01",
+    "adminEmail": "diyawalunj@gmail.com",
+    "timestamp": "2026-10-29T13:19:06.175Z",
+    "details": "Restored story [nintel-20261028-nation-01]: \"President Smt Droupadi Murmu paid floral tributes to former President Shri K.R. Narayanan on his birth anniversary at...\""
+  },
+  {
+    "id": "audit-1793279946164-nq31",
+    "action": "DELETE",
+    "storyId": "nintel-20261028-nation-01",
+    "adminEmail": "diyawalunj@gmail.com",
+    "timestamp": "2026-10-29T13:19:06.164Z",
+    "details": "Soft-deleted story [nintel-20261028-nation-01]: \"President Smt Droupadi Murmu paid floral tributes to former President Shri K.R. Narayanan on his birth anniversary at...\""
+  },
+  {
+    "id": "audit-1793279946150-9z9b",
+    "action": "EDIT",
+    "storyId": "nintel-20261028-nation-01",
+    "adminEmail": "diyawalunj@gmail.com",
+    "timestamp": "2026-10-29T13:19:06.150Z",
+    "details": "Edited story [nintel-20261028-nation-01]: updated (headline)"
+  },
+  {
+    "id": "audit-1793221103500-u1ej",
+    "action": "RESTORE",
+    "storyId": "nintel-20261028-nation-01",
+    "adminEmail": "diyawalunj@gmail.com",
+    "timestamp": "2026-10-28T20:58:23.500Z",
+    "details": "Restored story [nintel-20261028-nation-01]: \"President Smt Droupadi Murmu paid floral tributes to former President Shri K.R. Narayanan on his birth anniversary at...\""
+  },
+  {
+    "id": "audit-1793221103488-gwkr",
+    "action": "DELETE",
+    "storyId": "nintel-20261028-nation-01",
+    "adminEmail": "diyawalunj@gmail.com",
+    "timestamp": "2026-10-28T20:58:23.488Z",
+    "details": "Soft-deleted story [nintel-20261028-nation-01]: \"President Smt Droupadi Murmu paid floral tributes to former President Shri K.R. Narayanan on his birth anniversary at...\""
+  },
+  {
+    "id": "audit-1793205596532-nj3p",
+    "action": "PUBLISH",
+    "batchId": "batch-20261028-9807a97e",
+    "adminEmail": "diyawalunj@gmail.com",
+    "timestamp": "2026-10-28T16:39:56.532Z",
+    "details": "Published 57 stories across 8 categories for 2026-10-28"
+  },
+  {
+    "id": "audit-1793205088476-48qg",
+    "action": "PUBLISH",
+    "batchId": "batch-20261028-seed",
+    "adminEmail": "system@nishchay.defence",
+    "timestamp": "2026-10-28T16:31:28.476Z",
+    "details": "Published 57 stories across 8 categories for 2026-10-28"
+  }
+]

@@ -41,6 +41,9 @@ function ensureDataDir() {
     if (!fs.existsSync(DATA_DIR)) {
       fs.mkdirSync(DATA_DIR, { recursive: true });
     }
+    if (IS_VERCEL && !fs.existsSync(PYQ_FILE) && fs.existsSync(SEED_PYQ_FILE)) {
+      fs.copyFileSync(SEED_PYQ_FILE, PYQ_FILE);
+    }
   } catch (err) {
     console.warn('Could not ensure data directory:', err);
   }
@@ -162,4 +165,41 @@ export function deletePyqFileRecord(params: {
   sessionRecord.updatedAt = new Date().toISOString();
   persistPyqData(all);
   return sessionRecord;
+}
+
+export function syncPyqSessions(incomingSessions: Record<string, PyqSessionData>): Record<string, PyqSessionData> {
+  if (!incomingSessions || typeof incomingSessions !== 'object') {
+    return getAllPyqSessions();
+  }
+  const all = getAllPyqSessions();
+  let changed = false;
+
+  for (const [sessionId, session] of Object.entries(incomingSessions)) {
+    if (!session || !session.subjects) continue;
+    if (!all[sessionId]) {
+      all[sessionId] = session;
+      changed = true;
+    } else {
+      for (const key of ['maths', 'gat', 'english', 'gs'] as const) {
+        const incSlot = session.subjects[key];
+        if (!incSlot) continue;
+        if (!all[sessionId].subjects[key]) {
+          all[sessionId].subjects[key] = {};
+        }
+        if (incSlot.paper && !all[sessionId].subjects[key]!.paper) {
+          all[sessionId].subjects[key]!.paper = incSlot.paper;
+          changed = true;
+        }
+        if (incSlot.key && !all[sessionId].subjects[key]!.key) {
+          all[sessionId].subjects[key]!.key = incSlot.key;
+          changed = true;
+        }
+      }
+    }
+  }
+
+  if (changed) {
+    persistPyqData(all);
+  }
+  return all;
 }

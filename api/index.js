@@ -933,6 +933,9 @@ function ensureDataDir3() {
     if (!fs3.existsSync(DATA_DIR3)) {
       fs3.mkdirSync(DATA_DIR3, { recursive: true });
     }
+    if (IS_VERCEL3 && !fs3.existsSync(PYQ_FILE) && fs3.existsSync(SEED_PYQ_FILE)) {
+      fs3.copyFileSync(SEED_PYQ_FILE, PYQ_FILE);
+    }
   } catch (err) {
     console.warn("Could not ensure data directory:", err);
   }
@@ -1022,6 +1025,40 @@ function deletePyqFileRecord(params) {
   persistPyqData(all);
   return sessionRecord;
 }
+function syncPyqSessions(incomingSessions) {
+  if (!incomingSessions || typeof incomingSessions !== "object") {
+    return getAllPyqSessions();
+  }
+  const all = getAllPyqSessions();
+  let changed = false;
+  for (const [sessionId, session] of Object.entries(incomingSessions)) {
+    if (!session || !session.subjects) continue;
+    if (!all[sessionId]) {
+      all[sessionId] = session;
+      changed = true;
+    } else {
+      for (const key of ["maths", "gat", "english", "gs"]) {
+        const incSlot = session.subjects[key];
+        if (!incSlot) continue;
+        if (!all[sessionId].subjects[key]) {
+          all[sessionId].subjects[key] = {};
+        }
+        if (incSlot.paper && !all[sessionId].subjects[key].paper) {
+          all[sessionId].subjects[key].paper = incSlot.paper;
+          changed = true;
+        }
+        if (incSlot.key && !all[sessionId].subjects[key].key) {
+          all[sessionId].subjects[key].key = incSlot.key;
+          changed = true;
+        }
+      }
+    }
+  }
+  if (changed) {
+    persistPyqData(all);
+  }
+  return all;
+}
 
 // notes-db.ts
 import fs4 from "fs";
@@ -1036,6 +1073,9 @@ function ensureDataDir4() {
   try {
     if (!fs4.existsSync(DATA_DIR4)) {
       fs4.mkdirSync(DATA_DIR4, { recursive: true });
+    }
+    if (IS_VERCEL4 && !fs4.existsSync(NOTES_FILE) && fs4.existsSync(SEED_NOTES_FILE)) {
+      fs4.copyFileSync(SEED_NOTES_FILE, NOTES_FILE);
     }
   } catch (err) {
     console.warn("Could not ensure data directory:", err);
@@ -1106,6 +1146,31 @@ function deleteNote(id) {
   all.splice(index, 1);
   persistNotes(all);
   return true;
+}
+function syncNotes(incomingNotes) {
+  if (!Array.isArray(incomingNotes) || incomingNotes.length === 0) {
+    return getAllNotes();
+  }
+  const all = getAllNotes();
+  const map = /* @__PURE__ */ new Map();
+  for (const n of all) {
+    if (n && n.id) map.set(n.id, n);
+  }
+  let added = false;
+  for (const n of incomingNotes) {
+    if (n && n.id && !map.has(n.id)) {
+      map.set(n.id, n);
+      added = true;
+    }
+  }
+  if (added) {
+    const merged = Array.from(map.values()).sort(
+      (a, b) => new Date(b.uploadedAt || 0).getTime() - new Date(a.uploadedAt || 0).getTime()
+    );
+    persistNotes(merged);
+    return merged;
+  }
+  return all;
 }
 
 // n-intel-sample-data.ts
@@ -2075,6 +2140,22 @@ app.post("/api/pyq/delete", authenticate, (req, res) => {
     res.status(500).json({ success: false, error: "Failed to delete file." });
   }
 });
+app.post("/api/pyq/sync", authenticate, (req, res) => {
+  if (!req.user?.isAdmin) {
+    return res.status(403).json({ success: false, error: "Access denied: Administrator privileges required." });
+  }
+  try {
+    const { sessions } = req.body;
+    if (!sessions || typeof sessions !== "object") {
+      return res.status(400).json({ success: false, error: "Invalid sessions payload." });
+    }
+    const updated = syncPyqSessions(sessions);
+    res.json({ success: true, sessions: updated });
+  } catch (err) {
+    console.error("Error syncing PYQ sessions:", err);
+    res.status(500).json({ success: false, error: "Failed to sync PYQ sessions." });
+  }
+});
 app.get("/api/notes", (req, res) => {
   try {
     const { subject } = req.query;
@@ -2127,6 +2208,22 @@ app.post("/api/notes/delete", authenticate, (req, res) => {
   } catch (err) {
     console.error("Error deleting subject note:", err);
     res.status(500).json({ success: false, error: "Failed to delete note." });
+  }
+});
+app.post("/api/notes/sync", authenticate, (req, res) => {
+  if (!req.user?.isAdmin) {
+    return res.status(403).json({ success: false, error: "Access denied: Administrator privileges required." });
+  }
+  try {
+    const { notes } = req.body;
+    if (!Array.isArray(notes)) {
+      return res.status(400).json({ success: false, error: "Invalid notes array." });
+    }
+    const updated = syncNotes(notes);
+    res.json({ success: true, notes: updated });
+  } catch (err) {
+    console.error("Error syncing notes:", err);
+    res.status(500).json({ success: false, error: "Failed to sync notes." });
   }
 });
 app.use((err, req, res, next) => {

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { auth, onAuthStateChanged, checkIfAdmin } from './firebase';
+import { auth, onAuthStateChanged, checkIfAdmin, db, doc, setDoc, deleteDoc, getDocs, collection } from './firebase';
 import type { SubjectNote } from './notes-db';
 import { motion, AnimatePresence } from 'motion/react';
 import {
@@ -231,6 +231,144 @@ const CDS_PAPERS: ExamPaper[] = YEARS.flatMap((year) => [
   },
 ]);
 
+// LocalStorage Keys & Deleted Items Blacklist (prevents resurrection of explicitly deleted items)
+const LOCAL_STORAGE_NOTES_KEY = 'nishchay_subject_notes';
+const LOCAL_STORAGE_PYQ_KEY = 'nishchay_pyq_papers';
+const DELETED_NOTES_KEY = 'nishchay_deleted_notes';
+const DELETED_PYQ_SLOTS_KEY = 'nishchay_deleted_pyq_slots';
+
+const getDeletedNoteIds = (): Set<string> => {
+  try {
+    const raw = localStorage.getItem(DELETED_NOTES_KEY);
+    return new Set(raw ? JSON.parse(raw) : []);
+  } catch {
+    return new Set();
+  }
+};
+
+const markNoteDeleted = (id: string) => {
+  try {
+    const set = getDeletedNoteIds();
+    set.add(id);
+    localStorage.setItem(DELETED_NOTES_KEY, JSON.stringify(Array.from(set)));
+  } catch (e) {
+    console.warn('Could not mark note deleted:', e);
+  }
+};
+
+const unmarkNoteDeleted = (id: string) => {
+  try {
+    const set = getDeletedNoteIds();
+    set.delete(id);
+    localStorage.setItem(DELETED_NOTES_KEY, JSON.stringify(Array.from(set)));
+  } catch (e) {
+    console.warn('Could not unmark note deleted:', e);
+  }
+};
+
+const getDeletedPyqSlots = (): Set<string> => {
+  try {
+    const raw = localStorage.getItem(DELETED_PYQ_SLOTS_KEY);
+    return new Set(raw ? JSON.parse(raw) : []);
+  } catch {
+    return new Set();
+  }
+};
+
+const markPyqSlotDeleted = (sessionId: string, subjectKey: string, fileType: string) => {
+  try {
+    const key = `${sessionId}::${subjectKey}::${fileType}`;
+    const set = getDeletedPyqSlots();
+    set.add(key);
+    localStorage.setItem(DELETED_PYQ_SLOTS_KEY, JSON.stringify(Array.from(set)));
+  } catch (e) {
+    console.warn('Could not mark PYQ slot deleted:', e);
+  }
+};
+
+const unmarkPyqSlotDeleted = (sessionId: string, subjectKey: string, fileType: string) => {
+  try {
+    const key = `${sessionId}::${subjectKey}::${fileType}`;
+    const set = getDeletedPyqSlots();
+    set.delete(key);
+    localStorage.setItem(DELETED_PYQ_SLOTS_KEY, JSON.stringify(Array.from(set)));
+  } catch (e) {
+    console.warn('Could not unmark PYQ slot deleted:', e);
+  }
+};
+
+const mergeNotesSafely = (current: SubjectNote[], incoming: SubjectNote[]): SubjectNote[] => {
+  const deleted = getDeletedNoteIds();
+  const map = new Map<string, SubjectNote>();
+
+  for (const n of incoming || []) {
+    if (n && n.id && !deleted.has(n.id)) {
+      map.set(n.id, n);
+    }
+  }
+
+  for (const n of current || []) {
+    if (n && n.id && !deleted.has(n.id) && !map.has(n.id)) {
+      map.set(n.id, n);
+    }
+  }
+
+  const result: SubjectNote[] = [];
+  map.forEach((value) => result.push(value));
+  return result.sort(
+    (a, b) => new Date(b.uploadedAt || 0).getTime() - new Date(a.uploadedAt || 0).getTime()
+  );
+};
+
+const mergePyqSessionsSafely = (
+  current: Record<string, PyqSessionData>,
+  incoming: Record<string, PyqSessionData>
+): Record<string, PyqSessionData> => {
+  const deletedSlots = getDeletedPyqSlots();
+  const merged: Record<string, PyqSessionData> = {};
+
+  const allSessionIds = Array.from(new Set([...Object.keys(current || {}), ...Object.keys(incoming || {})]));
+
+  for (const sessionId of allSessionIds) {
+    const curSession = current?.[sessionId];
+    const incSession = incoming?.[sessionId];
+    const base = incSession || curSession;
+    if (!base) continue;
+
+    const sessionObj: PyqSessionData = {
+      ...base,
+      subjects: {},
+    };
+
+    const subjectKeys: ('maths' | 'gat' | 'english' | 'gs')[] = ['maths', 'gat', 'english', 'gs'];
+
+    for (const subKey of subjectKeys) {
+      const curSlot = curSession?.subjects?.[subKey];
+      const incSlot = incSession?.subjects?.[subKey];
+
+      const slot: { paper?: PyqFileItem; key?: PyqFileItem } = {};
+
+      const paperSlotKey = `${sessionId}::${subKey}::paper`;
+      if (!deletedSlots.has(paperSlotKey)) {
+        slot.paper = incSlot?.paper || curSlot?.paper;
+      }
+
+      const keySlotKey = `${sessionId}::${subKey}::key`;
+      if (!deletedSlots.has(keySlotKey)) {
+        slot.key = incSlot?.key || curSlot?.key;
+      }
+
+      if (slot.paper || slot.key) {
+        sessionObj.subjects[subKey] = slot;
+      }
+    }
+
+    merged[sessionId] = sessionObj;
+  }
+
+  return merged;
+};
+
 export default function Notes() {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedSubject, setSelectedSubject] = useState<Subject | null>(null);
@@ -240,11 +378,12 @@ export default function Notes() {
   const [selectedYearFilter, setSelectedYearFilter] = useState<number | 'All'>('All');
   const [isAdmin, setIsAdmin] = useState(false);
 
-  // Stored PYQ Data (Synced with Server API + LocalStorage)
+  // Stored PYQ Data (Synced with Server API + LocalStorage + Firestore)
   const [pyqSessions, setPyqSessions] = useState<Record<string, PyqSessionData>>(() => {
     try {
-      const saved = localStorage.getItem('nishchay_pyq_papers');
-      return saved ? JSON.parse(saved) : {};
+      const saved = localStorage.getItem(LOCAL_STORAGE_PYQ_KEY);
+      const parsed = saved ? JSON.parse(saved) : {};
+      return mergePyqSessionsSafely({}, parsed);
     } catch {
       return {};
     }
@@ -253,8 +392,9 @@ export default function Notes() {
   // Subject Notes State
   const [allSubjectNotes, setAllSubjectNotes] = useState<SubjectNote[]>(() => {
     try {
-      const saved = localStorage.getItem('nishchay_subject_notes');
-      return saved ? JSON.parse(saved) : [];
+      const saved = localStorage.getItem(LOCAL_STORAGE_NOTES_KEY);
+      const parsed = saved ? JSON.parse(saved) : [];
+      return mergeNotesSafely([], parsed);
     } catch {
       return [];
     }
@@ -276,18 +416,21 @@ export default function Notes() {
     return () => unsubscribe();
   }, []);
 
-  // Fetch latest uploaded papers from server
+  // Fetch latest uploaded papers from server and merge safely (NEVER wipe local papers)
   useEffect(() => {
     fetch('/api/pyq')
       .then((res) => res.json())
       .then((data) => {
         if (data.success && data.sessions) {
-          setPyqSessions(data.sessions);
-          try {
-            localStorage.setItem('nishchay_pyq_papers', JSON.stringify(data.sessions));
-          } catch (e) {
-            console.warn('LocalStorage save failed:', e);
-          }
+          setPyqSessions((prev) => {
+            const merged = mergePyqSessionsSafely(prev, data.sessions);
+            try {
+              localStorage.setItem(LOCAL_STORAGE_PYQ_KEY, JSON.stringify(merged));
+            } catch (e) {
+              console.warn('LocalStorage save failed:', e);
+            }
+            return merged;
+          });
         }
       })
       .catch((err) => {
@@ -295,24 +438,95 @@ export default function Notes() {
       });
   }, []);
 
-  // Fetch latest uploaded subject notes from server
+  // Fetch latest uploaded subject notes from server and merge safely (NEVER wipe local notes)
   useEffect(() => {
     fetch('/api/notes')
       .then((res) => res.json())
       .then((data) => {
-        if (data.success && data.notes) {
-          setAllSubjectNotes(data.notes);
-          try {
-            localStorage.setItem('nishchay_subject_notes', JSON.stringify(data.notes));
-          } catch (e) {
-            console.warn('LocalStorage save failed for notes:', e);
-          }
+        if (data.success && Array.isArray(data.notes)) {
+          setAllSubjectNotes((prev) => {
+            const merged = mergeNotesSafely(prev, data.notes);
+            try {
+              localStorage.setItem(LOCAL_STORAGE_NOTES_KEY, JSON.stringify(merged));
+            } catch (e) {
+              console.warn('LocalStorage save failed for notes:', e);
+            }
+            return merged;
+          });
         }
       })
       .catch((err) => {
         console.warn('Could not reach /api/notes, using local cache:', err);
       });
   }, []);
+
+  // Firestore cross-device persistence loader (optional cloud fallback)
+  useEffect(() => {
+    getDocs(collection(db, 'subject_notes'))
+      .then((snapshot) => {
+        if (!snapshot.empty) {
+          const cloudNotes = snapshot.docs.map((d) => d.data() as SubjectNote);
+          setAllSubjectNotes((prev) => {
+            const merged = mergeNotesSafely(prev, cloudNotes);
+            try {
+              localStorage.setItem(LOCAL_STORAGE_NOTES_KEY, JSON.stringify(merged));
+            } catch {}
+            return merged;
+          });
+        }
+      })
+      .catch(() => {});
+
+    getDocs(collection(db, 'pyq_sessions'))
+      .then((snapshot) => {
+        if (!snapshot.empty) {
+          const cloudSessions: Record<string, PyqSessionData> = {};
+          snapshot.docs.forEach((d) => {
+            const s = d.data() as PyqSessionData;
+            if (s && s.sessionId) {
+              cloudSessions[s.sessionId] = s;
+            }
+          });
+          setPyqSessions((prev) => {
+            const merged = mergePyqSessionsSafely(prev, cloudSessions);
+            try {
+              localStorage.setItem(LOCAL_STORAGE_PYQ_KEY, JSON.stringify(merged));
+            } catch {}
+            return merged;
+          });
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  // Background server hydration: when admin is logged in, sync local items to serverless instance
+  useEffect(() => {
+    if (!isAdmin) return;
+
+    const hydrateServerInstance = async () => {
+      try {
+        const headers = await getAuthHeaders();
+        if (allSubjectNotes.length > 0) {
+          fetch('/api/notes/sync', {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({ notes: allSubjectNotes }),
+          }).catch(() => {});
+        }
+        if (Object.keys(pyqSessions).length > 0) {
+          fetch('/api/pyq/sync', {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({ sessions: pyqSessions }),
+          }).catch(() => {});
+        }
+      } catch (e) {
+        // Silent background sync
+      }
+    };
+
+    hydrateServerInstance();
+  }, [isAdmin]);
 
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -449,9 +663,15 @@ export default function Notes() {
 
         const data = await parseApiResponse(res, 'Failed to save note link');
 
+        unmarkNoteDeleted(data.note.id);
         const updatedNotes = [data.note, ...allSubjectNotes.filter((n) => n.id !== data.note.id)];
         setAllSubjectNotes(updatedNotes);
-        localStorage.setItem('nishchay_subject_notes', JSON.stringify(updatedNotes));
+        localStorage.setItem(LOCAL_STORAGE_NOTES_KEY, JSON.stringify(updatedNotes));
+
+        // Firestore cloud sync (best effort)
+        try {
+          setDoc(doc(db, 'subject_notes', data.note.id), data.note).catch(() => {});
+        } catch {}
 
         setUploadSuccess(`"${noteTitle}" link saved successfully!`);
         setTimeout(() => closeUploadModal(), 1200);
@@ -484,12 +704,18 @@ export default function Notes() {
 
       const data = await parseApiResponse(res, 'Failed to save PYQ link');
 
+      unmarkPyqSlotDeleted(uploadModal.paper.id, uploadModal.subjectKey, uploadModal.fileType);
       const updatedSessions = {
         ...pyqSessions,
         [uploadModal.paper.id]: data.session,
       };
       setPyqSessions(updatedSessions);
-      localStorage.setItem('nishchay_pyq_papers', JSON.stringify(updatedSessions));
+      localStorage.setItem(LOCAL_STORAGE_PYQ_KEY, JSON.stringify(updatedSessions));
+
+      // Firestore cloud sync (best effort)
+      try {
+        setDoc(doc(db, 'pyq_sessions', uploadModal.paper.id), data.session).catch(() => {});
+      } catch {}
 
       setUploadSuccess(`${uploadModal.typeLabel} link saved successfully!`);
       setTimeout(() => closeUploadModal(), 1200);
@@ -509,19 +735,24 @@ export default function Notes() {
       return;
     }
 
+    // Explicitly record deletion in blacklist so it can NEVER be resurrected by sync or merge
+    markNoteDeleted(noteId);
+
+    const updated = allSubjectNotes.filter((n) => n.id !== noteId);
+    setAllSubjectNotes(updated);
+    localStorage.setItem(LOCAL_STORAGE_NOTES_KEY, JSON.stringify(updated));
+
+    try {
+      deleteDoc(doc(db, 'subject_notes', noteId)).catch(() => {});
+    } catch {}
+
     try {
       const headers = await getAuthHeaders();
-      const res = await fetch('/api/notes/delete', {
+      await fetch('/api/notes/delete', {
         method: 'POST',
         headers,
         body: JSON.stringify({ id: noteId }),
       });
-      const data = await res.json();
-      if (data.success) {
-        const updated = allSubjectNotes.filter((n) => n.id !== noteId);
-        setAllSubjectNotes(updated);
-        localStorage.setItem('nishchay_subject_notes', JSON.stringify(updated));
-      }
     } catch (err) {
       console.error('Delete note failed:', err);
     }
@@ -540,6 +771,26 @@ export default function Notes() {
       return;
     }
 
+    // Explicitly record deletion in blacklist so it can NEVER be resurrected by sync or merge
+    markPyqSlotDeleted(sessionId, subjectKey, fileType);
+
+    // Immediately remove from local state and localStorage
+    const curSession = pyqSessions[sessionId];
+    if (curSession && curSession.subjects && curSession.subjects[subjectKey]) {
+      const updatedSubjects = { ...curSession.subjects };
+      const updatedSlot = { ...updatedSubjects[subjectKey] };
+      delete updatedSlot[fileType];
+      updatedSubjects[subjectKey] = updatedSlot;
+      const updatedSession = { ...curSession, subjects: updatedSubjects };
+      const updatedSessions = { ...pyqSessions, [sessionId]: updatedSession };
+      setPyqSessions(updatedSessions);
+      localStorage.setItem(LOCAL_STORAGE_PYQ_KEY, JSON.stringify(updatedSessions));
+
+      try {
+        setDoc(doc(db, 'pyq_sessions', sessionId), updatedSession).catch(() => {});
+      } catch {}
+    }
+
     try {
       const headers = await getAuthHeaders();
       const res = await fetch('/api/pyq/delete', {
@@ -549,12 +800,11 @@ export default function Notes() {
       });
       const data = await res.json();
       if (data.success && data.session) {
-        const updated = {
-          ...pyqSessions,
-          [sessionId]: data.session,
-        };
-        setPyqSessions(updated);
-        localStorage.setItem('nishchay_pyq_papers', JSON.stringify(updated));
+        setPyqSessions((prev) => {
+          const merged = { ...prev, [sessionId]: data.session };
+          localStorage.setItem(LOCAL_STORAGE_PYQ_KEY, JSON.stringify(merged));
+          return merged;
+        });
       }
     } catch (err) {
       console.error('Delete failed:', err);

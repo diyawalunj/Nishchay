@@ -76,5 +76,15 @@ service cloud.firestore {
       allow update: if isOwner(userId) && isValidUser(request.resource.data) && 
                       (request.resource.data.role == resource.data.role || isAdmin());
     }
+
+    match /subject_notes/{noteId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /pyq_sessions/{sessionId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
   }
 }

@@ -35,14 +35,16 @@ import {
 import {
   getAllPyqSessions,
   savePyqFileRecord,
-  deletePyqFileRecord
+  deletePyqFileRecord,
+  syncPyqSessions
 } from './pyq-db';
 import {
   getAllNotes,
   getNotesBySubject,
   getNoteById,
   saveNote,
-  deleteNote
+  deleteNote,
+  syncNotes
 } from './notes-db';
 import { parseDailyNewsPost, getLocalTodayDate } from './n-intel-parser';
 import { SAMPLE_NINTEL_POST } from './n-intel-sample-data';
@@ -1065,6 +1067,26 @@ app.post('/api/pyq/delete', authenticate as any, (req: AuthRequest, res: Respons
   }
 });
 
+// Sync PYQ sessions from client (Admin Only)
+app.post('/api/pyq/sync', authenticate as any, (req: AuthRequest, res: Response) => {
+  if (!req.user?.isAdmin) {
+    return res.status(403).json({ success: false, error: 'Access denied: Administrator privileges required.' });
+  }
+
+  try {
+    const { sessions } = req.body;
+    if (!sessions || typeof sessions !== 'object') {
+      return res.status(400).json({ success: false, error: 'Invalid sessions payload.' });
+    }
+
+    const updated = syncPyqSessions(sessions);
+    res.json({ success: true, sessions: updated });
+  } catch (err: any) {
+    console.error('Error syncing PYQ sessions:', err);
+    res.status(500).json({ success: false, error: 'Failed to sync PYQ sessions.' });
+  }
+});
+
 // ─────────────────────────────────────────────────────────────
 // SUBJECT NOTES API ENDPOINTS
 // ─────────────────────────────────────────────────────────────
@@ -1132,6 +1154,26 @@ app.post('/api/notes/delete', authenticate as any, (req: AuthRequest, res: Respo
   } catch (err: any) {
     console.error('Error deleting subject note:', err);
     res.status(500).json({ success: false, error: 'Failed to delete note.' });
+  }
+});
+
+// Sync notes from client (Admin Only)
+app.post('/api/notes/sync', authenticate as any, (req: AuthRequest, res: Response) => {
+  if (!req.user?.isAdmin) {
+    return res.status(403).json({ success: false, error: 'Access denied: Administrator privileges required.' });
+  }
+
+  try {
+    const { notes } = req.body;
+    if (!Array.isArray(notes)) {
+      return res.status(400).json({ success: false, error: 'Invalid notes array.' });
+    }
+
+    const updated = syncNotes(notes);
+    res.json({ success: true, notes: updated });
+  } catch (err: any) {
+    console.error('Error syncing notes:', err);
+    res.status(500).json({ success: false, error: 'Failed to sync notes.' });
   }
 });
 

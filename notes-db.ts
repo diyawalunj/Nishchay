@@ -26,6 +26,9 @@ function ensureDataDir() {
     if (!fs.existsSync(DATA_DIR)) {
       fs.mkdirSync(DATA_DIR, { recursive: true });
     }
+    if (IS_VERCEL && !fs.existsSync(NOTES_FILE) && fs.existsSync(SEED_NOTES_FILE)) {
+      fs.copyFileSync(SEED_NOTES_FILE, NOTES_FILE);
+    }
   } catch (err) {
     console.warn('Could not ensure data directory:', err);
   }
@@ -122,4 +125,30 @@ export function deleteNote(id: string): boolean {
   all.splice(index, 1);
   persistNotes(all);
   return true;
+}
+
+export function syncNotes(incomingNotes: SubjectNote[]): SubjectNote[] {
+  if (!Array.isArray(incomingNotes) || incomingNotes.length === 0) {
+    return getAllNotes();
+  }
+  const all = getAllNotes();
+  const map = new Map<string, SubjectNote>();
+  for (const n of all) {
+    if (n && n.id) map.set(n.id, n);
+  }
+  let added = false;
+  for (const n of incomingNotes) {
+    if (n && n.id && !map.has(n.id)) {
+      map.set(n.id, n);
+      added = true;
+    }
+  }
+  if (added) {
+    const merged = Array.from(map.values()).sort(
+      (a, b) => new Date(b.uploadedAt || 0).getTime() - new Date(a.uploadedAt || 0).getTime()
+    );
+    persistNotes(merged);
+    return merged;
+  }
+  return all;
 }
