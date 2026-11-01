@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import {
   Search, Calculator, Book, Globe, Newspaper, Target,
   ChevronLeft, Upload, FileText, Atom, FlaskConical,
-  Dna, Landmark, Coins, Map, BookOpen, FileCheck, Shield,
+  Dna, Landmark, Coins, Map as MapIcon, BookOpen, FileCheck, Shield,
   Award, CheckCircle2, ArrowRight,
   Download, Sparkles, Folder, Check, Clock,
   X, Trash2, RefreshCw, Link as LinkIcon, AlertCircle
@@ -167,7 +167,7 @@ const SUBJECTS: Subject[] = [
   {
     id: 'geography',
     title: 'Geography',
-    icon: Map,
+    icon: MapIcon,
     color: 'bg-[#144D30]',
     gradient: 'from-[#144D30] via-[#1B6640] to-[#0E3823]',
     shadow: 'shadow-lg shadow-[#144D30]/25 hover:shadow-2xl hover:shadow-[#144D30]/40',
@@ -304,12 +304,12 @@ const unmarkPyqSlotDeleted = (sessionId: string, subjectKey: string, fileType: s
 
 const mergeNotesSafely = (current: any, incoming: any): SubjectNote[] => {
   const deleted = getDeletedNoteIds();
-  const map = new Map<string, SubjectNote>();
+  const dict: Record<string, SubjectNote> = {};
 
   const safeIncoming = Array.isArray(incoming) ? incoming : [];
   for (const n of safeIncoming) {
     if (n && typeof n === 'object' && n.id && !deleted.has(n.id)) {
-      map.set(n.id, {
+      dict[n.id] = {
         id: String(n.id),
         subjectId: String(n.subjectId || '').toLowerCase(),
         subjectTitle: String(n.subjectTitle || ''),
@@ -320,14 +320,14 @@ const mergeNotesSafely = (current: any, incoming: any): SubjectNote[] => {
         fileName: String(n.fileName || n.title || 'Document'),
         fileSize: String(n.fileSize || 'PDF Link'),
         uploadedAt: n.uploadedAt || new Date().toISOString(),
-      });
+      };
     }
   }
 
   const safeCurrent = Array.isArray(current) ? current : [];
   for (const n of safeCurrent) {
-    if (n && typeof n === 'object' && n.id && !deleted.has(n.id) && !map.has(n.id)) {
-      map.set(n.id, {
+    if (n && typeof n === 'object' && n.id && !deleted.has(n.id) && !dict[n.id]) {
+      dict[n.id] = {
         id: String(n.id),
         subjectId: String(n.subjectId || '').toLowerCase(),
         subjectTitle: String(n.subjectTitle || ''),
@@ -338,13 +338,11 @@ const mergeNotesSafely = (current: any, incoming: any): SubjectNote[] => {
         fileName: String(n.fileName || n.title || 'Document'),
         fileSize: String(n.fileSize || 'PDF Link'),
         uploadedAt: n.uploadedAt || new Date().toISOString(),
-      });
+      };
     }
   }
 
-  const result: SubjectNote[] = [];
-  map.forEach((value) => result.push(value));
-  return result.sort(
+  return Object.values(dict).sort(
     (a, b) => new Date(b.uploadedAt || 0).getTime() - new Date(a.uploadedAt || 0).getTime()
   );
 };
