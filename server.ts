@@ -1,6 +1,7 @@
 import express, { Request, Response, NextFunction } from 'express';
 import path from 'path';
 import fs from 'fs';
+import os from 'os';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import helmet from 'helmet';
@@ -200,18 +201,26 @@ const publishLimiter = rateLimit({
   message: { success: false, error: 'Publishing rate limit exceeded.' }
 });
 
+const IS_VERCEL = Boolean(process.env.VERCEL);
 // Secure static uploads directory with Sandboxing and nosniff
-const UPLOADS_DIR = path.join(process.cwd(), 'public', 'uploads');
+const UPLOADS_DIR = IS_VERCEL
+  ? path.join(os.tmpdir(), 'nishchay_uploads')
+  : path.join(process.cwd(), 'public', 'uploads');
 const PYQ_UPLOADS_DIR = path.join(UPLOADS_DIR, 'pyq');
 const NOTES_UPLOADS_DIR = path.join(UPLOADS_DIR, 'notes');
-if (!fs.existsSync(UPLOADS_DIR)) {
-  fs.mkdirSync(UPLOADS_DIR, { recursive: true });
-}
-if (!fs.existsSync(PYQ_UPLOADS_DIR)) {
-  fs.mkdirSync(PYQ_UPLOADS_DIR, { recursive: true });
-}
-if (!fs.existsSync(NOTES_UPLOADS_DIR)) {
-  fs.mkdirSync(NOTES_UPLOADS_DIR, { recursive: true });
+
+try {
+  if (!fs.existsSync(UPLOADS_DIR)) {
+    fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+  }
+  if (!fs.existsSync(PYQ_UPLOADS_DIR)) {
+    fs.mkdirSync(PYQ_UPLOADS_DIR, { recursive: true });
+  }
+  if (!fs.existsSync(NOTES_UPLOADS_DIR)) {
+    fs.mkdirSync(NOTES_UPLOADS_DIR, { recursive: true });
+  }
+} catch (fsErr) {
+  console.warn('Could not initialize local upload directories:', fsErr);
 }
 app.use(
   '/uploads',
@@ -681,13 +690,21 @@ app.post('/api/articles/upload-banner', uploadLimiter, authenticate as any, (req
       });
     }
 
-    const safeRandomToken = crypto.randomBytes(16).toString('hex');
-    const safeName = `banner-${Date.now()}-${safeRandomToken}.${ext}`;
-    const filePath = path.join(UPLOADS_DIR, safeName);
-    fs.writeFileSync(filePath, buffer, { flag: 'wx' });
+    try {
+      if (!fs.existsSync(UPLOADS_DIR)) {
+        fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+      }
+      const safeRandomToken = crypto.randomBytes(16).toString('hex');
+      const safeName = `banner-${Date.now()}-${safeRandomToken}.${ext}`;
+      const filePath = path.join(UPLOADS_DIR, safeName);
+      fs.writeFileSync(filePath, buffer, { flag: 'wx' });
 
-    const publicUrl = `/uploads/${safeName}`;
-    res.json({ success: true, url: publicUrl });
+      const publicUrl = `/uploads/${safeName}`;
+      res.json({ success: true, url: publicUrl });
+    } catch (writeErr: any) {
+      console.error('Error writing banner image:', writeErr);
+      res.status(500).json({ success: false, error: 'Failed to save banner image to server storage.' });
+    }
   } catch (err: any) {
     console.error('Error uploading banner image:', err);
     res.status(500).json({ success: false, error: 'Failed to process image upload.' });
@@ -1051,19 +1068,29 @@ app.post('/api/pyq/upload', uploadLimiter, authenticate as any, async (req: Auth
 
     // Local Storage Fallback if Google Drive is not configured or fails
     if (!publicUrl) {
-      if (!fs.existsSync(PYQ_UPLOADS_DIR)) {
-        fs.mkdirSync(PYQ_UPLOADS_DIR, { recursive: true });
+      try {
+        if (!fs.existsSync(PYQ_UPLOADS_DIR)) {
+          fs.mkdirSync(PYQ_UPLOADS_DIR, { recursive: true });
+        }
+
+        const cleanSession = String(sessionId).replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 50);
+        const cleanSubject = String(subjectKey).replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 20);
+        const cleanType = String(fileType).replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 10);
+        const randomHex = crypto.randomBytes(8).toString('hex');
+        const safeFileName = `${cleanSession}-${cleanSubject}-${cleanType}-${Date.now()}-${randomHex}.pdf`;
+        const targetPath = path.join(PYQ_UPLOADS_DIR, safeFileName);
+
+        fs.writeFileSync(targetPath, buffer, { flag: 'wx' });
+        publicUrl = `/uploads/pyq/${safeFileName}`;
+      } catch (writeErr: any) {
+        console.error('Local PYQ storage write failed:', writeErr);
+        return res.status(500).json({
+          success: false,
+          error: isDriveConfigured()
+            ? 'Failed to store file on server or Google Drive.'
+            : 'Google Drive storage is not configured in Vercel. Please add GOOGLE_SERVICE_ACCOUNT_EMAIL, GOOGLE_PRIVATE_KEY, and GOOGLE_DRIVE_FOLDER_ID to Vercel environment variables, or use the "Paste PDF / Drive Link" tab.'
+        });
       }
-
-      const cleanSession = String(sessionId).replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 50);
-      const cleanSubject = String(subjectKey).replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 20);
-      const cleanType = String(fileType).replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 10);
-      const randomHex = crypto.randomBytes(8).toString('hex');
-      const safeFileName = `${cleanSession}-${cleanSubject}-${cleanType}-${Date.now()}-${randomHex}.pdf`;
-      const targetPath = path.join(PYQ_UPLOADS_DIR, safeFileName);
-
-      fs.writeFileSync(targetPath, buffer, { flag: 'wx' });
-      publicUrl = `/uploads/pyq/${safeFileName}`;
     }
 
     const sessionRecord = savePyqFileRecord({
@@ -1249,14 +1276,27 @@ app.post('/api/notes/upload', uploadLimiter, authenticate as any, async (req: Au
 
     // Local Storage Fallback if Google Drive is not configured or fails
     if (!publicUrl) {
-      const timestamp = Date.now();
-      const cleanSubject = subjectId.toLowerCase().replace(/[^a-z0-9]/g, '-');
-      const sanitizedTitle = (originalName || title || 'note').replace(/[^a-zA-Z0-9.-]/g, '_').replace(/\.pdf$/i, '');
-      const safeFileName = `${cleanSubject}-${timestamp}-${sanitizedTitle}.pdf`;
-      const targetPath = path.join(NOTES_UPLOADS_DIR, safeFileName);
+      try {
+        if (!fs.existsSync(NOTES_UPLOADS_DIR)) {
+          fs.mkdirSync(NOTES_UPLOADS_DIR, { recursive: true });
+        }
+        const timestamp = Date.now();
+        const cleanSubject = subjectId.toLowerCase().replace(/[^a-z0-9]/g, '-');
+        const sanitizedTitle = (originalName || title || 'note').replace(/[^a-zA-Z0-9.-]/g, '_').replace(/\.pdf$/i, '');
+        const safeFileName = `${cleanSubject}-${timestamp}-${sanitizedTitle}.pdf`;
+        const targetPath = path.join(NOTES_UPLOADS_DIR, safeFileName);
 
-      fs.writeFileSync(targetPath, buffer);
-      publicUrl = `/uploads/notes/${safeFileName}`;
+        fs.writeFileSync(targetPath, buffer);
+        publicUrl = `/uploads/notes/${safeFileName}`;
+      } catch (writeErr: any) {
+        console.error('Local note storage write failed:', writeErr);
+        return res.status(500).json({
+          success: false,
+          error: isDriveConfigured()
+            ? 'Failed to store note on server or Google Drive.'
+            : 'Google Drive storage is not configured in Vercel. Please add GOOGLE_SERVICE_ACCOUNT_EMAIL, GOOGLE_PRIVATE_KEY, and GOOGLE_DRIVE_FOLDER_ID to Vercel environment variables, or use the "Paste PDF / Drive Link" tab.'
+        });
+      }
     }
 
     const note = saveNote({

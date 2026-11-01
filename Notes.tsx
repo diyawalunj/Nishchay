@@ -6,8 +6,8 @@ import {
   Search, Calculator, Book, Globe, Newspaper, Target,
   ChevronLeft, Upload, FileText, Atom, FlaskConical,
   Dna, Landmark, Coins, Map, BookOpen, FileCheck, Shield,
-  Award, Calendar, CheckCircle2, ChevronRight, ArrowRight,
-  Download, ExternalLink, Sparkles, Folder, Check, Clock,
+  Award, CheckCircle2, ArrowRight,
+  Download, Sparkles, Folder, Check, Clock,
   X, Trash2, RefreshCw, FileUp, Link as LinkIcon, AlertCircle
 } from 'lucide-react';
 
@@ -267,7 +267,6 @@ export default function Notes() {
   const [customLink, setCustomLink] = useState('');
   const [linkTitle, setLinkTitle] = useState('');
   const [noteTitle, setNoteTitle] = useState('');
-  const [noteCategory, setNoteCategory] = useState('');
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState('');
   const [uploadSuccess, setUploadSuccess] = useState('');
@@ -346,7 +345,6 @@ export default function Notes() {
       typeLabel: fileType === 'paper' ? 'Question Paper' : 'Answer Key',
     });
     setNoteTitle('');
-    setNoteCategory('');
     setSelectedFile(null);
     setCustomLink('');
     setLinkTitle('');
@@ -372,7 +370,6 @@ export default function Notes() {
       typeLabel: `${subjectTitle} Note`,
     });
     setNoteTitle('');
-    setNoteCategory('');
     setSelectedFile(null);
     setCustomLink('');
     setLinkTitle('');
@@ -384,7 +381,6 @@ export default function Notes() {
   const closeUploadModal = () => {
     setUploadModal(null);
     setNoteTitle('');
-    setNoteCategory('');
     setSelectedFile(null);
     setCustomLink('');
     setLinkTitle('');
@@ -505,7 +501,6 @@ export default function Notes() {
               subjectId: uploadModal.subjectId,
               subjectTitle: uploadModal.subjectTitle,
               title: noteTitle.trim(),
-              category: noteCategory.trim() || undefined,
               fileBase64: base64Data,
               originalName: selectedFile.name,
               fileSize: `${(selectedFile.size / (1024 * 1024)).toFixed(2)} MB`,
@@ -533,7 +528,6 @@ export default function Notes() {
               subjectId: uploadModal.subjectId,
               subjectTitle: uploadModal.subjectTitle,
               title: noteTitle.trim(),
-              category: noteCategory.trim() || undefined,
               url: customLink.trim(),
               fileSize: 'Online Document',
             }),

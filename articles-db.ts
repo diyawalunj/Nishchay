@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import os from 'os';
 
 export interface Article {
   id: string;
@@ -23,12 +24,19 @@ export interface Article {
   authorEmail?: string;
 }
 
-const DATA_DIR = path.join(process.cwd(), 'data');
+const IS_VERCEL = Boolean(process.env.VERCEL);
+const DATA_DIR = IS_VERCEL ? path.join(os.tmpdir(), 'nishchay_data') : path.join(process.cwd(), 'data');
+const SEED_DATA_DIR = path.join(process.cwd(), 'data');
 const ARTICLES_FILE = path.join(DATA_DIR, 'articles.json');
+const SEED_ARTICLES_FILE = path.join(SEED_DATA_DIR, 'articles.json');
 
 function ensureDataDir() {
-  if (!fs.existsSync(DATA_DIR)) {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
+  try {
+    if (!fs.existsSync(DATA_DIR)) {
+      fs.mkdirSync(DATA_DIR, { recursive: true });
+    }
+  } catch (err) {
+    console.warn('Could not ensure data directory:', err);
   }
 }
 
@@ -52,7 +60,12 @@ function loadArticles(): Article[] {
   if (articlesCache) return articlesCache;
   ensureDataDir();
 
-  if (!fs.existsSync(ARTICLES_FILE)) {
+  let targetFile = ARTICLES_FILE;
+  if (!fs.existsSync(targetFile) && fs.existsSync(SEED_ARTICLES_FILE)) {
+    targetFile = SEED_ARTICLES_FILE;
+  }
+
+  if (!fs.existsSync(targetFile)) {
     // Seed initial dataset with the sample editorial from the user's brief
     const initialArticles: Article[] = [
       {
@@ -126,7 +139,7 @@ function atomicWriteJsonSync(filePath: string, data: any): void {
     if (fs.existsSync(tempPath)) {
       try { fs.unlinkSync(tempPath); } catch {}
     }
-    throw err;
+    console.warn(`Could not persist ${filePath} to disk:`, err);
   }
 }
 

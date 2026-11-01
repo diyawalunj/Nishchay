@@ -1,17 +1,28 @@
 import fs from 'fs';
 import path from 'path';
+import os from 'os';
 import type { NIntelStory, NIntelBatch, NIntelAuditLog } from './types';
 import { parseDailyNewsPost } from './n-intel-parser';
 
-const DATA_DIR = path.join(process.cwd(), 'data');
+const IS_VERCEL = Boolean(process.env.VERCEL);
+const DATA_DIR = IS_VERCEL ? path.join(os.tmpdir(), 'nishchay_data') : path.join(process.cwd(), 'data');
+const SEED_DATA_DIR = path.join(process.cwd(), 'data');
 const STORIES_FILE = path.join(DATA_DIR, 'n-intel-stories.json');
 const BATCHES_FILE = path.join(DATA_DIR, 'n-intel-batches.json');
 const AUDIT_FILE = path.join(DATA_DIR, 'n-intel-audit.json');
 
+const SEED_STORIES_FILE = path.join(SEED_DATA_DIR, 'n-intel-stories.json');
+const SEED_BATCHES_FILE = path.join(SEED_DATA_DIR, 'n-intel-batches.json');
+const SEED_AUDIT_FILE = path.join(SEED_DATA_DIR, 'n-intel-audit.json');
+
 // Ensure data directory exists
 function ensureDataDir() {
-  if (!fs.existsSync(DATA_DIR)) {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
+  try {
+    if (!fs.existsSync(DATA_DIR)) {
+      fs.mkdirSync(DATA_DIR, { recursive: true });
+    }
+  } catch (err) {
+    console.warn('Could not ensure data directory:', err);
   }
 }
 
@@ -23,14 +34,18 @@ let auditCache: NIntelAuditLog[] | null = null;
 function loadStories(): NIntelStory[] {
   if (storiesCache) return storiesCache;
   ensureDataDir();
-  if (!fs.existsSync(STORIES_FILE)) {
-    // Seed initial dataset if file does not exist yet
+
+  let targetFile = STORIES_FILE;
+  if (!fs.existsSync(targetFile) && fs.existsSync(SEED_STORIES_FILE)) {
+    targetFile = SEED_STORIES_FILE;
+  }
+
+  if (!fs.existsSync(targetFile)) {
     storiesCache = [];
-    saveStories(storiesCache);
     return storiesCache;
   }
   try {
-    const raw = fs.readFileSync(STORIES_FILE, 'utf-8');
+    const raw = fs.readFileSync(targetFile, 'utf-8');
     storiesCache = JSON.parse(raw);
     return storiesCache || [];
   } catch (e) {
@@ -49,7 +64,7 @@ function atomicWriteJsonSync(filePath: string, data: any): void {
     if (fs.existsSync(tempPath)) {
       try { fs.unlinkSync(tempPath); } catch {}
     }
-    throw err;
+    console.warn(`Could not persist ${filePath} to disk:`, err);
   }
 }
 
@@ -61,13 +76,18 @@ function saveStories(stories: NIntelStory[]): void {
 function loadBatches(): NIntelBatch[] {
   if (batchesCache) return batchesCache;
   ensureDataDir();
-  if (!fs.existsSync(BATCHES_FILE)) {
+
+  let targetFile = BATCHES_FILE;
+  if (!fs.existsSync(targetFile) && fs.existsSync(SEED_BATCHES_FILE)) {
+    targetFile = SEED_BATCHES_FILE;
+  }
+
+  if (!fs.existsSync(targetFile)) {
     batchesCache = [];
-    saveBatches(batchesCache);
     return batchesCache;
   }
   try {
-    const raw = fs.readFileSync(BATCHES_FILE, 'utf-8');
+    const raw = fs.readFileSync(targetFile, 'utf-8');
     batchesCache = JSON.parse(raw);
     return batchesCache || [];
   } catch (e) {
@@ -84,13 +104,18 @@ function saveBatches(batches: NIntelBatch[]): void {
 function loadAudit(): NIntelAuditLog[] {
   if (auditCache) return auditCache;
   ensureDataDir();
-  if (!fs.existsSync(AUDIT_FILE)) {
+
+  let targetFile = AUDIT_FILE;
+  if (!fs.existsSync(targetFile) && fs.existsSync(SEED_AUDIT_FILE)) {
+    targetFile = SEED_AUDIT_FILE;
+  }
+
+  if (!fs.existsSync(targetFile)) {
     auditCache = [];
-    saveAudit(auditCache);
     return auditCache;
   }
   try {
-    const raw = fs.readFileSync(AUDIT_FILE, 'utf-8');
+    const raw = fs.readFileSync(targetFile, 'utf-8');
     auditCache = JSON.parse(raw);
     return auditCache || [];
   } catch (e) {

@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import os from 'os';
 
 export interface PyqFileItem {
   url: string;
@@ -29,12 +30,19 @@ export interface PyqSessionData {
   updatedAt: string;
 }
 
-const DATA_DIR = path.join(process.cwd(), 'data');
+const IS_VERCEL = Boolean(process.env.VERCEL);
+const DATA_DIR = IS_VERCEL ? path.join(os.tmpdir(), 'nishchay_data') : path.join(process.cwd(), 'data');
+const SEED_DATA_DIR = path.join(process.cwd(), 'data');
 const PYQ_FILE = path.join(DATA_DIR, 'pyq-papers.json');
+const SEED_PYQ_FILE = path.join(SEED_DATA_DIR, 'pyq-papers.json');
 
 function ensureDataDir() {
-  if (!fs.existsSync(DATA_DIR)) {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
+  try {
+    if (!fs.existsSync(DATA_DIR)) {
+      fs.mkdirSync(DATA_DIR, { recursive: true });
+    }
+  } catch (err) {
+    console.warn('Could not ensure data directory:', err);
   }
 }
 
@@ -47,13 +55,18 @@ export function getAllPyqSessions(): Record<string, PyqSessionData> {
 
   ensureDataDir();
 
-  if (!fs.existsSync(PYQ_FILE)) {
+  let targetFile = PYQ_FILE;
+  if (!fs.existsSync(targetFile) && fs.existsSync(SEED_PYQ_FILE)) {
+    targetFile = SEED_PYQ_FILE;
+  }
+
+  if (!fs.existsSync(targetFile)) {
     pyqCache = {};
     return pyqCache;
   }
 
   try {
-    const raw = fs.readFileSync(PYQ_FILE, 'utf-8');
+    const raw = fs.readFileSync(targetFile, 'utf-8');
     pyqCache = JSON.parse(raw);
     return pyqCache || {};
   } catch (err) {
@@ -66,9 +79,13 @@ export function getAllPyqSessions(): Record<string, PyqSessionData> {
 function persistPyqData(data: Record<string, PyqSessionData>) {
   ensureDataDir();
   pyqCache = data;
-  const tempFile = `${PYQ_FILE}.tmp`;
-  fs.writeFileSync(tempFile, JSON.stringify(data, null, 2), 'utf-8');
-  fs.renameSync(tempFile, PYQ_FILE);
+  try {
+    const tempFile = `${PYQ_FILE}.tmp.${Date.now()}`;
+    fs.writeFileSync(tempFile, JSON.stringify(data, null, 2), 'utf-8');
+    fs.renameSync(tempFile, PYQ_FILE);
+  } catch (err) {
+    console.warn('Could not write pyq-papers.json to disk:', err);
+  }
 }
 
 export function savePyqFileRecord(params: {
@@ -146,4 +163,3 @@ export function deletePyqFileRecord(params: {
   persistPyqData(all);
   return sessionRecord;
 }
-
