@@ -1236,25 +1236,6 @@ export default function Notes() {
                 })}
               </div>
             </div>
-
-            {/* Nishchay Note */}
-            <div className="mt-10 p-6 md:p-8 rounded-2xl bg-[#1B4332]/5 border border-[#1B4332]/10 flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
-              <div className="flex items-center gap-4">
-                <div className="w-12 h-12 rounded-xl bg-[#1B4332] text-white flex items-center justify-center shrink-0">
-                  <Sparkles size={22} />
-                </div>
-                <div>
-                  <h4 className="font-bold text-gray-900 text-base">
-                    {isAdmin ? 'Direct Admin Repository' : 'Official Nishchay Repository'}
-                  </h4>
-                  <p className="text-gray-600 text-xs md:text-sm mt-0.5">
-                    {isAdmin
-                      ? 'As an authorized administrator, you can upload, replace, and manage question papers and answer keys directly.'
-                      : 'All question papers and answer keys are verified by NDA/CDS-qualified mentors. Download and practice at your pace.'}
-                  </p>
-                </div>
-              </div>
-            </div>
           </div>
         </div>
         {renderUploadModal()}
