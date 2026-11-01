@@ -50,6 +50,7 @@ import {
   extractDriveFileId,
   isDriveConfigured
 } from './google-drive';
+import { compressPdfBuffer, isCompressionEngineAvailable, isGhostscriptAvailable } from './pdf-compressor';
 import { parseDailyNewsPost, getLocalTodayDate } from './n-intel-parser';
 import { SAMPLE_NINTEL_POST } from './n-intel-sample-data';
 
@@ -999,17 +1000,49 @@ app.post('/api/pyq/upload', uploadLimiter, authenticate as any, async (req: Auth
       buffer = Buffer.from(fileBase64, 'base64');
     }
 
-    const MAX_DIRECT_UPLOAD_BYTES = 4.5 * 1024 * 1024;
-    if (buffer.length > MAX_DIRECT_UPLOAD_BYTES) {
-      return res.status(400).json({
-        success: false,
-        error: 'File size exceeds maximum 4 MB limit for direct upload. Please compress your PDF or use the Drive link option.'
-      });
-    }
-
     // Security: Verify PDF Magic Bytes (%PDF- header)
     if (buffer.length < 5 || buffer[0] !== 0x25 || buffer[1] !== 0x50 || buffer[2] !== 0x44 || buffer[3] !== 0x46) {
       return res.status(400).json({ success: false, error: 'Invalid file signature. Only authentic PDF documents are allowed.' });
+    }
+
+    // Absolute upper ceiling for direct upload payload before compression (35 MB)
+    const MAX_RAW_UPLOAD_BYTES = 35 * 1024 * 1024;
+    if (buffer.length > MAX_RAW_UPLOAD_BYTES) {
+      return res.status(400).json({
+        success: false,
+        error: `File is ${(buffer.length / (1024 * 1024)).toFixed(1)} MB, which exceeds the 35 MB direct upload limit. Please use the Google Drive Link option for files this large.`
+      });
+    }
+
+    // Automated Ghostscript compression if file is larger than 4 MB
+    let uploadFileSize = fileSize || `${(buffer.length / (1024 * 1024)).toFixed(2)} MB`;
+    const TARGET_MAX_BYTES = 4.2 * 1024 * 1024;
+    if (buffer.length > TARGET_MAX_BYTES) {
+      try {
+        console.log(`[Auto-Compress PYQ] PDF is ${(buffer.length / (1024 * 1024)).toFixed(2)} MB (> 4 MB). Initiating Ghostscript compression...`);
+        const compressRes = await compressPdfBuffer(buffer, { targetMaxBytes: TARGET_MAX_BYTES });
+        if (compressRes.compressed) {
+          buffer = compressRes.buffer;
+          uploadFileSize = `${compressRes.finalSizeMb} MB`;
+          console.log(`[Auto-Compress PYQ] ${compressRes.note}`);
+        }
+      } catch (compErr: any) {
+        console.error('[Auto-Compress PYQ] Ghostscript compression warning:', compErr?.message);
+        if (buffer.length > TARGET_MAX_BYTES) {
+          return res.status(400).json({
+            success: false,
+            error: `File size (${(buffer.length / (1024 * 1024)).toFixed(2)} MB) exceeds 4 MB, and automatic compression could not reduce it below 4 MB: ${compErr?.message || 'Ghostscript error'}. Please use the Google Drive Link option.`
+          });
+        }
+      }
+    }
+
+    // Final limit enforcement
+    if (buffer.length > TARGET_MAX_BYTES) {
+      return res.status(400).json({
+        success: false,
+        error: `File size is ${(buffer.length / (1024 * 1024)).toFixed(2)} MB after compression (exceeds 4 MB limit). Please use the Google Drive Link option for this document.`
+      });
     }
 
     let publicUrl: string = '';
@@ -1060,7 +1093,7 @@ app.post('/api/pyq/upload', uploadLimiter, authenticate as any, async (req: Auth
       url: publicUrl,
       driveFileId,
       fileName: originalName || (title ? `${title}.pdf` : 'Paper.pdf'),
-      fileSize: fileSize || `${(buffer.length / (1024 * 1024)).toFixed(2)} MB`,
+      fileSize: uploadFileSize,
     });
 
     res.json({ success: true, url: publicUrl, driveFileId, session: sessionRecord });
@@ -1196,19 +1229,51 @@ app.post('/api/notes/upload', uploadLimiter, authenticate as any, async (req: Au
     }
 
     const base64Data = fileBase64.replace(/^data:application\/pdf;base64,/, '').replace(/^data:.*?;base64,/, '');
-    const buffer = Buffer.from(base64Data, 'base64');
-
-    const MAX_DIRECT_UPLOAD_BYTES = 4.5 * 1024 * 1024;
-    if (buffer.length > MAX_DIRECT_UPLOAD_BYTES) {
-      return res.status(400).json({
-        success: false,
-        error: 'File size exceeds maximum 4 MB limit for direct upload. Please compress your PDF or use the Drive link option.'
-      });
-    }
+    let buffer = Buffer.from(base64Data, 'base64');
 
     // Verify PDF Magic Bytes (%PDF-)
     if (buffer.length < 5 || buffer[0] !== 0x25 || buffer[1] !== 0x50 || buffer[2] !== 0x44 || buffer[3] !== 0x46) {
       return res.status(400).json({ success: false, error: 'File rejected: Not a valid PDF document.' });
+    }
+
+    // Absolute upper ceiling for direct upload payload before compression (35 MB)
+    const MAX_RAW_UPLOAD_BYTES = 35 * 1024 * 1024;
+    if (buffer.length > MAX_RAW_UPLOAD_BYTES) {
+      return res.status(400).json({
+        success: false,
+        error: `File is ${(buffer.length / (1024 * 1024)).toFixed(1)} MB, which exceeds the 35 MB direct upload limit. Please use the Google Drive Link option for files this large.`
+      });
+    }
+
+    // Automated Ghostscript compression if file is larger than 4 MB
+    let uploadFileSize = fileSize || `${(buffer.length / (1024 * 1024)).toFixed(2)} MB`;
+    const TARGET_MAX_BYTES = 4.2 * 1024 * 1024;
+    if (buffer.length > TARGET_MAX_BYTES) {
+      try {
+        console.log(`[Auto-Compress Notes] PDF is ${(buffer.length / (1024 * 1024)).toFixed(2)} MB (> 4 MB). Initiating Ghostscript compression...`);
+        const compressRes = await compressPdfBuffer(buffer, { targetMaxBytes: TARGET_MAX_BYTES });
+        if (compressRes.compressed) {
+          buffer = compressRes.buffer;
+          uploadFileSize = `${compressRes.finalSizeMb} MB`;
+          console.log(`[Auto-Compress Notes] ${compressRes.note}`);
+        }
+      } catch (compErr: any) {
+        console.error('[Auto-Compress Notes] Ghostscript compression warning:', compErr?.message);
+        if (buffer.length > TARGET_MAX_BYTES) {
+          return res.status(400).json({
+            success: false,
+            error: `File size (${(buffer.length / (1024 * 1024)).toFixed(2)} MB) exceeds 4 MB, and automatic compression could not reduce it below 4 MB: ${compErr?.message || 'Ghostscript error'}. Please use the Google Drive Link option.`
+          });
+        }
+      }
+    }
+
+    // Final limit enforcement
+    if (buffer.length > TARGET_MAX_BYTES) {
+      return res.status(400).json({
+        success: false,
+        error: `File size is ${(buffer.length / (1024 * 1024)).toFixed(2)} MB after compression (exceeds 4 MB limit). Please use the Google Drive Link option for this document.`
+      });
     }
 
     let publicUrl: string = '';
@@ -1250,7 +1315,7 @@ app.post('/api/notes/upload', uploadLimiter, authenticate as any, async (req: Au
       url: publicUrl,
       driveFileId,
       fileName: originalName || `${title}.pdf`,
-      fileSize: fileSize || `${(buffer.length / (1024 * 1024)).toFixed(2)} MB`,
+      fileSize: uploadFileSize,
     });
 
     res.json({ success: true, note });
@@ -1363,6 +1428,8 @@ async function setupServer() {
   console.log('GOOGLE_PRIVATE_KEY:', GOOGLE_PRIVATE_KEY ? '✅ Present' : '❌ Missing');
   console.log('GOOGLE_SHEET_ID_CONTACT:', (GOOGLE_SHEET_ID_CONTACT || '1gGWQxXAuKCpt99m6efSBwaDUqLFJn_7f-WnESPOnmQY') ? '✅ Present' : '❌ Missing');
   console.log('GOOGLE_DRIVE_FOLDER_ID:', process.env.GOOGLE_DRIVE_FOLDER_ID ? '✅ Present (Google Drive Uploads Active)' : '⚠️ Not Set (Using Local Storage fallback)');
+  const compressionEngine = await isCompressionEngineAvailable();
+  console.log('PDF_COMPRESSION_ENGINE:', compressionEngine.available ? `✅ Active (${compressionEngine.engine})` : '⚠️ None found');
   console.log('---------------------------------');
 
   // Seed sample N-INTEL edition if empty
