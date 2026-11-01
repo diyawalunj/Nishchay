@@ -631,7 +631,15 @@ export default function Notes() {
         setTimeout(() => closeUploadModal(), 1200);
       }
     } catch (err: any) {
-      setUploadError(err.message || 'Upload operation failed.');
+      console.error('Upload error:', err);
+      const msg = err?.message || '';
+      if (msg.includes('Failed to fetch') || msg.includes('NetworkError') || err?.name === 'TypeError') {
+        setUploadError(
+          'Upload payload exceeded hosting provider limit (Failed to fetch). Serverless hosting (like Vercel) terminates direct file uploads larger than 4.5 MB. Please use the "Paste PDF / Drive Link" tab for this document.'
+        );
+      } else {
+        setUploadError(msg || 'Upload operation failed.');
+      }
     } finally {
       setUploading(false);
     }
