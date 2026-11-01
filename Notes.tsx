@@ -1410,7 +1410,11 @@ export default function Notes() {
                   transition={{ delay: idx * 0.03 }}
                   whileHover={{ y: -8 }}
                   onClick={() => setSelectedPaper(paper)}
-                  className="bg-white rounded-[2rem] p-6 md:p-8 shadow-[0_12px_32px_rgba(0,0,0,0.05)] hover:shadow-[0_24px_50px_rgba(0,0,0,0.12)] border border-gray-100 hover:border-gray-200 transition-all duration-300 flex flex-col justify-between group cursor-pointer relative overflow-hidden"
+                  className={`bg-white rounded-[2rem] p-6 md:p-7 shadow-[0_10px_30px_rgba(0,0,0,0.04)] hover:shadow-[0_22px_45px_rgba(0,0,0,0.1)] border transition-all duration-300 flex flex-col justify-between group cursor-pointer relative overflow-hidden ${
+                    isNda
+                      ? 'border-gray-100 hover:border-rose-200/80 hover:shadow-rose-900/5'
+                      : 'border-gray-100 hover:border-amber-200/80 hover:shadow-amber-900/5'
+                  }`}
                 >
                   {/* Top Colored Accent Bar */}
                   <div
@@ -1421,88 +1425,128 @@ export default function Notes() {
                     }`}
                   />
 
+                  {/* Year Watermark in Card Background */}
+                  <div className="absolute right-4 top-8 text-7xl font-black text-gray-900/[0.04] group-hover:text-gray-900/[0.08] font-mono tracking-tighter select-none pointer-events-none transition-colors">
+                    {paper.year}
+                  </div>
+
                   <div className="relative z-10">
                     {/* Top Badges */}
                     <div className="flex items-center justify-between mb-4">
                       <span
                         className={`px-3 py-1 text-[10px] font-black tracking-widest uppercase rounded-full flex items-center gap-1.5 border shadow-2xs ${
                           isSessionII
-                            ? 'bg-amber-500/10 text-amber-800 border-amber-500/30'
-                            : 'bg-emerald-500/10 text-emerald-800 border-emerald-500/30'
+                            ? 'bg-amber-500/10 text-amber-900 border-amber-500/25'
+                            : 'bg-emerald-500/10 text-emerald-900 border-emerald-500/25'
                         }`}
                       >
                         <span
-                          className={`w-1.5 h-1.5 rounded-full ${
-                            isSessionII ? 'bg-amber-500' : 'bg-emerald-500'
+                          className={`w-2 h-2 rounded-full ${
+                            isSessionII
+                              ? 'bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.8)]'
+                              : 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.8)]'
                           } animate-pulse`}
                         />
                         SESSION {paper.session}
                       </span>
                       <span
-                        className={`text-[10px] font-black px-2.5 py-0.5 rounded-full border shadow-2xs flex items-center gap-1 ${
+                        className={`text-[10px] font-black px-2.5 py-1 rounded-full border shadow-2xs flex items-center gap-1.5 ${
                           uploadStatus.count === uploadStatus.total
-                            ? 'bg-emerald-100 text-emerald-900 border-emerald-300'
+                            ? 'bg-emerald-100/90 text-emerald-900 border-emerald-300'
                             : uploadStatus.count > 0
-                            ? 'bg-sky-100 text-sky-900 border-sky-300'
-                            : 'bg-gray-100 text-gray-500 border-gray-200'
+                            ? 'bg-sky-100/90 text-sky-900 border-sky-300'
+                            : 'bg-gray-100/80 text-gray-500 border-gray-200'
                         }`}
                       >
-                        {uploadStatus.count === uploadStatus.total && <Check size={11} className="text-emerald-700 stroke-[3]" />}
+                        {uploadStatus.count === uploadStatus.total ? (
+                          <Check size={11} className="text-emerald-700 stroke-[3]" />
+                        ) : (
+                          <Folder size={11} className="text-gray-400" />
+                        )}
                         {uploadStatus.count}/{uploadStatus.total} Files
                       </span>
                     </div>
 
-                    {/* Main Title */}
-                    <h3 className="text-2xl font-black text-gray-900 tracking-tight mb-4 group-hover:text-[#1B4332] transition-colors">
-                      {paper.title}
-                    </h3>
+                    {/* Title Row with Exam Squircle Icon */}
+                    <div className="flex items-center gap-3 mb-4">
+                      <div
+                        className={`w-11 h-11 rounded-2xl flex items-center justify-center border shadow-xs group-hover:scale-105 transition-transform duration-300 shrink-0 ${
+                          isNda
+                            ? 'bg-rose-50 text-[#991B1B] border-rose-200/80'
+                            : 'bg-amber-50 text-[#B45309] border-amber-200/80'
+                        }`}
+                      >
+                        {isNda ? <Shield size={20} /> : <Award size={20} />}
+                      </div>
+                      <div>
+                        <h3 className="text-xl md:text-2xl font-black text-gray-900 tracking-tight group-hover:text-black transition-colors leading-tight">
+                          {paper.title}
+                        </h3>
+                        <p className="text-[11px] font-bold text-gray-400 tracking-wide uppercase">
+                          UPSC {paper.exam} {paper.year} • Session {paper.session}
+                        </p>
+                      </div>
+                    </div>
 
-                    {/* Subject Breakdown summary with structured inspection manifest */}
-                    <div className="bg-gradient-to-b from-gray-50/90 to-gray-50/40 rounded-2xl p-4 border border-gray-100 space-y-2.5 mb-6 group-hover:border-gray-200 group-hover:bg-gray-50 transition-colors">
+                    {/* Subject Breakdown summary with structured tactical manifest */}
+                    <div className="bg-gradient-to-b from-gray-50/90 via-gray-50/50 to-white rounded-2xl p-3.5 border border-gray-100 space-y-2 mb-6 group-hover:border-gray-200 transition-colors">
                       {isNda ? (
                         <>
-                          <div className="flex items-center justify-between py-1 border-b border-gray-200/50">
-                            <span className="font-black text-xs text-gray-800">Mathematics</span>
+                          {/* Mathematics */}
+                          <div className="flex items-center justify-between py-1.5 px-2 rounded-xl hover:bg-white/80 transition-colors border-b border-gray-100/80">
                             <div className="flex items-center gap-2">
+                              <div className="w-5 h-5 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center">
+                                <Calculator size={11} />
+                              </div>
+                              <span className="font-extrabold text-xs text-gray-800">Mathematics</span>
+                            </div>
+                            <div className="flex items-center gap-1.5">
                               {sessionRecord?.subjects?.maths?.paper ? (
-                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800 text-[10px] font-bold border border-emerald-200">
-                                  <Check size={10} className="text-emerald-700 stroke-[3]" /> Paper
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-100 text-emerald-800 text-[10px] font-black border border-emerald-200 shadow-2xs">
+                                  <Check size={10} className="text-emerald-700 stroke-[3]" /> QP
                                 </span>
                               ) : (
-                                <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-gray-200/50 text-gray-400 text-[10px] font-semibold border border-gray-200/50">
-                                  — Paper
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-gray-100 text-gray-400 text-[10px] font-bold border border-gray-200/80">
+                                  <Clock size={9} className="text-gray-300" /> QP
                                 </span>
                               )}
                               {sessionRecord?.subjects?.maths?.key ? (
-                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800 text-[10px] font-bold border border-emerald-200">
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-100 text-emerald-800 text-[10px] font-black border border-emerald-200 shadow-2xs">
                                   <Check size={10} className="text-emerald-700 stroke-[3]" /> Key
                                 </span>
                               ) : (
-                                <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-gray-200/50 text-gray-400 text-[10px] font-semibold border border-gray-200/50">
-                                  — Key
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-gray-100 text-gray-400 text-[10px] font-bold border border-gray-200/80">
+                                  <Clock size={9} className="text-gray-300" /> Key
                                 </span>
                               )}
                             </div>
                           </div>
-                          <div className="flex items-center justify-between py-1">
-                            <span className="font-black text-xs text-gray-800">GAT (General Ability)</span>
+
+                          {/* GAT */}
+                          <div className="flex items-center justify-between py-1.5 px-2 rounded-xl hover:bg-white/80 transition-colors">
                             <div className="flex items-center gap-2">
+                              <div className="w-5 h-5 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center">
+                                <Globe size={11} />
+                              </div>
+                              <span className="font-extrabold text-xs text-gray-800">GAT (General Ability)</span>
+                            </div>
+                            <div className="flex items-center gap-1.5">
                               {sessionRecord?.subjects?.gat?.paper ? (
-                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800 text-[10px] font-bold border border-emerald-200">
-                                  <Check size={10} className="text-emerald-700 stroke-[3]" /> Paper
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-100 text-emerald-800 text-[10px] font-black border border-emerald-200 shadow-2xs">
+                                  <Check size={10} className="text-emerald-700 stroke-[3]" /> QP
                                 </span>
                               ) : (
-                                <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-gray-200/50 text-gray-400 text-[10px] font-semibold border border-gray-200/50">
-                                  — Paper
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-gray-100 text-gray-400 text-[10px] font-bold border border-gray-200/80">
+                                  <Clock size={9} className="text-gray-300" /> QP
                                 </span>
                               )}
                               {sessionRecord?.subjects?.gat?.key ? (
-                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800 text-[10px] font-bold border border-emerald-200">
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-100 text-emerald-800 text-[10px] font-black border border-emerald-200 shadow-2xs">
                                   <Check size={10} className="text-emerald-700 stroke-[3]" /> Key
                                 </span>
                               ) : (
-                                <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-gray-200/50 text-gray-400 text-[10px] font-semibold border border-gray-200/50">
-                                  — Key
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-gray-100 text-gray-400 text-[10px] font-bold border border-gray-200/80">
+                                  <Clock size={9} className="text-gray-300" /> Key
                                 </span>
                               )}
                             </div>
@@ -1510,71 +1554,91 @@ export default function Notes() {
                         </>
                       ) : (
                         <>
-                          <div className="flex items-center justify-between py-1 border-b border-gray-200/50">
-                            <span className="font-black text-xs text-gray-800">English</span>
+                          {/* English */}
+                          <div className="flex items-center justify-between py-1.5 px-2 rounded-xl hover:bg-white/80 transition-colors border-b border-gray-100/80">
                             <div className="flex items-center gap-2">
+                              <div className="w-5 h-5 rounded-lg bg-purple-50 text-purple-600 flex items-center justify-center">
+                                <BookOpen size={11} />
+                              </div>
+                              <span className="font-extrabold text-xs text-gray-800">English</span>
+                            </div>
+                            <div className="flex items-center gap-1.5">
                               {sessionRecord?.subjects?.english?.paper ? (
-                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800 text-[10px] font-bold border border-emerald-200">
-                                  <Check size={10} className="text-emerald-700 stroke-[3]" /> Paper
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-100 text-emerald-800 text-[10px] font-black border border-emerald-200 shadow-2xs">
+                                  <Check size={10} className="text-emerald-700 stroke-[3]" /> QP
                                 </span>
                               ) : (
-                                <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-gray-200/50 text-gray-400 text-[10px] font-semibold border border-gray-200/50">
-                                  — Paper
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-gray-100 text-gray-400 text-[10px] font-bold border border-gray-200/80">
+                                  <Clock size={9} className="text-gray-300" /> QP
                                 </span>
                               )}
                               {sessionRecord?.subjects?.english?.key ? (
-                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800 text-[10px] font-bold border border-emerald-200">
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-100 text-emerald-800 text-[10px] font-black border border-emerald-200 shadow-2xs">
                                   <Check size={10} className="text-emerald-700 stroke-[3]" /> Key
                                 </span>
                               ) : (
-                                <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-gray-200/50 text-gray-400 text-[10px] font-semibold border border-gray-200/50">
-                                  — Key
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-gray-100 text-gray-400 text-[10px] font-bold border border-gray-200/80">
+                                  <Clock size={9} className="text-gray-300" /> Key
                                 </span>
                               )}
                             </div>
                           </div>
-                          <div className="flex items-center justify-between py-1 border-b border-gray-200/50">
-                            <span className="font-black text-xs text-gray-800">General Studies (GS)</span>
+
+                          {/* General Studies */}
+                          <div className="flex items-center justify-between py-1.5 px-2 rounded-xl hover:bg-white/80 transition-colors border-b border-gray-100/80">
                             <div className="flex items-center gap-2">
+                              <div className="w-5 h-5 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center">
+                                <Landmark size={11} />
+                              </div>
+                              <span className="font-extrabold text-xs text-gray-800">General Studies (GS)</span>
+                            </div>
+                            <div className="flex items-center gap-1.5">
                               {sessionRecord?.subjects?.gs?.paper ? (
-                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800 text-[10px] font-bold border border-emerald-200">
-                                  <Check size={10} className="text-emerald-700 stroke-[3]" /> Paper
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-100 text-emerald-800 text-[10px] font-black border border-emerald-200 shadow-2xs">
+                                  <Check size={10} className="text-emerald-700 stroke-[3]" /> QP
                                 </span>
                               ) : (
-                                <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-gray-200/50 text-gray-400 text-[10px] font-semibold border border-gray-200/50">
-                                  — Paper
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-gray-100 text-gray-400 text-[10px] font-bold border border-gray-200/80">
+                                  <Clock size={9} className="text-gray-300" /> QP
                                 </span>
                               )}
                               {sessionRecord?.subjects?.gs?.key ? (
-                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800 text-[10px] font-bold border border-emerald-200">
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-100 text-emerald-800 text-[10px] font-black border border-emerald-200 shadow-2xs">
                                   <Check size={10} className="text-emerald-700 stroke-[3]" /> Key
                                 </span>
                               ) : (
-                                <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-gray-200/50 text-gray-400 text-[10px] font-semibold border border-gray-200/50">
-                                  — Key
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-gray-100 text-gray-400 text-[10px] font-bold border border-gray-200/80">
+                                  <Clock size={9} className="text-gray-300" /> Key
                                 </span>
                               )}
                             </div>
                           </div>
-                          <div className="flex items-center justify-between py-1">
-                            <span className="font-black text-xs text-gray-800">Mathematics</span>
+
+                          {/* Mathematics */}
+                          <div className="flex items-center justify-between py-1.5 px-2 rounded-xl hover:bg-white/80 transition-colors">
                             <div className="flex items-center gap-2">
+                              <div className="w-5 h-5 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center">
+                                <Calculator size={11} />
+                              </div>
+                              <span className="font-extrabold text-xs text-gray-800">Mathematics</span>
+                            </div>
+                            <div className="flex items-center gap-1.5">
                               {sessionRecord?.subjects?.maths?.paper ? (
-                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800 text-[10px] font-bold border border-emerald-200">
-                                  <Check size={10} className="text-emerald-700 stroke-[3]" /> Paper
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-100 text-emerald-800 text-[10px] font-black border border-emerald-200 shadow-2xs">
+                                  <Check size={10} className="text-emerald-700 stroke-[3]" /> QP
                                 </span>
                               ) : (
-                                <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-gray-200/50 text-gray-400 text-[10px] font-semibold border border-gray-200/50">
-                                  — Paper
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-gray-100 text-gray-400 text-[10px] font-bold border border-gray-200/80">
+                                  <Clock size={9} className="text-gray-300" /> QP
                                 </span>
                               )}
                               {sessionRecord?.subjects?.maths?.key ? (
-                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800 text-[10px] font-bold border border-emerald-200">
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-100 text-emerald-800 text-[10px] font-black border border-emerald-200 shadow-2xs">
                                   <Check size={10} className="text-emerald-700 stroke-[3]" /> Key
                                 </span>
                               ) : (
-                                <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-gray-200/50 text-gray-400 text-[10px] font-semibold border border-gray-200/50">
-                                  — Key
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-gray-100 text-gray-400 text-[10px] font-bold border border-gray-200/80">
+                                  <Clock size={9} className="text-gray-300" /> Key
                                 </span>
                               )}
                             </div>
@@ -1585,12 +1649,19 @@ export default function Notes() {
                   </div>
 
                   {/* Card Action Footer */}
-                  <div className="relative z-10 pt-4 border-t border-gray-100 flex items-center justify-between text-xs font-bold text-gray-700 group-hover:text-[#1B4332] transition-colors">
-                    <span className="tracking-wider uppercase text-[11px] font-black">
+                  <div className="relative z-10 pt-4 border-t border-gray-100 flex items-center justify-between">
+                    <span className="text-[11px] font-black tracking-wider uppercase text-gray-500 group-hover:text-gray-900 transition-colors">
                       {uploadStatus.count > 0 ? (isAdmin ? 'Manage & Download' : 'View & Download') : (isAdmin ? 'Upload Papers' : 'Explore Session')}
                     </span>
-                    <div className="w-9 h-9 rounded-xl bg-gray-100 group-hover:bg-[#1B4332] text-gray-600 group-hover:text-white flex items-center justify-center transition-all duration-300 shadow-xs group-hover:shadow-md group-hover:scale-105">
-                      <ChevronRight size={16} />
+                    <div
+                      className={`px-4 py-2 rounded-xl text-xs font-black tracking-wider uppercase flex items-center gap-1.5 transition-all duration-300 shadow-xs group-hover:shadow-md group-hover:scale-105 text-white ${
+                        isNda
+                          ? 'bg-gray-900 group-hover:bg-[#991B1B]'
+                          : 'bg-gray-900 group-hover:bg-[#B45309]'
+                      }`}
+                    >
+                      <span>Open</span>
+                      <ArrowRight size={13} className="group-hover:translate-x-0.5 transition-transform" />
                     </div>
                   </div>
                 </motion.div>
