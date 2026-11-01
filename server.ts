@@ -212,31 +212,31 @@ app.use(
   })
 );
 
-// Initialize Firebase Admin with Service Account credentials if available
+// Initialize Firebase Admin for token verification
 try {
-  const projectId = process.env.VITE_FIREBASE_PROJECT_ID || firebaseConfigJson.projectId;
-  const serviceEmail = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
-  const serviceKey = process.env.GOOGLE_PRIVATE_KEY
-    ? process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, '\n').replace(/^"(.*)"$/, '$1').trim()
+  const projectId = process.env.VITE_FIREBASE_PROJECT_ID || firebaseConfigJson.projectId || 'nishchay-defence';
+  const serviceEmail = process.env.FIREBASE_SERVICE_ACCOUNT_EMAIL;
+  const serviceKey = process.env.FIREBASE_PRIVATE_KEY
+    ? process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n').replace(/^"(.*)"$/, '$1').trim()
     : undefined;
 
+  // If a dedicated Firebase Service Account for this project is provided, use it
   if (serviceEmail && serviceKey && serviceKey.includes('BEGIN PRIVATE KEY')) {
     admin.initializeApp({
       credential: admin.credential.cert({
-        projectId: projectId || 'nishchay-defence',
+        projectId,
         clientEmail: serviceEmail,
         privateKey: serviceKey
       }),
-      projectId: projectId || 'nishchay-defence'
+      projectId
     });
-    console.log('✅ Firebase Admin initialized with Service Account credentials');
-  } else if (projectId) {
+    console.log('✅ Firebase Admin initialized with dedicated Service Account for:', projectId);
+  } else {
+    // Standard initialization using Project ID (cryptographically verifies ID tokens via Google public x509 certs)
     admin.initializeApp({
       projectId,
     });
-    console.log('✅ Firebase Admin initialized with Project ID:', projectId);
-  } else {
-    console.warn('⚠️ Firebase Admin NOT initialized (missing credentials and projectId)');
+    console.log('✅ Firebase Admin initialized with Project ID (public cert verification):', projectId);
   }
 } catch (error: any) {
   console.error('❌ Firebase Admin initialization error:', error.message);
@@ -303,8 +303,8 @@ const authenticate = async (req: AuthRequest, res: Response, next: NextFunction)
   }
 
   try {
-    // Verify Firebase ID Token cryptographically and check revocation
-    const decodedToken = await admin.auth().verifyIdToken(token, true);
+    // Verify Firebase ID Token cryptographically using Google public keys
+    const decodedToken = await admin.auth().verifyIdToken(token);
     const email = decodedToken.email?.trim().toLowerCase();
 
     if (!email) {

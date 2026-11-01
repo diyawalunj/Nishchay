@@ -402,10 +402,13 @@ export default function Notes() {
 
   // Helper to obtain authenticated headers
   const getAuthHeaders = async () => {
-    const token = await auth.currentUser?.getIdToken();
+    const token = await auth.currentUser?.getIdToken(true);
+    if (!token) {
+      throw new Error('Authentication session not found. Please sign in again.');
+    }
     return {
       'Content-Type': 'application/json',
-      ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+      'Authorization': `Bearer ${token}`
     };
   };
 
