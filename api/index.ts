@@ -1,4 +1,4 @@
-let cachedApp: any = null;
+import app from '../server';
 
 export const config = {
   api: {
@@ -7,20 +7,17 @@ export const config = {
   },
 };
 
-export default async function handler(req: any, res: any) {
+export default function handler(req: any, res: any) {
   try {
-    if (!cachedApp) {
-      const serverModule = await import('../server');
-      cachedApp = serverModule.default;
-    }
-    return cachedApp(req, res);
+    return app(req, res);
   } catch (err: any) {
-    console.error('SERVER INITIALIZATION OR RUNTIME ERROR:', err);
-    return res.status(500).json({
-      success: false,
-      error: 'Serverless initialization failed: ' + (err?.message || String(err)),
-      stack: err?.stack,
-      name: err?.name,
-    });
+    console.error('Unhandled serverless error:', err);
+    if (!res.headersSent) {
+      res.status(500).json({
+        success: false,
+        error: err?.message || String(err),
+        stack: err?.stack,
+      });
+    }
   }
 }
