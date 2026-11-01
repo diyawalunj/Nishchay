@@ -87,19 +87,19 @@ const SUBJECTS: Subject[] = [
     id: 'maths',
     title: 'Mathematics',
     icon: Calculator,
-    color: 'bg-[#2D5A27]',
-    gradient: 'from-[#2D5A27] via-[#3B7233] to-[#20441C]',
-    shadow: 'shadow-lg shadow-[#2D5A27]/25 hover:shadow-2xl hover:shadow-[#2D5A27]/40',
-    border: 'border-lime-400/25',
+    color: 'bg-[#0F766E]',
+    gradient: 'from-[#0F766E] via-[#0D9488] to-[#115E59]',
+    shadow: 'shadow-lg shadow-[#0F766E]/25 hover:shadow-2xl hover:shadow-[#0F766E]/40',
+    border: 'border-teal-400/25',
     description: 'Calculus, Algebra, Trigonometry, Matrices & Coordinate Geometry',
   },
   {
     id: 'english',
     title: 'English',
     icon: Book,
-    color: 'bg-[#1B3A5B]',
-    gradient: 'from-[#1B3A5B] via-[#254C75] to-[#132A42]',
-    shadow: 'shadow-lg shadow-[#1B3A5B]/25 hover:shadow-2xl hover:shadow-[#1B3A5B]/40',
+    color: 'bg-[#1E3A8A]',
+    gradient: 'from-[#1E3A8A] via-[#2546A3] to-[#172E6F]',
+    shadow: 'shadow-lg shadow-[#1E3A8A]/25 hover:shadow-2xl hover:shadow-[#1E3A8A]/40',
     border: 'border-sky-400/25',
     description: 'Grammar Rules, Vocabulary Roots, Idioms, Antonyms & Comprehension',
   },
@@ -107,9 +107,9 @@ const SUBJECTS: Subject[] = [
     id: 'physics',
     title: 'Physics',
     icon: Atom,
-    color: 'bg-[#5B2A86]',
-    gradient: 'from-[#5B2A86] via-[#7335A8] to-[#441F65]',
-    shadow: 'shadow-lg shadow-[#5B2A86]/25 hover:shadow-2xl hover:shadow-[#5B2A86]/40',
+    color: 'bg-[#581C87]',
+    gradient: 'from-[#581C87] via-[#7E22CE] to-[#45106E]',
+    shadow: 'shadow-lg shadow-[#581C87]/25 hover:shadow-2xl hover:shadow-[#581C87]/40',
     border: 'border-purple-400/25',
     description: 'Mechanics, Optics, Thermodynamics, Electromagnetism & Modern Physics',
   },
@@ -117,9 +117,9 @@ const SUBJECTS: Subject[] = [
     id: 'chemistry',
     title: 'Chemistry',
     icon: FlaskConical,
-    color: 'bg-[#D64933]',
-    gradient: 'from-[#D64933] via-[#E25C47] to-[#B23824]',
-    shadow: 'shadow-lg shadow-[#D64933]/25 hover:shadow-2xl hover:shadow-[#D64933]/40',
+    color: 'bg-[#BE123C]',
+    gradient: 'from-[#BE123C] via-[#E11D48] to-[#9F1239]',
+    shadow: 'shadow-lg shadow-[#BE123C]/25 hover:shadow-2xl hover:shadow-[#BE123C]/40',
     border: 'border-rose-400/25',
     description: 'Periodic Classification, Chemical Bonding, Acids & Redox Reactions',
   },
@@ -127,9 +127,9 @@ const SUBJECTS: Subject[] = [
     id: 'biology',
     title: 'Biology',
     icon: Dna,
-    color: 'bg-[#15822F]',
-    gradient: 'from-[#15822F] via-[#1AA23B] to-[#106524]',
-    shadow: 'shadow-lg shadow-[#15822F]/25 hover:shadow-2xl hover:shadow-[#15822F]/40',
+    color: 'bg-[#15803D]',
+    gradient: 'from-[#15803D] via-[#16A34A] to-[#14532D]',
+    shadow: 'shadow-lg shadow-[#15803D]/25 hover:shadow-2xl hover:shadow-[#15803D]/40',
     border: 'border-emerald-300/25',
     description: 'Human Physiology, Cell Biology, Genetics, Botany & Ecosystems',
   },
@@ -137,9 +137,9 @@ const SUBJECTS: Subject[] = [
     id: 'economics',
     title: 'Economics',
     icon: Coins,
-    color: 'bg-[#B57C00]',
-    gradient: 'from-[#B57C00] via-[#D49200] to-[#8C6000]',
-    shadow: 'shadow-lg shadow-[#B57C00]/25 hover:shadow-2xl hover:shadow-[#B57C00]/40',
+    color: 'bg-[#B45309]',
+    gradient: 'from-[#B45309] via-[#D97706] to-[#8D3F06]',
+    shadow: 'shadow-lg shadow-[#B45309]/25 hover:shadow-2xl hover:shadow-[#B45309]/40',
     border: 'border-amber-300/25',
     description: 'Indian Economy, Union Budget, Inflation, Banking & Fiscal Policies',
   },
@@ -147,9 +147,9 @@ const SUBJECTS: Subject[] = [
     id: 'history',
     title: 'History',
     icon: BookOpen,
-    color: 'bg-[#8A5A44]',
-    gradient: 'from-[#8A5A44] via-[#A36D53] to-[#6A4332]',
-    shadow: 'shadow-lg shadow-[#8A5A44]/25 hover:shadow-2xl hover:shadow-[#8A5A44]/40',
+    color: 'bg-[#854D0E]',
+    gradient: 'from-[#854D0E] via-[#A16207] to-[#593306]',
+    shadow: 'shadow-lg shadow-[#854D0E]/25 hover:shadow-2xl hover:shadow-[#854D0E]/40',
     border: 'border-orange-300/25',
     description: 'Ancient Civilizations, Medieval India, Freedom Struggle & Modern Era',
   },
@@ -157,9 +157,9 @@ const SUBJECTS: Subject[] = [
     id: 'polity',
     title: 'Polity',
     icon: Landmark,
-    color: 'bg-[#005B96]',
-    gradient: 'from-[#005B96] via-[#0074BF] to-[#004470]',
-    shadow: 'shadow-lg shadow-[#005B96]/25 hover:shadow-2xl hover:shadow-[#005B96]/40',
+    color: 'bg-[#1D4ED8]',
+    gradient: 'from-[#1D4ED8] via-[#2563EB] to-[#1E40AF]',
+    shadow: 'shadow-lg shadow-[#1D4ED8]/25 hover:shadow-2xl hover:shadow-[#1D4ED8]/40',
     border: 'border-blue-300/25',
     description: 'Constitution of India, Fundamental Rights, Parliament & Judiciary',
   },
@@ -167,19 +167,19 @@ const SUBJECTS: Subject[] = [
     id: 'geography',
     title: 'Geography',
     icon: Map,
-    color: 'bg-[#2E8B57]',
-    gradient: 'from-[#2E8B57] via-[#38A869] to-[#226740]',
-    shadow: 'shadow-lg shadow-[#2E8B57]/25 hover:shadow-2xl hover:shadow-[#2E8B57]/40',
-    border: 'border-teal-300/25',
+    color: 'bg-[#144D30]',
+    gradient: 'from-[#144D30] via-[#1B6640] to-[#0E3823]',
+    shadow: 'shadow-lg shadow-[#144D30]/25 hover:shadow-2xl hover:shadow-[#144D30]/40',
+    border: 'border-emerald-400/25',
     description: 'Physical Geography, Climatology, Indian River Basins & Minerals',
   },
   {
     id: 'current-affairs',
     title: 'Current Affairs',
     icon: Newspaper,
-    color: 'bg-[#4B5563]',
-    gradient: 'from-[#4B5563] via-[#5F6C7D] to-[#374151]',
-    shadow: 'shadow-lg shadow-[#4B5563]/25 hover:shadow-2xl hover:shadow-[#4B5563]/40',
+    color: 'bg-[#334155]',
+    gradient: 'from-[#334155] via-[#475569] to-[#1E293B]',
+    shadow: 'shadow-lg shadow-[#334155]/25 hover:shadow-2xl hover:shadow-[#334155]/40',
     border: 'border-slate-300/25',
     description: 'National & Defence News, Bilateral Exercises, Summits & Awards',
   },
@@ -187,9 +187,9 @@ const SUBJECTS: Subject[] = [
     id: 'strategy',
     title: 'Strategy Guides',
     icon: Target,
-    color: 'bg-[#1B3A5B]',
-    gradient: 'from-[#1E293B] via-[#2D3E56] to-[#141C28]',
-    shadow: 'shadow-lg shadow-[#1E293B]/25 hover:shadow-2xl hover:shadow-[#1E293B]/40',
+    color: 'bg-[#3730A3]',
+    gradient: 'from-[#3730A3] via-[#4338CA] to-[#252070]',
+    shadow: 'shadow-lg shadow-[#3730A3]/25 hover:shadow-2xl hover:shadow-[#3730A3]/40',
     border: 'border-indigo-300/25',
     description: 'Exam Strategy, Time Management, Cutoff Analysis & SSB Blueprint',
   },
@@ -1017,8 +1017,8 @@ export default function Notes() {
           <div
             className={`rounded-[2.5rem] p-8 md:p-12 shadow-2xl relative overflow-hidden mb-10 border text-white ${
               isNda
-                ? 'bg-gradient-to-br from-[#1B4332] via-[#245A43] to-[#123827] border-emerald-400/25 shadow-[#1B4332]/25'
-                : 'bg-gradient-to-br from-[#1B3A5B] via-[#254C75] to-[#12273D] border-sky-400/25 shadow-[#1B3A5B]/25'
+                ? 'bg-gradient-to-br from-[#312E81] via-[#4338CA] to-[#1E1B4B] border-indigo-400/25 shadow-[#312E81]/25'
+                : 'bg-gradient-to-br from-[#B45309] via-[#D97706] to-[#78350F] border-amber-400/25 shadow-[#B45309]/25'
             }`}
           >
             {/* Top Sheen & Subtle Mesh Glow */}
@@ -1035,9 +1035,9 @@ export default function Notes() {
               <div className="flex items-center gap-6">
                 <div className="w-20 h-20 md:w-24 md:h-24 bg-white/15 backdrop-blur-xl rounded-3xl flex items-center justify-center text-white border border-white/25 shadow-2xl ring-1 ring-white/20 shrink-0">
                   {isNda ? (
-                    <Shield size={44} className="text-emerald-300 drop-shadow-md" />
+                    <Shield size={44} className="text-indigo-200 drop-shadow-md" />
                   ) : (
-                    <Award size={44} className="text-sky-300 drop-shadow-md" />
+                    <Award size={44} className="text-amber-200 drop-shadow-md" />
                   )}
                 </div>
                 <div>
@@ -1321,8 +1321,8 @@ export default function Notes() {
           <div
             className={`rounded-[2.5rem] p-8 md:p-12 shadow-2xl relative overflow-hidden mb-10 border text-white ${
               isNda
-                ? 'bg-gradient-to-br from-[#1B4332] via-[#245A43] to-[#123827] border-emerald-400/25 shadow-[#1B4332]/25'
-                : 'bg-gradient-to-br from-[#1B3A5B] via-[#254C75] to-[#12273D] border-sky-400/25 shadow-[#1B3A5B]/25'
+                ? 'bg-gradient-to-br from-[#312E81] via-[#4338CA] to-[#1E1B4B] border-indigo-400/25 shadow-[#312E81]/25'
+                : 'bg-gradient-to-br from-[#B45309] via-[#D97706] to-[#78350F] border-amber-400/25 shadow-[#B45309]/25'
             }`}
           >
             {/* Top Sheen & Subtle Mesh Glow */}
@@ -1339,14 +1339,14 @@ export default function Notes() {
               <div className="flex items-center gap-6">
                 <div className="w-20 h-20 md:w-24 md:h-24 bg-white/15 backdrop-blur-xl rounded-3xl flex items-center justify-center text-white border border-white/25 shadow-2xl ring-1 ring-white/20 shrink-0">
                   {isNda ? (
-                    <Shield size={44} className="text-emerald-300 drop-shadow-md" />
+                    <Shield size={44} className="text-indigo-200 drop-shadow-md" />
                   ) : (
-                    <Award size={44} className="text-sky-300 drop-shadow-md" />
+                    <Award size={44} className="text-amber-200 drop-shadow-md" />
                   )}
                 </div>
                 <div>
                   <span className="px-3.5 py-1.5 bg-white/15 backdrop-blur-md text-white border border-white/25 text-[10px] font-black tracking-widest uppercase rounded-full inline-flex items-center gap-1.5 mb-2 shadow-xs">
-                    <Sparkles size={11} className={isNda ? 'text-amber-300' : 'text-sky-200'} />
+                    <Sparkles size={11} className={isNda ? 'text-amber-300' : 'text-amber-200'} />
                     EXAM SESSIONS • 2021 – 2026
                   </span>
                   <h1 className="text-3xl md:text-5xl font-black text-white tracking-tight drop-shadow-sm">
@@ -1674,81 +1674,89 @@ export default function Notes() {
 
           {/* The 2 Sub-Cards: 1st "NDA", 2nd "CDS" */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8 md:gap-10">
-            {/* 1st Card: NDA */}
+            {/* 1st Card: NDA (Imperial Indigo / Royal Violet) */}
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.1 }}
               whileHover={{ y: -12 }}
               onClick={() => setSelectedExam('NDA')}
-              className="bg-[#1B4332] p-8 md:p-12 rounded-[2.5rem] md:rounded-[3rem] text-white transition-all duration-500 flex flex-col justify-between group cursor-pointer shadow-2xl relative overflow-hidden min-h-[380px]"
+              className="bg-gradient-to-br from-[#312E81] via-[#4338CA] to-[#1E1B4B] border border-indigo-400/30 p-8 md:p-12 rounded-[2.5rem] md:rounded-[3rem] text-white transition-all duration-500 flex flex-col justify-between group cursor-pointer shadow-2xl shadow-[#312E81]/30 hover:shadow-[#312E81]/50 relative overflow-hidden min-h-[380px]"
             >
+              {/* Ambient Sheen & Glow Orbs */}
+              <div className="absolute inset-x-0 top-0 h-32 bg-gradient-to-b from-white/15 to-transparent pointer-events-none" />
+              <div className="absolute -top-12 -right-12 w-48 h-48 rounded-full bg-white/10 blur-2xl pointer-events-none" />
+
               <div className="absolute -right-8 -bottom-8 opacity-[0.08] group-hover:opacity-[0.18] transition-opacity duration-500">
                 <Shield size={220} />
               </div>
 
               <div className="relative z-10">
                 <div className="flex items-center justify-between mb-8">
-                  <div className="w-20 h-20 bg-white/10 backdrop-blur-md rounded-3xl flex items-center justify-center premium-zoom group-hover:scale-110 group-hover:rotate-6 border border-white/20 shadow-xl">
-                    <Shield size={40} />
+                  <div className="w-20 h-20 bg-white/15 backdrop-blur-xl rounded-3xl flex items-center justify-center premium-zoom group-hover:scale-110 group-hover:rotate-6 border border-white/25 shadow-xl ring-1 ring-white/20">
+                    <Shield size={40} className="text-indigo-200 drop-shadow-md" />
                   </div>
-                  <span className="px-4 py-1.5 bg-white/15 backdrop-blur-md border border-white/20 rounded-full text-white text-[10px] font-black tracking-widest uppercase">
+                  <span className="px-4 py-1.5 bg-white/15 backdrop-blur-md border border-white/25 rounded-full text-white text-[10px] font-black tracking-widest uppercase shadow-xs">
                     12 Sessions
                   </span>
                 </div>
 
-                <h3 className="text-4xl md:text-5xl font-black mb-2 tracking-tighter">NDA</h3>
-                <p className="text-white/80 font-bold text-sm tracking-wide mb-3">
+                <h3 className="text-4xl md:text-5xl font-black mb-2 tracking-tighter drop-shadow-sm">NDA</h3>
+                <p className="text-white/90 font-bold text-sm tracking-wide mb-3">
                   National Defence Academy & Naval Academy
                 </p>
-                <p className="text-white/60 text-xs font-medium leading-relaxed max-w-md mb-8">
+                <p className="text-white/70 text-xs font-medium leading-relaxed max-w-md mb-8">
                   Session papers from 2021 to 2026. Manage and download Mathematics (Paper 1) and General Ability Test (GAT) papers with answer keys.
                 </p>
               </div>
 
-              <div className="relative z-10 flex items-center justify-between pt-6 border-t border-white/10">
-                <span className="text-white/70 text-xs font-black tracking-[0.2em] uppercase">Maths & GAT Papers</span>
-                <button className="px-8 py-3.5 bg-white text-gray-900 rounded-2xl text-xs font-black tracking-widest uppercase group-hover:bg-[#E8F5E9] transition-all duration-300 shadow-lg flex items-center gap-2">
+              <div className="relative z-10 flex items-center justify-between pt-6 border-t border-white/15">
+                <span className="text-white/80 text-xs font-black tracking-[0.2em] uppercase">Maths & GAT Papers</span>
+                <button className="px-8 py-3.5 bg-white text-[#312E81] rounded-2xl text-xs font-black tracking-widest uppercase hover:bg-indigo-50 transition-all duration-300 shadow-lg flex items-center gap-2 group-hover:scale-105">
                   Open NDA <ArrowRight size={14} />
                 </button>
               </div>
             </motion.div>
 
-            {/* 2nd Card: CDS */}
+            {/* 2nd Card: CDS (Warm Sunset Amber / Radiant Topaz Gold) */}
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.2 }}
               whileHover={{ y: -12 }}
               onClick={() => setSelectedExam('CDS')}
-              className="bg-[#1B3A5B] p-8 md:p-12 rounded-[2.5rem] md:rounded-[3rem] text-white transition-all duration-500 flex flex-col justify-between group cursor-pointer shadow-2xl relative overflow-hidden min-h-[380px]"
+              className="bg-gradient-to-br from-[#B45309] via-[#D97706] to-[#78350F] border border-amber-400/30 p-8 md:p-12 rounded-[2.5rem] md:rounded-[3rem] text-white transition-all duration-500 flex flex-col justify-between group cursor-pointer shadow-2xl shadow-[#B45309]/30 hover:shadow-[#B45309]/50 relative overflow-hidden min-h-[380px]"
             >
+              {/* Ambient Sheen & Glow Orbs */}
+              <div className="absolute inset-x-0 top-0 h-32 bg-gradient-to-b from-white/15 to-transparent pointer-events-none" />
+              <div className="absolute -top-12 -right-12 w-48 h-48 rounded-full bg-white/10 blur-2xl pointer-events-none" />
+
               <div className="absolute -right-8 -bottom-8 opacity-[0.08] group-hover:opacity-[0.18] transition-opacity duration-500">
                 <Award size={220} />
               </div>
 
               <div className="relative z-10">
                 <div className="flex items-center justify-between mb-8">
-                  <div className="w-20 h-20 bg-white/10 backdrop-blur-md rounded-3xl flex items-center justify-center premium-zoom group-hover:scale-110 group-hover:rotate-6 border border-white/20 shadow-xl">
-                    <Award size={40} />
+                  <div className="w-20 h-20 bg-white/15 backdrop-blur-xl rounded-3xl flex items-center justify-center premium-zoom group-hover:scale-110 group-hover:rotate-6 border border-white/25 shadow-xl ring-1 ring-white/20">
+                    <Award size={40} className="text-amber-200 drop-shadow-md" />
                   </div>
-                  <span className="px-4 py-1.5 bg-white/15 backdrop-blur-md border border-white/20 rounded-full text-white text-[10px] font-black tracking-widest uppercase">
+                  <span className="px-4 py-1.5 bg-white/15 backdrop-blur-md border border-white/25 rounded-full text-white text-[10px] font-black tracking-widest uppercase shadow-xs">
                     12 Sessions
                   </span>
                 </div>
 
-                <h3 className="text-4xl md:text-5xl font-black mb-2 tracking-tighter">CDS</h3>
-                <p className="text-white/80 font-bold text-sm tracking-wide mb-3">
+                <h3 className="text-4xl md:text-5xl font-black mb-2 tracking-tighter drop-shadow-sm">CDS</h3>
+                <p className="text-white/90 font-bold text-sm tracking-wide mb-3">
                   Combined Defence Services Examination
                 </p>
-                <p className="text-white/60 text-xs font-medium leading-relaxed max-w-md mb-8">
+                <p className="text-white/70 text-xs font-medium leading-relaxed max-w-md mb-8">
                   Session papers from 2021 to 2026. Manage and download English, GS (General Studies), and Elementary Mathematics papers with answer keys.
                 </p>
               </div>
 
-              <div className="relative z-10 flex items-center justify-between pt-6 border-t border-white/10">
-                <span className="text-white/70 text-xs font-black tracking-[0.2em] uppercase">English, GS & Maths</span>
-                <button className="px-8 py-3.5 bg-white text-gray-900 rounded-2xl text-xs font-black tracking-widest uppercase group-hover:bg-[#E3F2FD] transition-all duration-300 shadow-lg flex items-center gap-2">
+              <div className="relative z-10 flex items-center justify-between pt-6 border-t border-white/15">
+                <span className="text-white/80 text-xs font-black tracking-[0.2em] uppercase">English, GS & Maths</span>
+                <button className="px-8 py-3.5 bg-white text-[#B45309] rounded-2xl text-xs font-black tracking-widest uppercase hover:bg-amber-50 transition-all duration-300 shadow-lg flex items-center gap-2 group-hover:scale-105">
                   Open CDS <ArrowRight size={14} />
                 </button>
               </div>
