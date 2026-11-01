@@ -14,7 +14,7 @@ import {
 interface Subject {
   id: string;
   title: string;
-  count: string;
+  count?: string;
   icon: any;
   color?: string;
   gradient: string;
@@ -76,19 +76,16 @@ const SUBJECTS: Subject[] = [
   {
     id: 'pyq-papers',
     title: 'PYQ Papers',
-    count: '24 Papers • NDA & CDS',
     icon: FileCheck,
     color: 'bg-[#1B4332]',
     gradient: 'from-[#1B4332] via-[#245A43] to-[#143728]',
     shadow: 'shadow-lg shadow-[#1B4332]/25 hover:shadow-2xl hover:shadow-[#1B4332]/40',
     border: 'border-emerald-400/25',
-    badge: 'PYQ Archive',
     description: 'Official UPSC Question Papers & Answer Keys (2021 – 2026)',
   },
   {
     id: 'maths',
     title: 'Mathematics',
-    count: '50+ PDFs',
     icon: Calculator,
     color: 'bg-[#2D5A27]',
     gradient: 'from-[#2D5A27] via-[#3B7233] to-[#20441C]',
@@ -99,7 +96,6 @@ const SUBJECTS: Subject[] = [
   {
     id: 'english',
     title: 'English',
-    count: '40+ PDFs',
     icon: Book,
     color: 'bg-[#1B3A5B]',
     gradient: 'from-[#1B3A5B] via-[#254C75] to-[#132A42]',
@@ -110,7 +106,6 @@ const SUBJECTS: Subject[] = [
   {
     id: 'physics',
     title: 'Physics',
-    count: '0 PDFs',
     icon: Atom,
     color: 'bg-[#5B2A86]',
     gradient: 'from-[#5B2A86] via-[#7335A8] to-[#441F65]',
@@ -121,7 +116,6 @@ const SUBJECTS: Subject[] = [
   {
     id: 'chemistry',
     title: 'Chemistry',
-    count: '0 PDFs',
     icon: FlaskConical,
     color: 'bg-[#D64933]',
     gradient: 'from-[#D64933] via-[#E25C47] to-[#B23824]',
@@ -132,7 +126,6 @@ const SUBJECTS: Subject[] = [
   {
     id: 'biology',
     title: 'Biology',
-    count: '0 PDFs',
     icon: Dna,
     color: 'bg-[#15822F]',
     gradient: 'from-[#15822F] via-[#1AA23B] to-[#106524]',
@@ -143,7 +136,6 @@ const SUBJECTS: Subject[] = [
   {
     id: 'economics',
     title: 'Economics',
-    count: '0 PDFs',
     icon: Coins,
     color: 'bg-[#B57C00]',
     gradient: 'from-[#B57C00] via-[#D49200] to-[#8C6000]',
@@ -154,7 +146,6 @@ const SUBJECTS: Subject[] = [
   {
     id: 'history',
     title: 'History',
-    count: '0 PDFs',
     icon: BookOpen,
     color: 'bg-[#8A5A44]',
     gradient: 'from-[#8A5A44] via-[#A36D53] to-[#6A4332]',
@@ -165,7 +156,6 @@ const SUBJECTS: Subject[] = [
   {
     id: 'polity',
     title: 'Polity',
-    count: '0 PDFs',
     icon: Landmark,
     color: 'bg-[#005B96]',
     gradient: 'from-[#005B96] via-[#0074BF] to-[#004470]',
@@ -176,7 +166,6 @@ const SUBJECTS: Subject[] = [
   {
     id: 'geography',
     title: 'Geography',
-    count: '0 PDFs',
     icon: Map,
     color: 'bg-[#2E8B57]',
     gradient: 'from-[#2E8B57] via-[#38A869] to-[#226740]',
@@ -187,7 +176,6 @@ const SUBJECTS: Subject[] = [
   {
     id: 'current-affairs',
     title: 'Current Affairs',
-    count: 'Monthly Updates',
     icon: Newspaper,
     color: 'bg-[#4B5563]',
     gradient: 'from-[#4B5563] via-[#5F6C7D] to-[#374151]',
@@ -198,7 +186,6 @@ const SUBJECTS: Subject[] = [
   {
     id: 'strategy',
     title: 'Strategy Guides',
-    count: '10+ Guides',
     icon: Target,
     color: 'bg-[#1B3A5B]',
     gradient: 'from-[#1E293B] via-[#2D3E56] to-[#141C28]',
@@ -1786,11 +1773,12 @@ export default function Notes() {
     const q = searchQuery.toLowerCase().trim();
     if (!q) return true;
     const matchesTitle = subject.title.toLowerCase().includes(q);
-    const matchesCount = subject.count.toLowerCase().includes(q);
+    const matchesCount = subject.count?.toLowerCase().includes(q) ?? false;
+    const matchesDesc = subject.description?.toLowerCase().includes(q) ?? false;
     const matchesPyq =
       subject.id === 'pyq-papers' &&
       ('nda'.includes(q) || 'cds'.includes(q) || 'pyq'.includes(q) || 'paper'.includes(q) || 'previous'.includes(q));
-    return matchesTitle || matchesCount || matchesPyq;
+    return matchesTitle || matchesCount || matchesDesc || matchesPyq;
   });
 
   return (
@@ -1850,63 +1838,63 @@ export default function Notes() {
 
         {/* Subjects Grid (1st card is "PYQ Papers", followed by Mathematics, English, etc.) */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 md:gap-10">
-          {filteredSubjects.map((subject, index) => (
-            <motion.div
-              key={subject.id}
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: index * 0.04 }}
-              whileHover={{ y: -10 }}
-              onClick={() => setSelectedSubject(subject)}
-              className={`group relative rounded-[2.5rem] md:rounded-[3rem] bg-gradient-to-br ${subject.gradient} ${subject.shadow} p-8 md:p-12 text-white transition-all duration-500 flex flex-col items-center text-center cursor-pointer relative overflow-hidden border border-white/20 ring-1 ring-white/10`}
-            >
-              {/* Subtle Ambient Light Sheen */}
-              <div className="absolute inset-x-0 top-0 h-40 bg-gradient-to-b from-white/20 via-white/5 to-transparent pointer-events-none" />
+          {filteredSubjects.map((subject, index) => {
+            const count = allSubjectNotes.filter((n) => n.subjectId.toLowerCase() === subject.id.toLowerCase()).length;
+            const subtitleText =
+              subject.id === 'pyq-papers'
+                ? 'NDA & CDS PYQ Archive'
+                : count > 0
+                ? `${count} ${count === 1 ? 'Study Note' : 'Study Notes'}`
+                : 'Curated Study Vault';
 
-              {/* Special Badge for PYQ Papers */}
-              {subject.badge && (
-                <div className="absolute top-6 right-6 z-10">
-                  <span className="px-3.5 py-1.5 bg-white/20 backdrop-blur-md rounded-full text-[9px] font-black tracking-widest uppercase border border-white/30 text-white shadow-sm flex items-center gap-1.5">
-                    <Sparkles size={11} className="text-amber-200" />
-                    {subject.badge}
-                  </span>
+            return (
+              <motion.div
+                key={subject.id}
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: index * 0.04 }}
+                whileHover={{ y: -10, scale: 1.01 }}
+                onClick={() => setSelectedSubject(subject)}
+                className={`group relative rounded-[2.5rem] md:rounded-[3rem] bg-gradient-to-br ${subject.gradient} ${subject.shadow} p-8 md:p-12 text-white transition-all duration-500 flex flex-col items-center text-center cursor-pointer relative overflow-hidden border border-white/20 ring-1 ring-white/10`}
+              >
+                {/* Subtle Ambient Radial Light Orb */}
+                <div className="absolute -top-16 -right-16 w-48 h-48 rounded-full bg-white/15 blur-2xl group-hover:bg-white/25 group-hover:scale-125 transition-all duration-700 pointer-events-none" />
+                <div className="absolute -bottom-16 -left-16 w-40 h-40 rounded-full bg-black/15 blur-2xl pointer-events-none" />
+
+                {/* Subtle Ambient Light Sheen from top */}
+                <div className="absolute inset-x-0 top-0 h-40 bg-gradient-to-b from-white/20 via-white/5 to-transparent pointer-events-none" />
+
+                {/* Translucent Watermark Background Icon */}
+                <div className="absolute -right-8 -bottom-8 text-white opacity-[0.08] group-hover:opacity-[0.18] group-hover:scale-110 group-hover:-rotate-6 transition-all duration-700 pointer-events-none">
+                  <subject.icon size={180} />
                 </div>
-              )}
 
-              {/* Translucent Watermark Background Icon */}
-              <div className="absolute -right-6 -bottom-6 text-white opacity-[0.08] group-hover:opacity-[0.16] group-hover:scale-110 group-hover:-rotate-6 transition-all duration-500 pointer-events-none">
-                <subject.icon size={170} />
-              </div>
+                {/* 3D Glass Frosted Icon Pod */}
+                <div className="w-20 h-20 bg-white/20 backdrop-blur-xl rounded-3xl flex items-center justify-center mb-6 group-hover:scale-110 group-hover:rotate-3 border border-white/35 shadow-[0_12px_28px_rgba(0,0,0,0.15)] group-hover:shadow-[0_16px_36px_rgba(0,0,0,0.22)] transition-all duration-500 relative z-10 ring-1 ring-white/30">
+                  <subject.icon size={40} className="text-white drop-shadow-md" />
+                </div>
 
-              {/* Centered Frosted Glass Icon Container */}
-              <div className="w-20 h-20 bg-white/15 backdrop-blur-md rounded-3xl flex items-center justify-center mb-6 group-hover:scale-110 group-hover:rotate-6 border border-white/25 shadow-xl transition-all duration-300 relative z-10">
-                <subject.icon size={40} className="text-white drop-shadow-md" />
-              </div>
+                {/* Subject Title */}
+                <h3 className="text-3xl font-black mb-3 tracking-tight text-white relative z-10 drop-shadow-sm group-hover:scale-[1.02] transition-transform duration-300">
+                  {subject.title}
+                </h3>
 
-              {/* Subject Title */}
-              <h3 className="text-3xl font-black mb-2 tracking-tight text-white relative z-10 drop-shadow-sm">
-                {subject.title}
-              </h3>
+                {/* Pill Subtitle with Micro Indicator */}
+                <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-black/20 backdrop-blur-md border border-white/15 text-white/90 text-[10px] font-black tracking-widest uppercase mb-8 shadow-xs relative z-10">
+                  <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
+                  <span>{subtitleText}</span>
+                </div>
 
-              {/* PDF Count Subtitle */}
-              <p className="text-white/80 text-xs font-black mb-8 tracking-[0.25em] uppercase relative z-10">
-                {subject.id === 'pyq-papers'
-                  ? subject.count
-                  : (() => {
-                      const c = allSubjectNotes.filter((n) => n.subjectId.toLowerCase() === subject.id.toLowerCase()).length;
-                      return c > 0 ? `${c} ${c === 1 ? 'PDF Note' : 'PDF Notes'}` : subject.count;
-                    })()}
-              </p>
-
-              {/* Open Folder Action Button */}
-              <div className="mt-auto relative z-10">
-                <button className="px-8 py-3.5 bg-white/15 hover:bg-white text-white hover:text-[#1A1A1A] border border-white/30 backdrop-blur-md rounded-2xl text-[11px] font-black tracking-[0.2em] uppercase transition-all duration-300 shadow-md flex items-center gap-2.5 cursor-pointer group-hover:scale-105 group-hover:shadow-lg">
-                  <span>Open Folder</span>
-                  <ArrowRight size={14} className="group-hover:translate-x-1 transition-transform duration-300" />
-                </button>
-              </div>
-            </motion.div>
-          ))}
+                {/* Open Folder Action Button */}
+                <div className="mt-auto relative z-10">
+                  <button className="px-8 py-3.5 bg-white/15 hover:bg-white text-white hover:text-[#1A1A1A] border border-white/30 hover:border-white backdrop-blur-md rounded-2xl text-[11px] font-black tracking-[0.2em] uppercase transition-all duration-300 shadow-md flex items-center gap-2.5 cursor-pointer group-hover:scale-105 group-hover:shadow-xl">
+                    <span>Open Folder</span>
+                    <ArrowRight size={14} className="group-hover:translate-x-1.5 transition-transform duration-300" />
+                  </button>
+                </div>
+              </motion.div>
+            );
+          })}
         </div>
 
         {filteredSubjects.length === 0 && (
