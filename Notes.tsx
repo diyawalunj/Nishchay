@@ -16,9 +16,13 @@ interface Subject {
   title: string;
   count: string;
   icon: any;
-  color: string;
+  color?: string;
+  gradient: string;
+  border: string;
+  glowBg: string;
+  accentIcon: string;
   badge?: string;
-  description?: string;
+  description: string;
 }
 
 interface ExamPaper {
@@ -76,8 +80,12 @@ const SUBJECTS: Subject[] = [
     count: '24 Papers • NDA & CDS',
     icon: FileCheck,
     color: 'bg-[#1B4332]',
+    gradient: 'from-[#0A2619] via-[#123826] to-[#071911]',
+    border: 'border-emerald-500/40 hover:border-emerald-400',
+    glowBg: 'bg-emerald-500',
+    accentIcon: 'text-emerald-400',
     badge: 'PYQ Archive',
-    description: 'Previous Year Question Papers & Answer Keys (2021 – 2026)',
+    description: 'Official UPSC Question Papers & Answer Keys (2021 – 2026)',
   },
   {
     id: 'maths',
@@ -85,6 +93,11 @@ const SUBJECTS: Subject[] = [
     count: '50+ PDFs',
     icon: Calculator,
     color: 'bg-[#2D5A27]',
+    gradient: 'from-[#0D261B] via-[#163D2B] to-[#091B13]',
+    border: 'border-emerald-500/30 hover:border-emerald-400',
+    glowBg: 'bg-emerald-400',
+    accentIcon: 'text-emerald-300',
+    description: 'Calculus, Algebra, Trigonometry, Matrices & Coordinate Geometry',
   },
   {
     id: 'english',
@@ -92,6 +105,11 @@ const SUBJECTS: Subject[] = [
     count: '40+ PDFs',
     icon: Book,
     color: 'bg-[#1B3A5B]',
+    gradient: 'from-[#0E1F36] via-[#163359] to-[#0A1626]',
+    border: 'border-sky-500/30 hover:border-sky-400',
+    glowBg: 'bg-sky-500',
+    accentIcon: 'text-sky-300',
+    description: 'Grammar Rules, Vocabulary Roots, Idioms, Antonyms & Comprehension',
   },
   {
     id: 'physics',
@@ -99,6 +117,11 @@ const SUBJECTS: Subject[] = [
     count: '0 PDFs',
     icon: Atom,
     color: 'bg-[#5B2A86]',
+    gradient: 'from-[#1C1233] via-[#2D1C52] to-[#130B24]',
+    border: 'border-purple-500/30 hover:border-purple-400',
+    glowBg: 'bg-purple-500',
+    accentIcon: 'text-purple-300',
+    description: 'Mechanics, Optics, Thermodynamics, Electromagnetism & Modern Physics',
   },
   {
     id: 'chemistry',
@@ -106,6 +129,11 @@ const SUBJECTS: Subject[] = [
     count: '0 PDFs',
     icon: FlaskConical,
     color: 'bg-[#D64933]',
+    gradient: 'from-[#2C130F] via-[#461D17] to-[#1E0D0A]',
+    border: 'border-rose-500/30 hover:border-rose-400',
+    glowBg: 'bg-rose-500',
+    accentIcon: 'text-rose-300',
+    description: 'Periodic Classification, Chemical Bonding, Acids & Redox Reactions',
   },
   {
     id: 'biology',
@@ -113,6 +141,11 @@ const SUBJECTS: Subject[] = [
     count: '0 PDFs',
     icon: Dna,
     color: 'bg-[#15822F]',
+    gradient: 'from-[#0B2618] via-[#133D27] to-[#081C11]',
+    border: 'border-teal-500/30 hover:border-teal-400',
+    glowBg: 'bg-teal-500',
+    accentIcon: 'text-teal-300',
+    description: 'Human Physiology, Cell Biology, Genetics, Botany & Ecosystems',
   },
   {
     id: 'economics',
@@ -120,6 +153,11 @@ const SUBJECTS: Subject[] = [
     count: '0 PDFs',
     icon: Coins,
     color: 'bg-[#B57C00]',
+    gradient: 'from-[#281D0B] via-[#423012] to-[#1A1307]',
+    border: 'border-amber-500/30 hover:border-amber-400',
+    glowBg: 'bg-amber-500',
+    accentIcon: 'text-amber-300',
+    description: 'Indian Economy, Union Budget, Inflation, Banking & Fiscal Policies',
   },
   {
     id: 'history',
@@ -127,6 +165,11 @@ const SUBJECTS: Subject[] = [
     count: '0 PDFs',
     icon: BookOpen,
     color: 'bg-[#8A5A44]',
+    gradient: 'from-[#26150F] via-[#3E2218] to-[#1A0E0A]',
+    border: 'border-orange-500/30 hover:border-orange-400',
+    glowBg: 'bg-orange-500',
+    accentIcon: 'text-orange-300',
+    description: 'Ancient Civilizations, Medieval India, Freedom Struggle & Modern Era',
   },
   {
     id: 'polity',
@@ -134,6 +177,11 @@ const SUBJECTS: Subject[] = [
     count: '0 PDFs',
     icon: Landmark,
     color: 'bg-[#005B96]',
+    gradient: 'from-[#0B1E36] via-[#133257] to-[#081526]',
+    border: 'border-blue-500/30 hover:border-blue-400',
+    glowBg: 'bg-blue-500',
+    accentIcon: 'text-blue-300',
+    description: 'Constitution of India, Fundamental Rights, Parliament & Judiciary',
   },
   {
     id: 'geography',
@@ -141,6 +189,11 @@ const SUBJECTS: Subject[] = [
     count: '0 PDFs',
     icon: Map,
     color: 'bg-[#2E8B57]',
+    gradient: 'from-[#0C241E] via-[#143B31] to-[#091A15]',
+    border: 'border-emerald-500/30 hover:border-emerald-400',
+    glowBg: 'bg-emerald-500',
+    accentIcon: 'text-emerald-300',
+    description: 'Physical Geography, Climatology, Indian River Basins & Minerals',
   },
   {
     id: 'current-affairs',
@@ -148,6 +201,11 @@ const SUBJECTS: Subject[] = [
     count: 'Monthly Updates',
     icon: Newspaper,
     color: 'bg-[#4B5563]',
+    gradient: 'from-[#141B24] via-[#202B3A] to-[#0D1218]',
+    border: 'border-slate-400/30 hover:border-slate-200',
+    glowBg: 'bg-cyan-500',
+    accentIcon: 'text-cyan-300',
+    description: 'National & Defence News, Bilateral Exercises, Summits & Awards',
   },
   {
     id: 'strategy',
@@ -155,6 +213,11 @@ const SUBJECTS: Subject[] = [
     count: '10+ Guides',
     icon: Target,
     color: 'bg-[#1B3A5B]',
+    gradient: 'from-[#131B2D] via-[#1E2945] to-[#0D121E]',
+    border: 'border-indigo-500/30 hover:border-indigo-400',
+    glowBg: 'bg-indigo-500',
+    accentIcon: 'text-indigo-300',
+    description: 'Exam Strategy, Time Management, Cutoff Analysis & SSB Blueprint',
   },
 ];
 
@@ -1626,8 +1689,9 @@ export default function Notes() {
           <div className="bg-white rounded-[2rem] p-8 md:p-12 shadow-[0_20px_50px_rgba(0,0,0,0.03)] border border-gray-100 mb-8">
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-12 border-b border-gray-100 pb-12">
               <div className="flex items-center gap-6">
-                <div className={`w-20 h-20 ${selectedSubject.color} rounded-3xl flex items-center justify-center text-white shadow-xl`}>
-                  <selectedSubject.icon size={40} />
+                <div className={`w-20 h-20 bg-gradient-to-br ${selectedSubject.gradient} rounded-3xl flex items-center justify-center text-white shadow-xl border ${selectedSubject.border} ring-1 ring-white/20 relative overflow-hidden group`}>
+                  <div className={`absolute -top-4 -right-4 w-12 h-12 rounded-full ${selectedSubject.glowBg} opacity-40 blur-xl`} />
+                  <selectedSubject.icon size={36} className={`${selectedSubject.accentIcon} relative z-10`} />
                 </div>
                 <div>
                   <h2 className="text-4xl md:text-5xl font-black text-[#1A1A1A] mb-2 tracking-tighter">{selectedSubject.title}</h2>
@@ -1798,44 +1862,76 @@ export default function Notes() {
         </div>
 
         {/* Subjects Grid (1st card is "PYQ Papers", followed by Mathematics, English, etc.) */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-10">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 md:gap-10">
           {filteredSubjects.map((subject, index) => (
             <motion.div
               key={subject.id}
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: index * 0.05 }}
-              whileHover={{ y: -12 }}
+              transition={{ delay: index * 0.04 }}
+              whileHover={{ y: -8 }}
               onClick={() => setSelectedSubject(subject)}
-              className={`${subject.color} p-8 md:p-12 rounded-[2rem] md:rounded-[3rem] text-white transition-all duration-500 flex flex-col items-center text-center group cursor-pointer shadow-2xl relative overflow-hidden`}
+              className={`group relative rounded-[2.25rem] bg-gradient-to-br ${subject.gradient} border ${subject.border} p-8 flex flex-col justify-between overflow-hidden shadow-xl hover:shadow-[0_25px_50px_-12px_rgba(0,0,0,0.5)] transition-all duration-500 cursor-pointer text-left ring-1 ring-white/10 hover:ring-white/25 min-h-[310px]`}
             >
-              {/* Special Badge for PYQ Papers */}
-              {subject.badge && (
-                <div className="absolute top-6 right-6">
-                  <span className="px-3.5 py-1 bg-white/20 backdrop-blur-md rounded-full text-[9px] font-black tracking-widest uppercase border border-white/30 text-white">
+              {/* Top-Right Ambient Glow Orb */}
+              <div className={`absolute -top-12 -right-12 w-48 h-48 rounded-full ${subject.glowBg} opacity-20 blur-3xl group-hover:opacity-40 group-hover:scale-125 transition-all duration-700 pointer-events-none`} />
+
+              {/* Bottom-Left Ambient Vignette Orb */}
+              <div className="absolute -bottom-16 -left-16 w-36 h-36 rounded-full bg-white/[0.03] blur-2xl group-hover:bg-white/[0.08] transition-all duration-700 pointer-events-none" />
+
+              {/* Watermark Background Subject Icon */}
+              <div className="absolute -right-6 -bottom-6 text-white opacity-[0.04] group-hover:opacity-[0.10] group-hover:scale-110 group-hover:-rotate-6 transition-all duration-700 pointer-events-none">
+                <subject.icon size={150} />
+              </div>
+
+              {/* Card Header: Glass Icon Container & Badge */}
+              <div className="flex items-center justify-between relative z-10 mb-6">
+                <div className="w-16 h-16 rounded-2xl bg-white/10 backdrop-blur-xl border border-white/20 flex items-center justify-center shadow-lg group-hover:scale-105 group-hover:rotate-3 transition-all duration-300">
+                  <subject.icon size={30} className={subject.accentIcon} />
+                </div>
+                {subject.badge ? (
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white/15 backdrop-blur-md rounded-full text-[10px] font-black tracking-widest uppercase border border-white/25 text-white shadow-sm">
+                    <Sparkles size={11} className="text-amber-300" />
                     {subject.badge}
                   </span>
-                </div>
-              )}
+                ) : (
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-black/25 backdrop-blur-md rounded-full text-[10px] font-bold tracking-wider uppercase border border-white/10 text-white/70">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                    Active
+                  </span>
+                )}
+              </div>
 
-              <div className="absolute -right-8 -bottom-8 opacity-[0.05] group-hover:opacity-[0.15] transition-opacity duration-500">
-                <subject.icon size={160} />
+              {/* Card Body: Title & Rich Description */}
+              <div className="relative z-10 flex-1 flex flex-col justify-center">
+                <h3 className="text-2xl font-black text-white tracking-tight group-hover:translate-x-1 transition-transform duration-300">
+                  {subject.title}
+                </h3>
+                <p className="text-white/60 text-xs md:text-sm font-medium leading-relaxed line-clamp-2 mt-2 mb-6 group-hover:text-white/80 transition-colors">
+                  {subject.description}
+                </p>
               </div>
-              <div className="w-20 h-20 bg-white/10 backdrop-blur-md rounded-3xl flex items-center justify-center mb-8 premium-zoom group-hover:scale-110 group-hover:rotate-6 border border-white/20 shadow-xl">
-                <subject.icon size={40} />
+
+              {/* Card Footer: Live Counter & Action Button */}
+              <div className="flex items-center justify-between pt-4 border-t border-white/10 relative z-10">
+                <div className="flex items-center gap-2 text-white/75 text-xs font-semibold">
+                  <div className="w-7 h-7 rounded-lg bg-white/10 flex items-center justify-center border border-white/10">
+                    <FileText size={14} className={subject.accentIcon} />
+                  </div>
+                  <span>
+                    {subject.id === 'pyq-papers'
+                      ? subject.count
+                      : (() => {
+                          const c = allSubjectNotes.filter((n) => n.subjectId.toLowerCase() === subject.id.toLowerCase()).length;
+                          return c > 0 ? `${c} ${c === 1 ? 'PDF Note' : 'PDF Notes'}` : subject.count;
+                        })()}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white/10 group-hover:bg-white text-white group-hover:text-black font-black text-[11px] tracking-wider uppercase border border-white/20 backdrop-blur-md transition-all duration-300 shadow-md">
+                  <span>Open</span>
+                  <ArrowRight size={14} className="group-hover:translate-x-1 transition-transform duration-300" />
+                </div>
               </div>
-              <h3 className="text-3xl font-black mb-3 tracking-tighter">{subject.title}</h3>
-              <p className="text-white/50 text-xs font-black mb-10 tracking-[0.3em] uppercase">
-                {subject.id === 'pyq-papers'
-                  ? subject.count
-                  : (() => {
-                      const c = allSubjectNotes.filter((n) => n.subjectId.toLowerCase() === subject.id.toLowerCase()).length;
-                      return c > 0 ? `${c} ${c === 1 ? 'PDF Note' : 'PDF Notes'}` : subject.count;
-                    })()}
-              </p>
-              <button className="px-10 py-4 bg-white/10 backdrop-blur-md border border-white/20 rounded-2xl text-[10px] font-black tracking-[0.3em] uppercase hover:bg-white hover:text-gray-900 transition-all duration-500 shadow-lg cursor-pointer">
-                Open Folder
-              </button>
             </motion.div>
           ))}
         </div>
