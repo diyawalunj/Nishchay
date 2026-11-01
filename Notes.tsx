@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { auth, onAuthStateChanged, checkIfAdmin, db, doc, setDoc, deleteDoc, getDocs, collection } from './firebase';
+import { auth, onAuthStateChanged, checkIfAdmin } from './firebase';
 import type { SubjectNote } from './notes-db';
 import { motion, AnimatePresence } from 'motion/react';
 import {
@@ -34,6 +34,7 @@ interface ExamPaper {
 
 interface PyqFileItem {
   url: string;
+  driveFileId?: string;
   fileName: string;
   fileSize?: string;
   uploadedAt: string;
@@ -240,7 +241,9 @@ const DELETED_PYQ_SLOTS_KEY = 'nishchay_deleted_pyq_slots';
 const getDeletedNoteIds = (): Set<string> => {
   try {
     const raw = localStorage.getItem(DELETED_NOTES_KEY);
-    return new Set(raw ? JSON.parse(raw) : []);
+    if (!raw) return new Set();
+    const parsed = JSON.parse(raw);
+    return new Set(Array.isArray(parsed) ? parsed : []);
   } catch {
     return new Set();
   }
@@ -269,7 +272,9 @@ const unmarkNoteDeleted = (id: string) => {
 const getDeletedPyqSlots = (): Set<string> => {
   try {
     const raw = localStorage.getItem(DELETED_PYQ_SLOTS_KEY);
-    return new Set(raw ? JSON.parse(raw) : []);
+    if (!raw) return new Set();
+    const parsed = JSON.parse(raw);
+    return new Set(Array.isArray(parsed) ? parsed : []);
   } catch {
     return new Set();
   }
@@ -297,19 +302,43 @@ const unmarkPyqSlotDeleted = (sessionId: string, subjectKey: string, fileType: s
   }
 };
 
-const mergeNotesSafely = (current: SubjectNote[], incoming: SubjectNote[]): SubjectNote[] => {
+const mergeNotesSafely = (current: any, incoming: any): SubjectNote[] => {
   const deleted = getDeletedNoteIds();
   const map = new Map<string, SubjectNote>();
 
-  for (const n of incoming || []) {
-    if (n && n.id && !deleted.has(n.id)) {
-      map.set(n.id, n);
+  const safeIncoming = Array.isArray(incoming) ? incoming : [];
+  for (const n of safeIncoming) {
+    if (n && typeof n === 'object' && n.id && !deleted.has(n.id)) {
+      map.set(n.id, {
+        id: String(n.id),
+        subjectId: String(n.subjectId || '').toLowerCase(),
+        subjectTitle: String(n.subjectTitle || ''),
+        title: String(n.title || ''),
+        category: n.category ? String(n.category) : undefined,
+        url: String(n.url || ''),
+        driveFileId: n.driveFileId ? String(n.driveFileId) : undefined,
+        fileName: String(n.fileName || n.title || 'Document'),
+        fileSize: String(n.fileSize || 'PDF Link'),
+        uploadedAt: n.uploadedAt || new Date().toISOString(),
+      });
     }
   }
 
-  for (const n of current || []) {
-    if (n && n.id && !deleted.has(n.id) && !map.has(n.id)) {
-      map.set(n.id, n);
+  const safeCurrent = Array.isArray(current) ? current : [];
+  for (const n of safeCurrent) {
+    if (n && typeof n === 'object' && n.id && !deleted.has(n.id) && !map.has(n.id)) {
+      map.set(n.id, {
+        id: String(n.id),
+        subjectId: String(n.subjectId || '').toLowerCase(),
+        subjectTitle: String(n.subjectTitle || ''),
+        title: String(n.title || ''),
+        category: n.category ? String(n.category) : undefined,
+        url: String(n.url || ''),
+        driveFileId: n.driveFileId ? String(n.driveFileId) : undefined,
+        fileName: String(n.fileName || n.title || 'Document'),
+        fileSize: String(n.fileSize || 'PDF Link'),
+        uploadedAt: n.uploadedAt || new Date().toISOString(),
+      });
     }
   }
 
@@ -321,23 +350,31 @@ const mergeNotesSafely = (current: SubjectNote[], incoming: SubjectNote[]): Subj
 };
 
 const mergePyqSessionsSafely = (
-  current: Record<string, PyqSessionData>,
-  incoming: Record<string, PyqSessionData>
+  current: any,
+  incoming: any
 ): Record<string, PyqSessionData> => {
   const deletedSlots = getDeletedPyqSlots();
   const merged: Record<string, PyqSessionData> = {};
 
-  const allSessionIds = Array.from(new Set([...Object.keys(current || {}), ...Object.keys(incoming || {})]));
+  const safeCurrent = (current && typeof current === 'object' && !Array.isArray(current)) ? current : {};
+  const safeIncoming = (incoming && typeof incoming === 'object' && !Array.isArray(incoming)) ? incoming : {};
+
+  const allSessionIds = Array.from(new Set([...Object.keys(safeCurrent), ...Object.keys(safeIncoming)]));
 
   for (const sessionId of allSessionIds) {
-    const curSession = current?.[sessionId];
-    const incSession = incoming?.[sessionId];
+    const curSession = safeCurrent[sessionId];
+    const incSession = safeIncoming[sessionId];
     const base = incSession || curSession;
-    if (!base) continue;
+    if (!base || typeof base !== 'object') continue;
 
     const sessionObj: PyqSessionData = {
-      ...base,
+      sessionId: String(base.sessionId || sessionId),
+      exam: base.exam || (sessionId.startsWith('nda') ? 'NDA' : 'CDS'),
+      session: base.session || 'I',
+      year: Number(base.year) || 2026,
+      title: String(base.title || sessionId),
       subjects: {},
+      updatedAt: base.updatedAt || new Date().toISOString(),
     };
 
     const subjectKeys: ('maths' | 'gat' | 'english' | 'gs')[] = ['maths', 'gat', 'english', 'gs'];
@@ -350,12 +387,30 @@ const mergePyqSessionsSafely = (
 
       const paperSlotKey = `${sessionId}::${subKey}::paper`;
       if (!deletedSlots.has(paperSlotKey)) {
-        slot.paper = incSlot?.paper || curSlot?.paper;
+        const item = incSlot?.paper || curSlot?.paper;
+        if (item && item.url) {
+          slot.paper = {
+            url: String(item.url),
+            driveFileId: item.driveFileId ? String(item.driveFileId) : undefined,
+            fileName: String(item.fileName || 'Question Paper'),
+            fileSize: String(item.fileSize || 'Drive Link'),
+            uploadedAt: item.uploadedAt || new Date().toISOString(),
+          };
+        }
       }
 
       const keySlotKey = `${sessionId}::${subKey}::key`;
       if (!deletedSlots.has(keySlotKey)) {
-        slot.key = incSlot?.key || curSlot?.key;
+        const item = incSlot?.key || curSlot?.key;
+        if (item && item.url) {
+          slot.key = {
+            url: String(item.url),
+            driveFileId: item.driveFileId ? String(item.driveFileId) : undefined,
+            fileName: String(item.fileName || 'Answer Key'),
+            fileSize: String(item.fileSize || 'Drive Link'),
+            uploadedAt: item.uploadedAt || new Date().toISOString(),
+          };
+        }
       }
 
       if (slot.paper || slot.key) {
@@ -378,7 +433,7 @@ export default function Notes() {
   const [selectedYearFilter, setSelectedYearFilter] = useState<number | 'All'>('All');
   const [isAdmin, setIsAdmin] = useState(false);
 
-  // Stored PYQ Data (Synced with Server API + LocalStorage + Firestore)
+  // Stored PYQ Data (Synced with Server API + LocalStorage)
   const [pyqSessions, setPyqSessions] = useState<Record<string, PyqSessionData>>(() => {
     try {
       const saved = localStorage.getItem(LOCAL_STORAGE_PYQ_KEY);
@@ -421,7 +476,7 @@ export default function Notes() {
     fetch('/api/pyq')
       .then((res) => res.json())
       .then((data) => {
-        if (data.success && data.sessions) {
+        if (data && data.success && data.sessions) {
           setPyqSessions((prev) => {
             const merged = mergePyqSessionsSafely(prev, data.sessions);
             try {
@@ -443,7 +498,7 @@ export default function Notes() {
     fetch('/api/notes')
       .then((res) => res.json())
       .then((data) => {
-        if (data.success && Array.isArray(data.notes)) {
+        if (data && data.success && Array.isArray(data.notes)) {
           setAllSubjectNotes((prev) => {
             const merged = mergeNotesSafely(prev, data.notes);
             try {
@@ -460,45 +515,6 @@ export default function Notes() {
       });
   }, []);
 
-  // Firestore cross-device persistence loader (optional cloud fallback)
-  useEffect(() => {
-    getDocs(collection(db, 'subject_notes'))
-      .then((snapshot) => {
-        if (!snapshot.empty) {
-          const cloudNotes = snapshot.docs.map((d) => d.data() as SubjectNote);
-          setAllSubjectNotes((prev) => {
-            const merged = mergeNotesSafely(prev, cloudNotes);
-            try {
-              localStorage.setItem(LOCAL_STORAGE_NOTES_KEY, JSON.stringify(merged));
-            } catch {}
-            return merged;
-          });
-        }
-      })
-      .catch(() => {});
-
-    getDocs(collection(db, 'pyq_sessions'))
-      .then((snapshot) => {
-        if (!snapshot.empty) {
-          const cloudSessions: Record<string, PyqSessionData> = {};
-          snapshot.docs.forEach((d) => {
-            const s = d.data() as PyqSessionData;
-            if (s && s.sessionId) {
-              cloudSessions[s.sessionId] = s;
-            }
-          });
-          setPyqSessions((prev) => {
-            const merged = mergePyqSessionsSafely(prev, cloudSessions);
-            try {
-              localStorage.setItem(LOCAL_STORAGE_PYQ_KEY, JSON.stringify(merged));
-            } catch {}
-            return merged;
-          });
-        }
-      })
-      .catch(() => {});
-  }, []);
-
   // Background server hydration: when admin is logged in, sync local items to serverless instance
   useEffect(() => {
     if (!isAdmin) return;
@@ -506,14 +522,14 @@ export default function Notes() {
     const hydrateServerInstance = async () => {
       try {
         const headers = await getAuthHeaders();
-        if (allSubjectNotes.length > 0) {
+        if (Array.isArray(allSubjectNotes) && allSubjectNotes.length > 0) {
           fetch('/api/notes/sync', {
             method: 'POST',
             headers,
             body: JSON.stringify({ notes: allSubjectNotes }),
           }).catch(() => {});
         }
-        if (Object.keys(pyqSessions).length > 0) {
+        if (pyqSessions && typeof pyqSessions === 'object' && Object.keys(pyqSessions).length > 0) {
           fetch('/api/pyq/sync', {
             method: 'POST',
             headers,
@@ -668,11 +684,6 @@ export default function Notes() {
         setAllSubjectNotes(updatedNotes);
         localStorage.setItem(LOCAL_STORAGE_NOTES_KEY, JSON.stringify(updatedNotes));
 
-        // Firestore cloud sync (best effort)
-        try {
-          setDoc(doc(db, 'subject_notes', data.note.id), data.note).catch(() => {});
-        } catch {}
-
         setUploadSuccess(`"${noteTitle}" link saved successfully!`);
         setTimeout(() => closeUploadModal(), 1200);
         return;
@@ -712,11 +723,6 @@ export default function Notes() {
       setPyqSessions(updatedSessions);
       localStorage.setItem(LOCAL_STORAGE_PYQ_KEY, JSON.stringify(updatedSessions));
 
-      // Firestore cloud sync (best effort)
-      try {
-        setDoc(doc(db, 'pyq_sessions', uploadModal.paper.id), data.session).catch(() => {});
-      } catch {}
-
       setUploadSuccess(`${uploadModal.typeLabel} link saved successfully!`);
       setTimeout(() => closeUploadModal(), 1200);
     } catch (err: any) {
@@ -741,10 +747,6 @@ export default function Notes() {
     const updated = allSubjectNotes.filter((n) => n.id !== noteId);
     setAllSubjectNotes(updated);
     localStorage.setItem(LOCAL_STORAGE_NOTES_KEY, JSON.stringify(updated));
-
-    try {
-      deleteDoc(doc(db, 'subject_notes', noteId)).catch(() => {});
-    } catch {}
 
     try {
       const headers = await getAuthHeaders();
@@ -785,10 +787,6 @@ export default function Notes() {
       const updatedSessions = { ...pyqSessions, [sessionId]: updatedSession };
       setPyqSessions(updatedSessions);
       localStorage.setItem(LOCAL_STORAGE_PYQ_KEY, JSON.stringify(updatedSessions));
-
-      try {
-        setDoc(doc(db, 'pyq_sessions', sessionId), updatedSession).catch(() => {});
-      } catch {}
     }
 
     try {
@@ -813,7 +811,7 @@ export default function Notes() {
 
   // Helper to count uploaded files for a session
   const getSessionUploadCount = (paper: ExamPaper) => {
-    const session = pyqSessions[paper.id];
+    const session = pyqSessions?.[paper.id];
     if (!session || !session.subjects) return { count: 0, total: paper.exam === 'NDA' ? 4 : 6 };
     let count = 0;
     const subjects = session.subjects;
@@ -967,7 +965,7 @@ export default function Notes() {
   // ─────────────────────────────────────────────────────────────
   if (selectedPaper) {
     const isNda = selectedPaper.exam === 'NDA';
-    const sessionRecord = pyqSessions[selectedPaper.id];
+    const sessionRecord = pyqSessions?.[selectedPaper.id];
 
     // Subjects configuration
     const ndaSubjects = [
@@ -1439,7 +1437,7 @@ export default function Notes() {
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 md:gap-8">
             {filteredPapers.map((paper, idx) => {
               const uploadStatus = getSessionUploadCount(paper);
-              const sessionRecord = pyqSessions[paper.id];
+              const sessionRecord = pyqSessions?.[paper.id];
               const isSessionII = paper.session === 'II';
 
               return (
@@ -1882,8 +1880,8 @@ export default function Notes() {
   // Standard Subject Detail View (e.g. Mathematics, English, etc.)
   // ─────────────────────────────────────────────────────────────
   if (selectedSubject) {
-    const subjectNotesList = allSubjectNotes.filter(
-      (n) => n.subjectId.toLowerCase() === selectedSubject.id.toLowerCase()
+    const subjectNotesList = (Array.isArray(allSubjectNotes) ? allSubjectNotes : []).filter(
+      (n) => n && n.subjectId && String(n.subjectId).toLowerCase() === selectedSubject.id.toLowerCase()
     );
 
     return (
@@ -2078,7 +2076,9 @@ export default function Notes() {
         {/* Subjects Grid (1st card is "PYQ Papers", followed by Mathematics, English, etc.) */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 md:gap-10">
           {filteredSubjects.map((subject, index) => {
-            const count = allSubjectNotes.filter((n) => n.subjectId.toLowerCase() === subject.id.toLowerCase()).length;
+            const count = (Array.isArray(allSubjectNotes) ? allSubjectNotes : []).filter(
+              (n) => n && n.subjectId && String(n.subjectId).toLowerCase() === subject.id.toLowerCase()
+            ).length;
             const subtitleText =
               subject.id === 'pyq-papers'
                 ? 'NDA & CDS PYQ Archive'
