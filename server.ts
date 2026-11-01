@@ -1510,4 +1510,11 @@ if (!process.env.VERCEL) {
   setupServer();
 }
 
+export const config = {
+  api: {
+    bodyParser: false,
+    externalResolver: true,
+  },
+};
+
 export default app;

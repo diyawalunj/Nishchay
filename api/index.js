@@ -1,0 +1,2629 @@
+// server.ts
+import express from "express";
+import path5 from "path";
+import fs5 from "fs";
+import os5 from "os";
+import cors from "cors";
+import dotenv from "dotenv";
+import helmet from "helmet";
+import { rateLimit } from "express-rate-limit";
+import crypto2 from "crypto";
+import { GoogleSpreadsheet } from "google-spreadsheet";
+import { JWT } from "google-auth-library";
+import admin from "firebase-admin";
+
+// n-intel-db.ts
+import fs from "fs";
+import path from "path";
+import os from "os";
+
+// n-intel-parser.ts
+import crypto from "crypto";
+
+// n-intel-whatsapp.ts
+function getLocalTodayDate() {
+  const now = /* @__PURE__ */ new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+// n-intel-parser.ts
+var EXCLUDED_CATEGORY_KEYWORDS = [
+  // Mishaps / Accidents / Local Crime
+  "MISHAP",
+  "MISHAPS",
+  "ACCIDENT",
+  "ACCIDENTS",
+  "CRIME",
+  "CRIMES",
+  "TRAGEDY",
+  // Entertainment / Gossip
+  "ENTERTAINMENT",
+  "BOLLYWOOD",
+  "CELEBRITY",
+  "GOSSIP",
+  "CINEMA",
+  "MOVIES",
+  "HOROSCOPE",
+  "ASTROLOGY",
+  "VIRAL",
+  "ODD NEWS",
+  // Financial Tickers, Currencies, Stock Indices, Bullion & Fuel Rates
+  "INDIAN RUPEE",
+  "RUPEE VALUE",
+  "RUPEE",
+  "BSE SENSEX",
+  "SENSEX",
+  "BSE",
+  "NIFTY",
+  "NSE",
+  "RATES IN FINANCIAL CAPITAL",
+  "RATES IN",
+  "FINANCIAL CAPITAL MUMBAI",
+  "FINANCIAL CAPITAL",
+  "MUMBAI RATES",
+  "GOLD RATE",
+  "SILVER RATE",
+  "BULLION",
+  "FOREX",
+  "CURRENCY",
+  "CURRENCIES",
+  "EXCHANGE RATE",
+  "EXCHANGE RATES",
+  "COMMODITY",
+  "COMMODITIES",
+  "FUEL PRICES",
+  "PETROL",
+  "DIESEL",
+  "MARKET UPDATE",
+  "MARKET WATCH",
+  "STOCK MARKET",
+  "SHARE MARKET",
+  "WEATHER",
+  "TEMPERATURE",
+  "AQI",
+  "AIR QUALITY",
+  // Promotional / Community
+  "PROMOTION",
+  "LINKTREE",
+  "SPONSORED",
+  "ADVERTISEMENT",
+  "JOIN NISHCHAY",
+  "SUBSCRIBE",
+  "COMMUNITY LINK"
+];
+function resolveCategory(header) {
+  const cleaned = header.replace(/[✈🌎🌍🏆🚣🚴🏇🏊🎖️🇮🇳🤝🛡️🚀⚡💡🔍📌\*\-=~_#]+/gu, " ").replace(/\s+/g, " ").trim();
+  if (!cleaned || cleaned.length < 3) return null;
+  const upper = cleaned.toUpperCase();
+  for (const ex of EXCLUDED_CATEGORY_KEYWORDS) {
+    if (upper === ex || upper.includes(ex)) {
+      return null;
+    }
+  }
+  if (upper.includes("DEFENCE") || upper.includes("DEFENSE") || upper.includes("MILITARY") || upper.includes("ARMED FORCES") || upper.includes("ARMY") || upper.includes("NAVY") || upper.includes("AIR FORCE")) {
+    return "Defence News";
+  }
+  if (upper.includes("APPOINTMENT") || upper.includes("RESIGNATION") || upper.includes("NEW CHIEF") || upper.includes("ELECTED")) {
+    return "Important Appointments";
+  }
+  if (upper.includes("LEGAL") || upper.includes("JUDICIARY") || upper.includes("POLITY") || upper.includes("COURT") || upper.includes("CONSTITUTION") || upper.includes("LAW")) {
+    return "Polity & Judiciary";
+  }
+  if (upper.includes("WORLD") || upper.includes("GLOBAL NEWS") || upper.includes("GLOBAL AFFAIRS")) {
+    return "World News";
+  }
+  if (upper.includes("INTERNATIONAL") || upper.includes("BILATERAL") || upper.includes("DIPLOMACY") || upper.includes("FOREIGN AFFAIRS") || upper.includes("RELATION")) {
+    return "International Relations";
+  }
+  if (upper.includes("TOP") && upper.includes("NEWS") || upper.includes("NATIONAL") || upper.includes("INDIA NEWS") || upper.includes("BHARAT") || upper.includes("CABINET") || upper.includes("PARLIAMENT")) {
+    return "National Affairs";
+  }
+  if (upper.includes("SPORT") || upper.includes("CRICKET") || upper.includes("OLYMPIC") || upper.includes("GAMES") || upper.includes("CHAMPIONSHIP") || upper.includes("TOURNAMENT")) {
+    return "Sports";
+  }
+  if (upper.includes("SCIENCE") || upper.includes("TECH") || upper.includes("SPACE") || upper.includes("ISRO") || upper.includes("DRDO") || upper.includes("INNOVATION")) {
+    return "Science & Technology";
+  }
+  if (upper.includes("ECONOM") || upper.includes("BANKING") || upper.includes("FINANCE") || upper.includes("RBI") || upper.includes("BUDGET") || upper.includes("COMMERCE") || upper.includes("TRADE")) {
+    return "Economy & Banking";
+  }
+  if (upper.includes("ENVIRONMENT") || upper.includes("ECOLOGY") || upper.includes("CLIMATE") || upper.includes("FOREST") || upper.includes("WILDLIFE")) {
+    return "Environment & Ecology";
+  }
+  if (upper.includes("AWARD") || upper.includes("HONOUR") || upper.includes("HONOR") || upper.includes("PRIZE") || upper.includes("MEDAL")) {
+    return "Awards & Honours";
+  }
+  if (upper.includes("SUMMIT") || upper.includes("CONFERENCE") || upper.includes("CONCLAVE") || upper.includes("MEETING")) {
+    return "Summits & Conferences";
+  }
+  if (upper.includes("SCHEME") || upper.includes("POLICY") || upper.includes("YOJANA") || upper.includes("MISSION") || upper.includes("INITIATIVE")) {
+    return "Government Schemes";
+  }
+  return null;
+}
+function isPureTickerOrRates(text) {
+  const upper = text.toUpperCase();
+  const currencyHits = (upper.match(/\b(GBP|USD|CAD|DIRHAM|RUPIYA|NGULTRUM|TAKA|EURO|YEN|YUAN|CURRENCY)\b/g) || []).length;
+  if (currencyHits >= 2 || currencyHits >= 1 && upper.includes("APPROX")) {
+    return true;
+  }
+  if (/^\s*[\d,.]+\s+[+-]?[\d,.]+\s+\([+-]?[\d,.]+%?\)\s*[🔻🔺▲▼]?\s*$/m.test(text.trim())) {
+    return true;
+  }
+  if (upper.includes("GOLD") && upper.includes("SILVER") && (text.includes("\u20B9") || upper.includes("KRT") || upper.includes("KG")) && text.length < 250) {
+    return true;
+  }
+  if ((upper.includes("PETROL") || upper.includes("DIESEL")) && text.includes("\u20B9") && text.length < 150) {
+    return true;
+  }
+  return false;
+}
+function extractHeadline(raw) {
+  const lines = raw.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  if (!lines.length) return "Untitled News Story";
+  const firstLine = lines[0].replace(/^\d+[\.\)]\s*/, "").trim();
+  const sepMatch = firstLine.match(/^(.+?)(?:\s+[—–]\s+|\s*:\s+)(.+)$/);
+  if (sepMatch && sepMatch[1].length > 8 && sepMatch[1].length < 130) {
+    return sepMatch[1].trim();
+  }
+  if (lines.length > 1 && firstLine.length > 10 && firstLine.length < 110 && !firstLine.endsWith(".")) {
+    return firstLine;
+  }
+  const protectedText = firstLine.replace(/\b(Shri|Smt|Dr|Mr|Mrs|Ms|Prof|Gen|Lt|Maj|Col|Capt|Adm|Air|CEN|No|vs|v)\./gi, "$1__DOT__").replace(/\b([A-Z])\.([A-Z])\./g, "$1__DOT__$2__DOT__").replace(/\b([A-Z])\.\s/g, "$1__DOT__ ");
+  const sMatch = protectedText.match(/^([^.!?\n]+[.!?]?)/);
+  let headline = sMatch ? sMatch[1] : firstLine;
+  headline = headline.replace(/__DOT__/g, ".").replace(/^\d+[\.\)]\s*/, "").trim();
+  if (headline.length > 135) {
+    const cut = headline.slice(0, 125).lastIndexOf(" ");
+    headline = (cut > 50 ? headline.slice(0, cut) : headline.slice(0, 122)) + "...";
+  }
+  return headline || "Daily News Update";
+}
+function extractSource(content) {
+  let sourceUrl;
+  const urlMatch = content.match(/https?:\/\/[^\s\)\],;]+/i);
+  if (urlMatch) {
+    if (!urlMatch[0].includes("linktr.ee") && !urlMatch[0].includes("chat.whatsapp")) {
+      sourceUrl = urlMatch[0];
+    }
+  }
+  let sourceName;
+  const knownSources = [
+    "PIB",
+    "Press Information Bureau",
+    "IMD",
+    "India Meteorological Department",
+    "Supreme Court",
+    "High Court",
+    "ZSI",
+    "Zoological Survey of India",
+    "TRAI",
+    "NCRB",
+    "UNFCCC",
+    "Zootaxa",
+    "Bar Council",
+    "DPIIT",
+    "RRB",
+    "Ministry of Defence",
+    "MoD",
+    "ISRO",
+    "DRDO",
+    "NHRC",
+    "UNESCO",
+    "WHO",
+    "BRICS"
+  ];
+  for (const src of knownSources) {
+    const regex = new RegExp(`\\b${src}\\b`, "i");
+    if (regex.test(content)) {
+      sourceName = src;
+      break;
+    }
+  }
+  return { sourceName, sourceUrl };
+}
+function checkIsDefence(category, content) {
+  if (/defence|military|naval|army|navy|air force|drdo|armed forces/i.test(category)) {
+    return true;
+  }
+  const defenceKeywords = [
+    /\b(?:exercise|warship|frigate|patrol vessel|corpat|simbex|garuda|varuna|malabar|yudh abhyas|ins |iaf|icgs)\b/i,
+    /\b(?:air force|indian army|indian navy|coast guard|shaurya diwas|infantry|admm-plus)\b/i,
+    /\b(?:indo-tibetan border police|itbp|sashastra seema bal|bsf|crpf|cisf|assam rifles)\b/i,
+    /\b(?:integrated defence staff|hq ids|sullage barge|stealth frigate|combat marksmanship)\b/i
+  ];
+  return defenceKeywords.some((regex) => regex.test(content));
+}
+function generateTags(category, content, sourceName, isDefence) {
+  const tags = [category];
+  if (isDefence && !tags.includes("Defence")) tags.push("Defence");
+  if (sourceName && !tags.includes(sourceName)) tags.push(sourceName);
+  const exercises = content.match(/\b(?:GARUDA SHAKTI|SIMBEX(?:-20\d\d)?|ADMM-PLUS|SHAURYA DIWAS|NGOPV|TEPA)\b/gi);
+  if (exercises) {
+    exercises.forEach((e) => {
+      const u = e.toUpperCase();
+      if (!tags.includes(u)) tags.push(u);
+    });
+  }
+  const vessels = content.match(/\b(?:INS\s+[A-Za-z]+|ICGS\s+[A-Za-z]+)\b/gi);
+  if (vessels) {
+    vessels.forEach((v) => {
+      const u = v.toUpperCase();
+      if (!tags.includes(u)) tags.push(u);
+    });
+  }
+  return tags.slice(0, 5);
+}
+function parseDailyNewsPost(rawText, pubDate) {
+  const dateStr = pubDate && /^\d{4}-\d{2}-\d{2}$/.test(pubDate) ? pubDate : getLocalTodayDate();
+  if (!rawText || !rawText.trim()) {
+    return {
+      success: false,
+      date: dateStr,
+      hash: "",
+      stories: [],
+      categories: [],
+      totalStories: 0,
+      error: "Pasted text is empty. Please paste the daily news post."
+    };
+  }
+  const normalizedForHash = rawText.replace(/\s+/g, " ").trim().toLowerCase();
+  const hash = crypto.createHash("sha256").update(normalizedForHash).digest("hex");
+  const lines = rawText.split(/\r?\n/);
+  const categories = [];
+  const stories = [];
+  const batchId = `batch-${dateStr.replace(/-/g, "")}-${hash.slice(0, 8)}`;
+  let currentCategory = null;
+  let inIgnoredSection = false;
+  let currentStoryText = "";
+  let currentStoryNum = 0;
+  const headerRegex = /^(?:[-=\s*~_]*)(?:[^\w\s*]*\s*)?\*+([A-Za-z0-9\s&',.\-–—/()]+)\*+(?:[-=\s*~_]*)(?:[^\w\s*]*\s*)$/u;
+  function commitStory() {
+    if (inIgnoredSection || !currentCategory) {
+      currentStoryText = "";
+      return;
+    }
+    if (!currentStoryText.trim()) return;
+    const raw = currentStoryText.trim();
+    if ((raw.includes("linktr.ee/") || raw.toLowerCase().includes("join nishchay defence")) && raw.length < 200) {
+      currentStoryText = "";
+      return;
+    }
+    if (isPureTickerOrRates(raw)) {
+      currentStoryText = "";
+      return;
+    }
+    const headline = extractHeadline(raw);
+    const { sourceName, sourceUrl } = extractSource(raw);
+    const isDefence = currentCategory === "Defence News" || checkIsDefence(currentCategory, raw);
+    const tags = generateTags(currentCategory, raw, sourceName, isDefence);
+    const categoryKey = currentCategory.toLowerCase().replace(/[^a-z0-9]+/g, "-");
+    const storyId = `nintel-${dateStr.replace(/-/g, "")}-${categoryKey.slice(0, 6)}-${(stories.length + 1).toString().padStart(2, "0")}`;
+    stories.push({
+      id: storyId,
+      batchId,
+      headline,
+      content: raw,
+      category: currentCategory,
+      categoryKey,
+      date: dateStr,
+      itemNumber: currentStoryNum || stories.length + 1,
+      sourceName,
+      sourceUrl,
+      tags,
+      isDefence,
+      isDeleted: false,
+      createdAt: (/* @__PURE__ */ new Date()).toISOString(),
+      updatedAt: (/* @__PURE__ */ new Date()).toISOString()
+    });
+    currentStoryText = "";
+  }
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (!line) continue;
+    if (/^[-=~_]{3,}$/.test(line)) continue;
+    const hMatch = line.match(headerRegex);
+    const starMatch = line.match(/^\*+([A-Za-z0-9\s&',.\-–—/()]+)\*+$/);
+    if (hMatch || starMatch) {
+      commitStory();
+      const rawHeader = hMatch ? hMatch[1] : starMatch[1];
+      const mapped = resolveCategory(rawHeader);
+      if (mapped) {
+        currentCategory = mapped;
+        inIgnoredSection = false;
+        if (!categories.includes(mapped)) {
+          categories.push(mapped);
+        }
+      } else {
+        currentCategory = null;
+        inIgnoredSection = true;
+      }
+      continue;
+    }
+    const numMatch = line.match(/^(\d+)[\.\)]\s+(.*)$/);
+    if (numMatch) {
+      commitStory();
+      currentStoryNum = parseInt(numMatch[1], 10);
+      if (!currentCategory && !inIgnoredSection) {
+        currentCategory = "National Affairs";
+        if (!categories.includes("National Affairs")) {
+          categories.push("National Affairs");
+        }
+      }
+      currentStoryText = numMatch[2].trim();
+    } else {
+      if (currentStoryText) {
+        currentStoryText += "\n" + line;
+      } else if (!inIgnoredSection && currentCategory) {
+        currentStoryText = line;
+      }
+    }
+  }
+  commitStory();
+  if (stories.length === 0) {
+    return {
+      success: false,
+      date: dateStr,
+      hash,
+      stories: [],
+      categories: [],
+      totalStories: 0,
+      error: "Could not extract any stories. Ensure the text has section headings and numbered news items."
+    };
+  }
+  return {
+    success: true,
+    date: dateStr,
+    hash,
+    stories,
+    categories,
+    totalStories: stories.length
+  };
+}
+
+// n-intel-db.ts
+var IS_VERCEL = Boolean(process.env.VERCEL);
+var DATA_DIR = IS_VERCEL ? path.join(os.tmpdir(), "nishchay_data") : path.join(process.cwd(), "data");
+var SEED_DATA_DIR = path.join(process.cwd(), "data");
+var STORIES_FILE = path.join(DATA_DIR, "n-intel-stories.json");
+var BATCHES_FILE = path.join(DATA_DIR, "n-intel-batches.json");
+var AUDIT_FILE = path.join(DATA_DIR, "n-intel-audit.json");
+var SEED_STORIES_FILE = path.join(SEED_DATA_DIR, "n-intel-stories.json");
+var SEED_BATCHES_FILE = path.join(SEED_DATA_DIR, "n-intel-batches.json");
+var SEED_AUDIT_FILE = path.join(SEED_DATA_DIR, "n-intel-audit.json");
+function ensureDataDir() {
+  try {
+    if (!fs.existsSync(DATA_DIR)) {
+      fs.mkdirSync(DATA_DIR, { recursive: true });
+    }
+  } catch (err) {
+    console.warn("Could not ensure data directory:", err);
+  }
+}
+var storiesCache = null;
+var batchesCache = null;
+var auditCache = null;
+function loadStories() {
+  if (storiesCache) return storiesCache;
+  ensureDataDir();
+  let targetFile = STORIES_FILE;
+  if (!fs.existsSync(targetFile) && fs.existsSync(SEED_STORIES_FILE)) {
+    targetFile = SEED_STORIES_FILE;
+  }
+  if (!fs.existsSync(targetFile)) {
+    storiesCache = [];
+    return storiesCache;
+  }
+  try {
+    const raw = fs.readFileSync(targetFile, "utf-8");
+    storiesCache = JSON.parse(raw);
+    return storiesCache || [];
+  } catch (e) {
+    console.error("Error reading stories file:", e);
+    return [];
+  }
+}
+function atomicWriteJsonSync(filePath, data) {
+  ensureDataDir();
+  const tempPath = `${filePath}.${Date.now()}.${Math.random().toString(36).substring(2, 8)}.tmp`;
+  try {
+    fs.writeFileSync(tempPath, JSON.stringify(data, null, 2), "utf-8");
+    fs.renameSync(tempPath, filePath);
+  } catch (err) {
+    if (fs.existsSync(tempPath)) {
+      try {
+        fs.unlinkSync(tempPath);
+      } catch {
+      }
+    }
+    console.warn(`Could not persist ${filePath} to disk:`, err);
+  }
+}
+function saveStories(stories) {
+  storiesCache = stories;
+  atomicWriteJsonSync(STORIES_FILE, stories);
+}
+function loadBatches() {
+  if (batchesCache) return batchesCache;
+  ensureDataDir();
+  let targetFile = BATCHES_FILE;
+  if (!fs.existsSync(targetFile) && fs.existsSync(SEED_BATCHES_FILE)) {
+    targetFile = SEED_BATCHES_FILE;
+  }
+  if (!fs.existsSync(targetFile)) {
+    batchesCache = [];
+    return batchesCache;
+  }
+  try {
+    const raw = fs.readFileSync(targetFile, "utf-8");
+    batchesCache = JSON.parse(raw);
+    return batchesCache || [];
+  } catch (e) {
+    console.error("Error reading batches file:", e);
+    return [];
+  }
+}
+function saveBatches(batches) {
+  batchesCache = batches;
+  atomicWriteJsonSync(BATCHES_FILE, batches);
+}
+function loadAudit() {
+  if (auditCache) return auditCache;
+  ensureDataDir();
+  let targetFile = AUDIT_FILE;
+  if (!fs.existsSync(targetFile) && fs.existsSync(SEED_AUDIT_FILE)) {
+    targetFile = SEED_AUDIT_FILE;
+  }
+  if (!fs.existsSync(targetFile)) {
+    auditCache = [];
+    return auditCache;
+  }
+  try {
+    const raw = fs.readFileSync(targetFile, "utf-8");
+    auditCache = JSON.parse(raw);
+    return auditCache || [];
+  } catch (e) {
+    console.error("Error reading audit file:", e);
+    return [];
+  }
+}
+function saveAudit(logs) {
+  auditCache = logs;
+  atomicWriteJsonSync(AUDIT_FILE, logs);
+}
+function addAuditLog(action, adminEmail, details, storyId, batchId) {
+  const logs = loadAudit();
+  const entry = {
+    id: `audit-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+    action,
+    storyId,
+    batchId,
+    adminEmail,
+    timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+    details
+  };
+  logs.unshift(entry);
+  if (logs.length > 1e3) logs.length = 1e3;
+  saveAudit(logs);
+}
+function getAllStories(options = {}) {
+  let stories = loadStories();
+  if (!options.includeDeleted) {
+    stories = stories.filter((s) => !s.isDeleted);
+  }
+  if (options.date) {
+    stories = stories.filter((s) => s.date === options.date);
+  }
+  if (options.month) {
+    stories = stories.filter((s) => s.date.startsWith(options.month));
+  }
+  if (options.category && options.category.toLowerCase() !== "all") {
+    const catLower = options.category.toLowerCase();
+    stories = stories.filter((s) => s.category.toLowerCase() === catLower || s.categoryKey === catLower);
+  }
+  if (options.search && options.search.trim()) {
+    const q = options.search.trim().toLowerCase();
+    stories = stories.filter(
+      (s) => s.headline.toLowerCase().includes(q) || s.content.toLowerCase().includes(q) || s.category.toLowerCase().includes(q) || s.tags && s.tags.some((t) => t.toLowerCase().includes(q)) || s.sourceName && s.sourceName.toLowerCase().includes(q)
+    );
+  }
+  stories = [...stories].sort((a, b) => {
+    if (a.date !== b.date) {
+      return b.date.localeCompare(a.date);
+    }
+    const timeA = a.createdAt || "";
+    const timeB = b.createdAt || "";
+    if (timeA && timeB && timeA !== timeB) {
+      return timeB.localeCompare(timeA);
+    }
+    return (b.itemNumber || 0) - (a.itemNumber || 0);
+  });
+  if (options.limit && options.limit > 0) {
+    return stories.slice(0, options.limit);
+  }
+  return stories;
+}
+function getStoryById(id) {
+  const stories = loadStories();
+  return stories.find((s) => s.id === id) || null;
+}
+function findDuplicateBatch(hash, date) {
+  const batches = loadBatches();
+  return batches.find((b) => b.rawContentHash === hash && b.date === date) || null;
+}
+function saveBatchAndStories(batch, newStories, adminEmail) {
+  const existingStories = loadStories();
+  const existingBatches = loadBatches();
+  const storyMap = /* @__PURE__ */ new Map();
+  for (const s of [...newStories, ...existingStories]) {
+    if (!storyMap.has(s.id)) {
+      storyMap.set(s.id, s);
+    }
+  }
+  const updatedStories = Array.from(storyMap.values());
+  saveStories(updatedStories);
+  const updatedBatches = [batch, ...existingBatches];
+  saveBatches(updatedBatches);
+  addAuditLog(
+    "PUBLISH",
+    adminEmail,
+    `Published ${newStories.length} stories across ${batch.categories.length} categories for ${batch.date}`,
+    void 0,
+    batch.id
+  );
+}
+function updateStory(id, updates, adminEmail) {
+  const stories = loadStories();
+  const index = stories.findIndex((s) => s.id === id);
+  if (index === -1) return null;
+  const current = stories[index];
+  let categoryKey = current.categoryKey;
+  if (typeof updates.category === "string" && updates.category.trim()) {
+    categoryKey = updates.category.toLowerCase().replace(/[^a-z0-9]+/g, "-");
+  }
+  const updated = {
+    ...current,
+    headline: typeof updates.headline === "string" ? updates.headline.trim() : current.headline,
+    content: typeof updates.content === "string" ? updates.content.trim() : current.content,
+    category: typeof updates.category === "string" ? updates.category.trim() : current.category,
+    categoryKey,
+    sourceName: updates.sourceName !== void 0 ? updates.sourceName : current.sourceName,
+    sourceUrl: updates.sourceUrl !== void 0 ? updates.sourceUrl : current.sourceUrl,
+    isDefence: typeof updates.isDefence === "boolean" ? updates.isDefence : current.isDefence,
+    updatedAt: (/* @__PURE__ */ new Date()).toISOString(),
+    lastEditedBy: adminEmail
+  };
+  stories[index] = updated;
+  saveStories(stories);
+  const changeKeys = Object.keys(updates).join(", ");
+  addAuditLog("EDIT", adminEmail, `Edited story [${id}]: updated (${changeKeys})`, id);
+  return updated;
+}
+function deleteStory(id, adminEmail) {
+  const stories = loadStories();
+  const index = stories.findIndex((s) => s.id === id);
+  if (index === -1) return false;
+  stories[index] = {
+    ...stories[index],
+    isDeleted: true,
+    deletedAt: (/* @__PURE__ */ new Date()).toISOString(),
+    deletedBy: adminEmail,
+    updatedAt: (/* @__PURE__ */ new Date()).toISOString()
+  };
+  saveStories(stories);
+  addAuditLog("DELETE", adminEmail, `Soft-deleted story [${id}]: "${stories[index].headline}"`, id);
+  return true;
+}
+function restoreStory(id, adminEmail) {
+  const stories = loadStories();
+  const index = stories.findIndex((s) => s.id === id);
+  if (index === -1) return false;
+  stories[index] = {
+    ...stories[index],
+    isDeleted: false,
+    deletedAt: void 0,
+    deletedBy: void 0,
+    updatedAt: (/* @__PURE__ */ new Date()).toISOString()
+  };
+  saveStories(stories);
+  addAuditLog("RESTORE", adminEmail, `Restored story [${id}]: "${stories[index].headline}"`, id);
+  return true;
+}
+function purgeStory(id, adminEmail) {
+  const stories = loadStories();
+  const story = stories.find((s) => s.id === id);
+  if (!story) return false;
+  const filtered = stories.filter((s) => s.id !== id);
+  saveStories(filtered);
+  addAuditLog("DELETE", adminEmail, `Permanently purged story [${id}]: "${story.headline}"`, id);
+  return true;
+}
+function purgeAllDeletedStories(adminEmail) {
+  const stories = loadStories();
+  const deleted = stories.filter((s) => s.isDeleted);
+  if (deleted.length === 0) return 0;
+  const retained = stories.filter((s) => !s.isDeleted);
+  saveStories(retained);
+  addAuditLog("DELETE", adminEmail, `Emptied trash: permanently purged all ${deleted.length} deleted stories.`);
+  return deleted.length;
+}
+function getAuditLogs(limitCount = 100) {
+  const logs = loadAudit();
+  return logs.slice(0, limitCount);
+}
+function getAvailableEditions() {
+  const stories = getAllStories({ includeDeleted: false });
+  const map = {};
+  for (const s of stories) {
+    if (!map[s.date]) {
+      map[s.date] = {
+        date: s.date,
+        storyCount: 0,
+        categories: /* @__PURE__ */ new Set(),
+        categoryCounts: {},
+        defenceCount: 0,
+        headlines: []
+      };
+    }
+    map[s.date].storyCount++;
+    map[s.date].categories.add(s.category);
+    map[s.date].categoryCounts[s.category] = (map[s.date].categoryCounts[s.category] || 0) + 1;
+    if (s.isDefence || s.category.toLowerCase().includes("defence")) {
+      map[s.date].defenceCount++;
+    }
+    if (map[s.date].headlines.length < 3 && s.headline) {
+      map[s.date].headlines.push(s.headline);
+    }
+  }
+  return Object.values(map).map((e) => ({
+    date: e.date,
+    storyCount: e.storyCount,
+    categories: Array.from(e.categories),
+    highlights: e.headlines,
+    defenceCount: e.defenceCount,
+    categoryCounts: e.categoryCounts
+  })).sort((a, b) => b.date.localeCompare(a.date));
+}
+function seedSampleDataIfEmpty(samplePostText) {
+  const existing = loadStories();
+  if (existing.length > 0) return;
+  console.log("\u{1F331} Seeding initial N-INTEL sample edition...");
+  const parseResult = parseDailyNewsPost(samplePostText, "2026-10-28");
+  if (parseResult.success && parseResult.stories.length > 0) {
+    const batch = {
+      id: `batch-20261028-seed`,
+      date: "2026-10-28",
+      rawContentHash: parseResult.hash,
+      publishedAt: (/* @__PURE__ */ new Date()).toISOString(),
+      publishedBy: "system@nishchay.defence",
+      storyCount: parseResult.totalStories,
+      categories: parseResult.categories
+    };
+    saveBatchAndStories(batch, parseResult.stories, "system@nishchay.defence");
+    console.log(`\u2705 Seeded ${parseResult.totalStories} N-INTEL stories for 2026-10-28!`);
+  }
+}
+
+// articles-db.ts
+import fs2 from "fs";
+import path2 from "path";
+import os2 from "os";
+var IS_VERCEL2 = Boolean(process.env.VERCEL);
+var DATA_DIR2 = IS_VERCEL2 ? path2.join(os2.tmpdir(), "nishchay_data") : path2.join(process.cwd(), "data");
+var SEED_DATA_DIR2 = path2.join(process.cwd(), "data");
+var ARTICLES_FILE = path2.join(DATA_DIR2, "articles.json");
+var SEED_ARTICLES_FILE = path2.join(SEED_DATA_DIR2, "articles.json");
+function ensureDataDir2() {
+  try {
+    if (!fs2.existsSync(DATA_DIR2)) {
+      fs2.mkdirSync(DATA_DIR2, { recursive: true });
+    }
+  } catch (err) {
+    console.warn("Could not ensure data directory:", err);
+  }
+}
+var articlesCache = null;
+function slugify(text) {
+  return text.toLowerCase().replace(/[^\w\s-]/g, "").trim().replace(/\s+/g, "-");
+}
+function calculateReadingTime(text) {
+  const words = (text || "").trim().split(/\s+/).length;
+  const minutes = Math.max(2, Math.ceil(words / 180));
+  return `${minutes} min read`;
+}
+function loadArticles() {
+  if (articlesCache) return articlesCache;
+  ensureDataDir2();
+  let targetFile = ARTICLES_FILE;
+  if (!fs2.existsSync(targetFile) && fs2.existsSync(SEED_ARTICLES_FILE)) {
+    targetFile = SEED_ARTICLES_FILE;
+  }
+  if (!fs2.existsSync(targetFile)) {
+    const initialArticles = [
+      {
+        id: "article-tied-by-geography-divided-by-politics",
+        slug: "tied-by-geography-divided-by-politics",
+        title: "Tied by geography, divided by politics",
+        bannerImageUrl: "https://images.unsplash.com/photo-1541872703-74c5e44368f9?auto=format&fit=crop&w=1200&q=80",
+        category: "International Relations",
+        authorName: "Mohammed Ayoob",
+        authorRole: 'University Distinguished Professor Emeritus of International Relations, Michigan State University, and author of "The Liberation War" (1972)',
+        authorAvatarUrl: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=200&q=80",
+        publishDate: "2026-10-30",
+        readingTime: "7 min read",
+        pullQuote: "India and Bangladesh must overcome mistrust and pursue pragmatic neighbourhood cooperation.",
+        tags: ["International Relations", "India-Bangladesh", "Foreign Policy", "1971 Liberation War", "Defence Studies"],
+        sourceReference: "Strategic Analysis & Editorial Study",
+        viewsCount: 142,
+        pdfDownloadCount: 29,
+        createdAt: (/* @__PURE__ */ new Date()).toISOString(),
+        content: `With speculation rife that Bangladesh's recently elected Prime Minister Tarique Rahman (and also Bangladesh Nationalist Party [BNP] Chairman) will be visiting New Delhi in November or December, it is time to assess the state of India-Bangladesh relations and analyse the roots of the problems between the two countries.
+
+The seeds of their current tension lie in the ==liberation war of 1971== itself. From the very beginning, the attitude of Bangladesh's elites toward India has wavered between gratitude and resentment \u2014 gratitude for India's crucial role in the liberation of their country and resentment against the fact that India had to play the role of liberator \u2014 a role they should have performed themselves.
+
+### An ambivalence
+Nations cherish narratives in which they are the principal authors of their own liberation. Bangladesh is no exception. The contribution of the Mukti Bahini notwithstanding, the decisive military blow against Pakistan was delivered by India. What was initially the source of immense gratitude with the passage of time became a source of grave discomfort.
+
+Moreover, from the very beginning Dhaka was worried that India's policy towards Bangladesh would be mediated through a Hindu-majority West Bengal next door which has strong cultural and linguistic affinities with Bangladesh that could threaten the development of Bangladesh's independent identity. ^^The open borders in the immediate aftermath of the liberation war also revived memories of the socio-economic dominance of the Hindu bhadralok in pre-Partition Bengal.^^
+
+This was compounded by the fact that ==Bangladesh was virtually surrounded by India, sharing a border of more than 4,000 kilometres.== Its principal rivers flowed through or originated in India. Its economic and strategic room for manoeuvre appeared constrained by geography. Consequently, the fear of Indian domination became an important component of Bangladeshi nationalism.
+
+The honeymoon between Dhaka and New Delhi was indeed short. Sheikh Mujib and Indira Gandhi shared a great deal of goodwill. But the governments that succeeded Mujib deliberately distanced Bangladesh from India. Under Ziaur Rahman, ==Bangladeshi nationalism was redefined in overtly Islamic terms in contradistinction to the linguistic nationalism that had provided the ideological foundation of the liberation movement.==
+
+### Dhaka's foreign policy
+This had important foreign policy consequences. ==Dhaka sought closer relations with Pakistan, China, and the United States to counterbalance India.== What New Delhi often interpreted as gratuitous anti-Indianism was, from Dhaka's perspective, an assertion of strategic autonomy by a much weaker state living in the shadow of an overwhelmingly powerful neighbour.
+
+This pattern became deeply embedded in Bangladesh's domestic politics. ==The Awami League remained identified with the secular and Bengali-nationalist legacy of 1971 and generally favoured close relations with India.== The BNP and its allies were much more suspicious of New Delhi. <u>India consequently ceased to be merely a foreign policy issue; attitudes towards India became part of the contest over Bangladesh's national identity.</u>
+
+### The road ahead
+The election of Mr. Rahman and the return of the BNP to power in February 2026 have opened a new chapter. Both New Delhi and Dhaka have compelling reasons to avoid permanent alienation, and functional engagement has resumed. But substantial mutual suspicion continues to bedevil bilateral relations.
+
+==The lesson that New Delhi should draw from the turbulent history of the relationship is that India cannot expect gratitude for 1971 to constitute the permanent foundation of Bangladeshi foreign policy. Gratitude is a transient sentiment; national interest especially when linked to issues of national identity is enduring.==
+
+Dhaka, for its part, cannot wish away geography. No relationship with Beijing, Islamabad or Washington can substitute for a workable relationship with the country that surrounds Bangladesh on three sides, shares its major river systems and is indispensable to its regional connectivity.
+
+^^India must learn to exercise its preponderant power with restraint and sensitivity and abjure demanding reciprocity for any magnanimity it shows towards its smaller neighbour especially on the sharing of river waters. Bangladesh must recognise that strategic autonomy need not be defined through knee-jerk opposition to India.^^ Only then can the two countries finally move beyond the burdens of the past while preserving its most important legacy: the recognition that their security and stability are inextricably intertwined.`
+      }
+    ];
+    saveArticles(initialArticles);
+    articlesCache = initialArticles;
+    return articlesCache;
+  }
+  try {
+    const raw = fs2.readFileSync(ARTICLES_FILE, "utf-8");
+    articlesCache = JSON.parse(raw);
+    return articlesCache || [];
+  } catch (e) {
+    console.error("Error reading articles file:", e);
+    return [];
+  }
+}
+function atomicWriteJsonSync2(filePath, data) {
+  ensureDataDir2();
+  const tempPath = `${filePath}.${Date.now()}.${Math.random().toString(36).substring(2, 8)}.tmp`;
+  try {
+    fs2.writeFileSync(tempPath, JSON.stringify(data, null, 2), "utf-8");
+    fs2.renameSync(tempPath, filePath);
+  } catch (err) {
+    if (fs2.existsSync(tempPath)) {
+      try {
+        fs2.unlinkSync(tempPath);
+      } catch {
+      }
+    }
+    console.warn(`Could not persist ${filePath} to disk:`, err);
+  }
+}
+function saveArticles(articles) {
+  articlesCache = articles;
+  atomicWriteJsonSync2(ARTICLES_FILE, articles);
+}
+function getAllArticles() {
+  const articles = loadArticles();
+  return [...articles].sort((a, b) => new Date(b.publishDate || b.createdAt).getTime() - new Date(a.publishDate || a.createdAt).getTime());
+}
+function getArticleById(idOrSlug) {
+  const articles = loadArticles();
+  return articles.find((a) => a.id === idOrSlug || a.slug === idOrSlug) || null;
+}
+function createArticle(data) {
+  const articles = loadArticles();
+  const slug = slugify(data.title) + "-" + Date.now().toString().slice(-4);
+  const id = `article-${slug}`;
+  const now = /* @__PURE__ */ new Date();
+  const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+  const publishDate = data.publishDate?.trim() || todayStr;
+  const readingTime = calculateReadingTime(data.content);
+  const newArticle = {
+    id,
+    slug,
+    title: data.title.trim(),
+    bannerImageUrl: data.bannerImageUrl.trim(),
+    category: data.category?.trim() || "General",
+    authorName: data.authorName.trim(),
+    authorRole: data.authorRole?.trim() || "Editorial Contributor",
+    authorAvatarUrl: data.authorAvatarUrl?.trim() || void 0,
+    publishDate,
+    readingTime,
+    pullQuote: data.pullQuote?.trim() || void 0,
+    content: data.content.trim(),
+    tags: Array.isArray(data.tags) ? data.tags : typeof data.tags === "string" ? data.tags.split(",").map((t) => t.trim()).filter(Boolean) : [],
+    sourceReference: data.sourceReference?.trim() || void 0,
+    viewsCount: 1,
+    pdfDownloadCount: 0,
+    createdAt: (/* @__PURE__ */ new Date()).toISOString(),
+    authorEmail: data.authorEmail
+  };
+  articles.unshift(newArticle);
+  saveArticles(articles);
+  return newArticle;
+}
+function updateArticle(id, updates) {
+  const articles = loadArticles();
+  const index = articles.findIndex((a) => a.id === id);
+  if (index === -1) return null;
+  const current = articles[index];
+  const updated = {
+    ...current,
+    title: typeof updates.title === "string" ? updates.title.trim() : current.title,
+    bannerImageUrl: typeof updates.bannerImageUrl === "string" ? updates.bannerImageUrl.trim() : current.bannerImageUrl,
+    category: typeof updates.category === "string" ? updates.category.trim() : current.category,
+    authorName: typeof updates.authorName === "string" ? updates.authorName.trim() : current.authorName,
+    authorRole: typeof updates.authorRole === "string" ? updates.authorRole.trim() : current.authorRole,
+    authorAvatarUrl: updates.authorAvatarUrl !== void 0 ? updates.authorAvatarUrl : current.authorAvatarUrl,
+    publishDate: typeof updates.publishDate === "string" ? updates.publishDate.trim() : current.publishDate,
+    pullQuote: updates.pullQuote !== void 0 ? updates.pullQuote : current.pullQuote,
+    content: typeof updates.content === "string" ? updates.content.trim() : current.content,
+    tags: Array.isArray(updates.tags) ? updates.tags : current.tags,
+    sourceReference: updates.sourceReference !== void 0 ? updates.sourceReference : current.sourceReference,
+    updatedAt: (/* @__PURE__ */ new Date()).toISOString()
+  };
+  if (updates.content && typeof updates.content === "string") {
+    updated.readingTime = calculateReadingTime(updates.content);
+  }
+  articles[index] = updated;
+  saveArticles(articles);
+  return updated;
+}
+function deleteArticle(id) {
+  const articles = loadArticles();
+  const index = articles.findIndex((a) => a.id === id);
+  if (index === -1) return false;
+  const articleToDelete = articles[index];
+  if (articleToDelete.bannerImageUrl && articleToDelete.bannerImageUrl.startsWith("/uploads/")) {
+    const filename = path2.basename(articleToDelete.bannerImageUrl);
+    if (/^banner-\d+-[a-f0-9]+\.(png|jpg|webp)$/i.test(filename)) {
+      const filePath = path2.join(process.cwd(), "public", "uploads", filename);
+      if (fs2.existsSync(filePath)) {
+        try {
+          fs2.unlinkSync(filePath);
+        } catch (err) {
+          console.warn("Could not remove orphaned banner on article deletion:", err);
+        }
+      }
+    }
+  }
+  const filtered = articles.filter((a) => a.id !== id);
+  saveArticles(filtered);
+  return true;
+}
+function incrementDownloadCount(id) {
+  const articles = loadArticles();
+  const art = articles.find((a) => a.id === id || a.slug === id);
+  if (art) {
+    art.pdfDownloadCount = (art.pdfDownloadCount || 0) + 1;
+    saveArticles(articles);
+  }
+}
+
+// pyq-db.ts
+import fs3 from "fs";
+import path3 from "path";
+import os3 from "os";
+var IS_VERCEL3 = Boolean(process.env.VERCEL);
+var DATA_DIR3 = IS_VERCEL3 ? path3.join(os3.tmpdir(), "nishchay_data") : path3.join(process.cwd(), "data");
+var SEED_DATA_DIR3 = path3.join(process.cwd(), "data");
+var PYQ_FILE = path3.join(DATA_DIR3, "pyq-papers.json");
+var SEED_PYQ_FILE = path3.join(SEED_DATA_DIR3, "pyq-papers.json");
+function ensureDataDir3() {
+  try {
+    if (!fs3.existsSync(DATA_DIR3)) {
+      fs3.mkdirSync(DATA_DIR3, { recursive: true });
+    }
+  } catch (err) {
+    console.warn("Could not ensure data directory:", err);
+  }
+}
+var pyqCache = null;
+function getAllPyqSessions() {
+  if (pyqCache) {
+    return pyqCache;
+  }
+  ensureDataDir3();
+  let targetFile = PYQ_FILE;
+  if (!fs3.existsSync(targetFile) && fs3.existsSync(SEED_PYQ_FILE)) {
+    targetFile = SEED_PYQ_FILE;
+  }
+  if (!fs3.existsSync(targetFile)) {
+    pyqCache = {};
+    return pyqCache;
+  }
+  try {
+    const raw = fs3.readFileSync(targetFile, "utf-8");
+    pyqCache = JSON.parse(raw);
+    return pyqCache || {};
+  } catch (err) {
+    console.error("Failed to parse pyq-papers.json, fallback to empty:", err);
+    pyqCache = {};
+    return pyqCache;
+  }
+}
+function persistPyqData(data) {
+  ensureDataDir3();
+  pyqCache = data;
+  try {
+    const tempFile = `${PYQ_FILE}.tmp.${Date.now()}`;
+    fs3.writeFileSync(tempFile, JSON.stringify(data, null, 2), "utf-8");
+    fs3.renameSync(tempFile, PYQ_FILE);
+  } catch (err) {
+    console.warn("Could not write pyq-papers.json to disk:", err);
+  }
+}
+function savePyqFileRecord(params) {
+  const all = getAllPyqSessions();
+  const { sessionId, exam, session, year, title, subjectKey, fileType, url, driveFileId, fileName, fileSize } = params;
+  if (!all[sessionId]) {
+    all[sessionId] = {
+      sessionId,
+      exam,
+      session,
+      year,
+      title,
+      subjects: {},
+      updatedAt: (/* @__PURE__ */ new Date()).toISOString()
+    };
+  }
+  const sessionRecord = all[sessionId];
+  if (!sessionRecord.subjects[subjectKey]) {
+    sessionRecord.subjects[subjectKey] = {};
+  }
+  const fileItem = {
+    url,
+    driveFileId,
+    fileName,
+    fileSize: fileSize || "PDF Document",
+    uploadedAt: (/* @__PURE__ */ new Date()).toISOString()
+  };
+  if (fileType === "paper") {
+    sessionRecord.subjects[subjectKey].paper = fileItem;
+  } else {
+    sessionRecord.subjects[subjectKey].key = fileItem;
+  }
+  sessionRecord.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
+  persistPyqData(all);
+  return sessionRecord;
+}
+function deletePyqFileRecord(params) {
+  const all = getAllPyqSessions();
+  const { sessionId, subjectKey, fileType } = params;
+  const sessionRecord = all[sessionId];
+  if (!sessionRecord || !sessionRecord.subjects[subjectKey]) {
+    return sessionRecord || null;
+  }
+  if (fileType === "paper") {
+    delete sessionRecord.subjects[subjectKey].paper;
+  } else {
+    delete sessionRecord.subjects[subjectKey].key;
+  }
+  sessionRecord.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
+  persistPyqData(all);
+  return sessionRecord;
+}
+
+// notes-db.ts
+import fs4 from "fs";
+import path4 from "path";
+import os4 from "os";
+var IS_VERCEL4 = Boolean(process.env.VERCEL);
+var DATA_DIR4 = IS_VERCEL4 ? path4.join(os4.tmpdir(), "nishchay_data") : path4.join(process.cwd(), "data");
+var SEED_DATA_DIR4 = path4.join(process.cwd(), "data");
+var NOTES_FILE = path4.join(DATA_DIR4, "notes.json");
+var SEED_NOTES_FILE = path4.join(SEED_DATA_DIR4, "notes.json");
+function ensureDataDir4() {
+  try {
+    if (!fs4.existsSync(DATA_DIR4)) {
+      fs4.mkdirSync(DATA_DIR4, { recursive: true });
+    }
+  } catch (err) {
+    console.warn("Could not ensure data directory:", err);
+  }
+}
+var notesCache = null;
+function getAllNotes() {
+  if (notesCache) {
+    return notesCache;
+  }
+  ensureDataDir4();
+  let targetFile = NOTES_FILE;
+  if (!fs4.existsSync(targetFile) && fs4.existsSync(SEED_NOTES_FILE)) {
+    targetFile = SEED_NOTES_FILE;
+  }
+  if (!fs4.existsSync(targetFile)) {
+    notesCache = [];
+    return notesCache;
+  }
+  try {
+    const raw = fs4.readFileSync(targetFile, "utf-8");
+    notesCache = JSON.parse(raw);
+    return notesCache || [];
+  } catch (err) {
+    console.error("Failed to parse notes.json, fallback to empty list:", err);
+    notesCache = [];
+    return notesCache;
+  }
+}
+function getNotesBySubject(subjectId) {
+  const all = getAllNotes();
+  return all.filter((n) => n.subjectId.toLowerCase() === subjectId.toLowerCase());
+}
+function getNoteById(id) {
+  const all = getAllNotes();
+  return all.find((n) => n.id === id);
+}
+function persistNotes(notes) {
+  ensureDataDir4();
+  notesCache = notes;
+  try {
+    const tempFile = `${NOTES_FILE}.tmp.${Date.now()}`;
+    fs4.writeFileSync(tempFile, JSON.stringify(notes, null, 2), "utf-8");
+    fs4.renameSync(tempFile, NOTES_FILE);
+  } catch (err) {
+    console.warn("Could not write notes.json to disk:", err);
+  }
+}
+function saveNote(data) {
+  const all = getAllNotes();
+  const id = `note-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+  const newNote = {
+    id,
+    subjectId: data.subjectId.toLowerCase(),
+    subjectTitle: data.subjectTitle,
+    title: data.title.trim(),
+    category: data.category?.trim() || void 0,
+    url: data.url,
+    driveFileId: data.driveFileId,
+    fileName: data.fileName,
+    fileSize: data.fileSize || "PDF Document",
+    uploadedAt: (/* @__PURE__ */ new Date()).toISOString()
+  };
+  all.unshift(newNote);
+  persistNotes(all);
+  return newNote;
+}
+function deleteNote(id) {
+  const all = getAllNotes();
+  const index = all.findIndex((n) => n.id === id);
+  if (index === -1) return false;
+  all.splice(index, 1);
+  persistNotes(all);
+  return true;
+}
+
+// google-drive.ts
+import { google } from "googleapis";
+import { Readable } from "stream";
+function isDriveConfigured() {
+  return Boolean(
+    process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL && process.env.GOOGLE_PRIVATE_KEY && process.env.GOOGLE_DRIVE_FOLDER_ID
+  );
+}
+function getDriveClient() {
+  const email = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
+  let key = process.env.GOOGLE_PRIVATE_KEY;
+  if (!email || !key) {
+    throw new Error("Google Service Account credentials (EMAIL or PRIVATE_KEY) missing in environment.");
+  }
+  const cleanKey = key.replace(/\\n/g, "\n").replace(/^"(.*)"$/, "$1").trim();
+  if (!cleanKey.includes("BEGIN PRIVATE KEY")) {
+    throw new Error("GOOGLE_PRIVATE_KEY is malformed in environment.");
+  }
+  const auth = new google.auth.GoogleAuth({
+    credentials: {
+      client_email: email,
+      private_key: cleanKey
+    },
+    scopes: [
+      "https://www.googleapis.com/auth/drive",
+      "https://www.googleapis.com/auth/drive.file"
+    ]
+  });
+  return google.drive({ version: "v3", auth });
+}
+var folderCache = /* @__PURE__ */ new Map();
+async function getOrCreateFolder(options) {
+  const drive = getDriveClient();
+  const parentId = (options.parentFolderId || process.env.GOOGLE_DRIVE_FOLDER_ID || "").trim();
+  if (!parentId) {
+    throw new Error("Root parent folder ID is required to locate or create a subfolder.");
+  }
+  const cleanName = options.folderName.trim();
+  const cacheKey = `${parentId}:${cleanName.toLowerCase()}`;
+  if (folderCache.has(cacheKey)) {
+    return folderCache.get(cacheKey);
+  }
+  const escapedName = cleanName.replace(/'/g, "\\'");
+  const q = `'${parentId}' in parents and name = '${escapedName}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false`;
+  try {
+    const listRes = await drive.files.list({
+      q,
+      fields: "files(id, name)",
+      spaces: "drive",
+      supportsAllDrives: true,
+      includeItemsFromAllDrives: true
+    });
+    const existingFolder = listRes.data.files?.[0];
+    if (existingFolder?.id) {
+      folderCache.set(cacheKey, existingFolder.id);
+      return existingFolder.id;
+    }
+  } catch (searchErr) {
+    console.warn(`Could not query subfolder "${cleanName}", proceeding to create:`, searchErr?.message);
+  }
+  console.log(`\u{1F4C1} Creating Google Drive subfolder: "${cleanName}" inside parent: ${parentId}`);
+  const createRes = await drive.files.create({
+    requestBody: {
+      name: cleanName,
+      mimeType: "application/vnd.google-apps.folder",
+      parents: [parentId]
+    },
+    fields: "id, name",
+    supportsAllDrives: true
+  });
+  const newFolderId = createRes.data.id;
+  if (!newFolderId) {
+    throw new Error(`Failed to create Google Drive subfolder for "${cleanName}".`);
+  }
+  try {
+    await drive.permissions.create({
+      fileId: newFolderId,
+      requestBody: {
+        role: "reader",
+        type: "anyone"
+      },
+      supportsAllDrives: true
+    });
+  } catch (permErr) {
+    console.warn(`\u26A0\uFE0F Warning: Subfolder "${cleanName}" permissions note:`, permErr?.message);
+  }
+  folderCache.set(cacheKey, newFolderId);
+  return newFolderId;
+}
+async function uploadPdfToDrive(options) {
+  const drive = getDriveClient();
+  let targetFolderId = (options.folderId || process.env.GOOGLE_DRIVE_FOLDER_ID || "").trim();
+  if (!targetFolderId) {
+    throw new Error("GOOGLE_DRIVE_FOLDER_ID is required to upload files to Google Drive.");
+  }
+  let effectiveFolderId = targetFolderId;
+  if (options.subfolderName && options.subfolderName.trim()) {
+    try {
+      effectiveFolderId = await getOrCreateFolder({
+        folderName: options.subfolderName.trim(),
+        parentFolderId: targetFolderId
+      });
+      console.log(`\u{1F4C2} Using subfolder "${options.subfolderName}" (ID: ${effectiveFolderId})`);
+    } catch (folderErr) {
+      console.warn(`Could not create subfolder "${options.subfolderName}", falling back to root Drive folder:`, folderErr?.message);
+      effectiveFolderId = targetFolderId;
+    }
+  }
+  const stream = Readable.from(options.buffer);
+  const fileMetadata = {
+    name: options.fileName,
+    parents: [effectiveFolderId]
+  };
+  const response = await drive.files.create({
+    requestBody: fileMetadata,
+    media: {
+      mimeType: "application/pdf",
+      body: stream
+    },
+    fields: "id, name, webViewLink, webContentLink",
+    supportsAllDrives: true
+  });
+  const fileId = response.data.id;
+  if (!fileId) {
+    throw new Error("Google Drive API failed to return an uploaded file ID.");
+  }
+  try {
+    await drive.permissions.create({
+      fileId,
+      requestBody: {
+        role: "reader",
+        type: "anyone"
+      },
+      supportsAllDrives: true
+    });
+  } catch (permErr) {
+    console.warn(`\u26A0\uFE0F Warning: Could not explicitly set public permissions on Drive file ${fileId}:`, permErr?.message);
+  }
+  const url = response.data.webViewLink || `https://drive.google.com/file/d/${fileId}/view?usp=sharing`;
+  console.log(`\u2705 Successfully uploaded "${options.fileName}" into "${options.subfolderName || "Root"}" (ID: ${fileId})`);
+  return {
+    fileId,
+    url,
+    fileName: response.data.name || options.fileName,
+    folderId: effectiveFolderId,
+    folderName: options.subfolderName
+  };
+}
+async function deletePdfFromDrive(fileId) {
+  try {
+    const drive = getDriveClient();
+    await drive.files.delete({
+      fileId,
+      supportsAllDrives: true
+    });
+    console.log(`\u{1F5D1}\uFE0F Successfully deleted file from Google Drive (ID: ${fileId})`);
+    return true;
+  } catch (err) {
+    console.error(`Failed to delete file ${fileId} from Google Drive:`, err?.message);
+    return false;
+  }
+}
+function extractDriveFileId(url) {
+  if (!url) return null;
+  const matchFile = url.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
+  if (matchFile && matchFile[1]) return matchFile[1];
+  const matchId = url.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+  if (matchId && matchId[1]) return matchId[1];
+  return null;
+}
+
+// n-intel-sample-data.ts
+var SAMPLE_NINTEL_POST = `*TODAYS TOP NEWS* 
+------------------------------------
+
+https://linktr.ee/nishchay.defence
+
+Join Nishchay Defence using the above link \u{1F446}\u{1F3FB}
+
+1.  President Smt Droupadi Murmu paid floral tributes to former President Shri K.R. Narayanan on his birth anniversary at Rashtrapati Bhavan. Born on 27 October 1920 at Uzhavoor in Kerala, Shri Narayanan served as India\u2019s 10th President from 1997 to 2002.
+
+2.  President Smt Droupadi Murmu has promulgated the Lakshadweep Tourism Trade (Registration, Safety and Facilitation) Regulation, 2026, making registration compulsory for lodging, water sports, tour guides, travel agents, digital booking platforms and tourism vessels in the UT, with strict safety norms and heavy penalties for damage to fragile marine ecosystems. Existing operators get six months to register; applications must be decided within 45 to 60 days, failing which they will be deemed accepted.
+
+3.  PM Shri Narendra Modi inaugurated the Emerging Science, Technology and Innovation Conclave (ESTIC) 2026 at Bharat Mandapam, New Delhi. He said a Viksit Bharat will be built on strong foundations of scientific research and innovation, that India must lead the world in shaping the technologies of tomorrow and build self-reliance in critical technologies, and cautioned: \u201CAI can give quick answers, but it is essential to verify them.\u201D
+
+4.  The Centre has introduced a \u2018Concessional Local Pass\u2019 on national highways from 1 November for non-commercial vehicle owners living within 20 km of a toll plaza. With a valid FASTag, the annual pass costs \u20B91,500 for plazas outside municipal limits and \u20B93,000 for those within; it is valid only at that one plaza and is non-transferable.
+
+5.  DPIIT has launched the 6th edition of the National Startup Awards (NSA 6.0), with 20 sectoral categories (12 of them new), 3 special categories, a new Student Innovator Award and a \u20B925 lakh cash prize in eligible categories. Applications are open from 27 October to 20 November; 2026 marks ten years of Startup India.
+
+6.  The Rural Development Ministry is holding a two-day regional workshop under the Pradhan Mantri Awaas Yojana\u2013Gramin (PMAY-G) in Lucknow (27\u201328 October), with about 150 officials from nine States, to speed up house completion and plan reforms for the scheme\u2019s next phase. UP Deputy CM Keshav Prasad Maurya and MoS Kamlesh Paswan handed over house keys to beneficiaries.
+
+7.  The Viksit Bharat Buildathon 2025 has entered the Guinness World Records as the \u201CLargest Innovation Solution Competition\u201D, with 2,87,967 project submissions from across the country. The Education Ministry will felicitate 10 national-level winning teams in New Delhi today, PIB said.
+
+8.  Indian Railways has opened online applications for 1,265 Station Master posts under CEN No. 08/2026; any graduate can apply until 25 November. RRB Mumbai has the most vacancies (177), followed by Jammu-Srinagar (122) and Chennai (119).
+
+9.  Very severe cyclonic storm \u2018Arnab\u2019 began crossing the Andhra Pradesh\u2013Yanam coast in the early hours with winds of 125\u2013135 kmph gusting to 150 kmph. Reports placed the start of landfall near Yanam\u2013Kakinada and Narsapur; IMD said the exact landfall point will be confirmed once the process is over. A storm surge of 1.5\u20132.5 metres is expected over Kakinada and Yanam, and Great Danger Signal No. X is hoisted at Kakinada port.
+
+10.  Agriculture and Farmers Welfare Minister Shivraj Singh Chouhan said that Sardar Vallabhbhai Patel\u2019s vision, determination and leadership laid the foundation for India\u2019s national unity and territorial integrity. He made these remarks while addressing the 67th Sardar Patel Memorial Lecture virtually at Akashvani Bhawan in New Delhi. 
+
+11.  The Civil Aviation Ministry held its first fog preparedness meeting for the coming winter, chaired by Secretary Samir Kumar Sinha. IMD expects the fog season to run from 15 December 2026 to 15 February 2027; airports were told to keep ILS and RVR systems ready and airlines to roster low-visibility-qualified crew and inform passengers of delays in time.
+
+12.  The NHRC issued an advisory on \u2018Women\u2019s Safety at Work and Public Spaces\u2019 to ten Union Ministries, the Railway Board chairperson and all Chief Secretaries, covering eight key areas, and sought action-taken reports within two months. It noted women\u2019s labour force participation of 34.6% in September 2026 against about 4.4 lakh crimes against women in the latest NCRB report.
+
+13.  The Zoological Survey of India has described a new deep-sea electric ray, Tetronarce ramanamurthyi, named the Arabian Black Electric Ray, from the southeastern Arabian Sea \u2014 the first confirmed record of the genus in the northern Indian Ocean. The work, under the Deep Ocean Mission, is published in the journal Zootaxa.
+
+14.  TRAI data show India had 1,367.93 million telephone subscribers at the end of September 2026, with overall tele-density at 95.52%. Broadband subscribers, including M2M cellular connections, stood at 1,107.68 million, and 16.77 million mobile number portability requests were received during the month.
+
+15.  Under the Gyan Bharatam Mission, the Culture Ministry signed an MoU with the Biblioth\xE8que nationale de France in Paris for digitisation, digital access, technology exchange, conservation and research on Indic-origin manuscripts. It was signed by Culture Secretary Vivek Aggarwal and BnF President Gilles P\xE9cout.
+
+16.  Over 99.32 lakh names have been removed from Karnataka\u2019s electoral rolls in the Special Intensive Revision, bringing the electorate down from 5.54 crore to 4.55 crore in the final roll. It has about 2.25 crore men, 2.29 crore women and 2,841 third-gender voters, including 6.83 lakh aged 18\u201319.
+
+17.  Telangana has officially declared drought in 365 of its 621 mandals (58.7%) across 31 districts \u2014 111 severe and 254 moderate \u2014 for the kharif season; only Hyderabad and Peddapalli districts were spared.
+
+18.  Punjab and Haryana Bar Council elects 23-year-old lawyer Asmi unopposed, youngest ever State Bar Council member.  She has created history by becoming the youngest-ever member of a State Bar Council in the country and the first member from Generation Z to be elected to any State Bar Council. 
+
+19.  Vande Bharat Sleeper train: Two new Vande Bharat sleeper trains will connect major cities in India and enhance overnight travel options. The Mumbai-Bengaluru service is set to launch on November 1, while the Delhi-Varanasi service is likely to start on October 31. Both services aim to significantly reduce travel times compared to existing options. Passengers should check the final schedules and train numbers before making travel plans.
+
+20.  A network outage of more than an hour at Mumbai\u2019s Chhatrapati Shivaji Maharaj International Airport on Tuesday evening delayed 327 flights, forcing staff to switch to manual check-in. Operator MIAL said essential services continued.
+------------------------------------
+        *NEW APPOINTMENT* 
+------------------------------------
+1.  Sashastra Seema Bal Director General Sanjay Singhal, a 1993-batch UP-cadre IPS officer, has been given additional charge of DG, Indo-Tibetan Border Police (ITBP) from 31 October, when incumbent Shatrujeet Singh Kapoor retires, until a regular appointment is made. Singhal has headed the SSB since 1 September 2025 and earlier served in the ITBP as DIG and IG (2008\u20132015).
+
+2.  Jammu and Kashmir LG Manoj Sinha administered the oath to four National Conference MLAs \u2014 Ali Mohammad Sagar (Khanyar), Shameema Firdous (Habba Kadal), Mir Saifullah (Trehgam) and Altaf Ahmad Wani alias Kaloo (Pahalgam) \u2014 at Lok Bhavan, Srinagar, in CM Omar Abdullah\u2019s first Cabinet expansion. The Cabinet now has its maximum strength of nine; Independent MLA Satish Sharma was dropped.
+
+3.  Anup Bagchi took charge as Managing Director and CEO of HDFC Bank, India\u2019s largest private sector lender, on 27 October, succeeding Sashidhar Jagdishan, whose term ended on 26 October. An ICICI Group veteran who last headed ICICI Prudential Life Insurance, he is the first outsider to lead the bank in its over three-decade history.
+------------------------------------
+        *LEGAL REPORT* 
+------------------------------------
+1.  The Supreme Court gave petitioners 10 days to file rejoinders to the Election Commission\u2019s affidavit defending the Special Intensive Revision (SIR) of electoral rolls. The Bench of CJI Surya Kant and Justices Joymalya Bagchi and V. Mohana also asked the EC to respond to TMC MP Dola Sen\u2019s plea alleging changes to Form 6 in Bihar without the court\u2019s approval.
+
+2.  The Supreme Court issued notice to Lok Sabha LoP Rahul Gandhi and others on a plea alleging that he pushed a pregnant journalist during the 12 October march to the apex court. The plea was mentioned before a Bench of CJI Surya Kant and Justice Joymalya Bagchi.
+
+3.  The Supreme Court held that there is no bar under the UAPA on granting bail to a foreign national if the accused\u2019s initial entry into India was legal. A Bench of Justices Aravind Kumar and Vipul M. Pancholi upheld a Madras High Court order restoring bail to Sri Lankan national Mohmad Rifas, noting that the NIA had shown no material that his entry was illegal.
+
+4.  Hearing the Digital News Publishers Association\u2019s challenge to the Digital Personal Data Protection Act and Rules, the Supreme Court issued notice to the Law and IT Ministries but refused an interim stay, saying a balance must be struck between press freedom and individual rights. DNPA argued newsrooms would shut if journalists needed prior consent; the case will be heard on 17 November.
+
+5.  A Supreme Court Bench of Justices Vikram Nath and Sandeep Mehta slammed the Rajasthan government over illegal mining and pollution in the Jojari-Bandi-Luni river system and said it may order a CBI investigation. \u201CMaking 20 lakh people live in hell can\u2019t be compared with your economic viability,\u201D the Bench said, listing the case for 27 November.
+
+6.  Mumbai Police have invoked the stringent Maharashtra Control of Organised Crime Act (MCOCA) in the 18 October firing on actor Tiger Shroff\u2019s car in Juhu. The Crime Branch has arrested 11 people allegedly linked to the Lawrence Bishnoi gang; Anil Pandit has been named as a wanted accused.
+
+7.  Thirteen of the 17 undertrial prisoners who overpowered guards and escaped from the Thekkampatti sub-jail near Andipatti in Tamil Nadu\u2019s Theni district on Monday night have been recaptured, and nine prison staff have been suspended. DMK chief M.K. Stalin attacked the TVK government over the jailbreak.
+
+------ *MISHAPS*----------
+
+1.  In Panipat, Haryana \u2014 Worker Charred to Death in Yarn Factory Fire
+A 21-year-old worker from Bihar, Rishu, was killed and another, Dhaneshwar, suffered 50% burns when a fire broke out around 3:40 am on Tuesday at the CRG Cotex yarn factory in the Shiv Nagar industrial area. A short circuit is suspected; narrow lanes hampered fire tenders.
+
+2.  In Mohali, Punjab \u2014 Refuelling From Bottle Turns Fatal:  Pawan Singh (28) of Balongi died at PGI Chandigarh, ten days after his car caught fire while he was pouring petrol into it from a bottle with a lit cigarette in hand. Police urged people never to refuel from bottles or smoke near fuel.
+------------------------------------
+    *DEFENCE News* 
+------------------------------------
+1.  Defence Minister Rajnath Singh arrived in Cebu, Philippines, for the 13th ASEAN Defence Ministers\u2019 Meeting-Plus (ADMM-Plus), where he will hold bilateral meetings, reiterating India\u2019s commitment to ASEAN centrality. Earlier, he saluted the Army\u2019s infantrymen on Shaurya Diwas (Infantry Day).
+
+2.  The 11th edition of the India-Indonesia Joint Special Forces Exercise GARUDA SHAKTI began at Banyuwangi, Indonesia, and will run till 6 November. Troops of the Parachute Regiment (Special Forces) are training with Indonesian Special Forces in jungle operations, air assault, mountaineering and combat marksmanship.
+
+3.  Yard 1283 \u2018Srishti\u2019, a Next Generation Offshore Patrol Vessel (NGOPV) for the Navy, was launched at Goa Shipyard Limited in the presence of Vishvajit Sahay, Secretary (Defence Finance). NGOPVs are being built at GSL and GRSE for surveillance, search and rescue, offshore-asset protection, HADR and anti-piracy tasks.
+
+4.  The 33rd Singapore-India Maritime Bilateral Exercise (SIMBEX-2026), hosted by the Navy at Visakhapatnam, concluded on 26 October. INS Nilgiri, INS Kamorta, P-8I and Dornier aircraft and MH-60R helicopters exercised with Singapore\u2019s stealth frigate RSS Supreme in anti-submarine, anti-air and anti-surface drills in the Bay of Bengal.
+
+5.  The Navy\u2019s First Training Squadron \u2014 INS Tir, INS Sujata and ICGS Sarathi \u2014 arrived at Colombo, Sri Lanka, for a port call that includes cross-training visits and a Passage Exercise (PASSEX) with the Sri Lanka Navy.
+
+6.  Bengaluru-based AI start-up Sarvam has signed an umbrella MoU with Headquarters Integrated Defence Staff (HQ IDS) under the Defence Ministry for artificial intelligence projects across the Army, Navy, Air Force and tri-service organisations. The value of the pact has not been disclosed.
+
+7.  The first 300-tonne Sullage Barge (Yard 142) for the Navy was launched, and keels were laid for Yards 144 and 148, at MSME shipyard Suryadipta Projects, Thane. The indigenously designed barges will help naval platforms comply with MARPOL pollution rules.
+------------------------------------
+\u2708 *INTERNATIONAL NEWS* 
+------------------------------------
+1.  President Droupadi Murmu received Hereditary Prince Alois and Hereditary Princess Sophie of Liechtenstein at Rashtrapati Bhavan and hosted a banquet in their honour. She said the India-EFTA TEPA commitment to facilitate $100 billion of investment and 1 million direct jobs in India over 15 years gives a robust foundation for cooperation.
+
+2.  PM Narendra Modi met Hereditary Prince Alois of Liechtenstein; the two leaders reviewed progress under the India-EFTA Trade and Economic Partnership Agreement (TEPA), which has completed its first year, and discussed ways to boost investment and economic cooperation.
+
+3.  Vice-President C.P. Radhakrishnan met a Russian parliamentary delegation led by State Duma Chairman Vyacheslav Volodin in New Delhi and expressed confidence that India and Russia will reach their target of $100 billion in annual trade by 2030. He also hosted a luncheon for BRICS presiding officers at Parliament.
+
+4.  The 12th BRICS Parliamentary Forum concluded in New Delhi with a unanimously adopted Joint Declaration voicing deep concern over the escalation in West Asia, urging protection of civilians and civilian infrastructure, condemning unilateral coercive measures and backing reform of the UN, including the Security Council.
+
+5.  Commerce Minister Piyush Goyal said in The Hague that India\u2019s FTA talks with Chile are nearing conclusion and negotiations with the Southern African Customs Union (SACU) have begun. India-China trade rose about 29% to $91.76 billion in April\u2013September, making China India\u2019s largest trading partner in the first half of 2026-27.
+
+6.  Environment Minister Bhupender Yadav reached Yerevan, Armenia, for the high-level segment of COP17 of the UN Convention on Biological Diversity \u2014 the first global review of progress under the Kunming-Montreal Global Biodiversity Framework, which aims to halt and reverse biodiversity loss by 2030. He will highlight India\u2019s conservation achievements at bilateral and multilateral meetings.
+
+7.  India has invited Pakistan\u2019s Federal Minister for National Heritage and Culture, Aurangzeb Khan Khichi, to the inaugural SCO Civilisational Dialogue Forum in New Delhi from 20 to 22 November; Islamabad is yet to decide. The forum was proposed by PM Modi at the SCO summit in Tianjin in September 2025.
+------------------------------------
+\u{1F30E} *WORLD NEWS* \u{1F30D} 
+------------------------------------
+1.  Exit polls after Israel\u2019s Knesset election showed no clear winner: Gadi Eisenkot\u2019s opposition bloc was projected at 52\u201353 seats and PM Benjamin Netanyahu\u2019s bloc at 50, both short of the 61 needed, with Arab-led parties at a record 17\u201318. Netanyahu\u2019s Likud (24\u201325 seats) is projected as the largest party, ahead of Eisenkot\u2019s Yashar (21\u201323). Turnout was the highest since at least 1973; final results are expected by 30 October.
+
+2.  US First Lady Melania Trump announced that the Russia-Ukraine ceasefire she brokered for the occupied Ukrainian city of Oleshky took effect at 4 am Moscow time on 27 October, two days ahead of schedule, and has been expanded within the Kherson region to give humanitarian convoys safe passage. About 1,700\u20132,000 mostly elderly residents remain in the city; Russian strikes continued elsewhere in Ukraine.
+
+3.  Ethiopia\u2019s Orthodox Tewahedo Church said at least 60 Orthodox Christians were killed in two attacks in the Arsi Zone of Oromia region \u2014 14 in Merti district on 20 October and 46 in Shirka district on 24 October. The regional government blamed the Oromo Liberation Army (OLA), which could not be reached for comment.
+
+4.  A UNFCCC synthesis of 127 new national climate plans (NDCs) found that global greenhouse gas emissions will fall only 6% below 2019 levels by 2035 if current pledges are implemented \u2014 far off track from what is needed to limit warming.
+
+5.  Bangladesh\u2019s dengue death toll this year has reached 400, with 11 deaths in a single day \u2014 the highest daily toll of 2026 \u2014 and total cases at 1,28,237. Deaths of children with confirmed or suspected measles have risen to 1,240.
+------------------------------------
+\u{1F6A3}\u{1F6B4}\u{1F3C7}\u{1F3CA} *SPORTS*
+------------------------------------
+1.  Abhishek Sharma smashed 113 off 38 balls, with a 35-ball century, as India chased 199 in just 13.2 overs to beat New Zealand by six wickets in the third T20I at Wellington and take an unbeatable 3-0 lead in the five-match series. He and Vaibhav Sooryavanshi (45) put on 133 for the first wicket, including a record 118 in the powerplay; Daryl Mitchell had made 89 not out in NZ\u2019s 198/3.
+
+2.  India began the men\u2019s Asian Champions Trophy hockey with a 13-0 win over Bangladesh in Jalandhar, with Mandeep Singh scoring a hat-trick. Midfielder Nilakanta Sharma announced he will retire from international hockey after the tournament; India play China on 29 October.
+
+3.  Kajal Dhochak (76 kg) and Neelam Sirohi (50 kg) became the first two Indian women to reach the finals at the same World Wrestling Championships. Kajal came back from 1-7 down to beat Kyrgyzstan\u2019s Aiperi Medet Kyzy 10-7 and will face Ukraine\u2019s Anastasiya Alpyeyeva, while Neelam beat Kazakhstan\u2019s Zeinep Bayanova 7-3 to set up a final against Japan\u2019s Yui Susaki.
+
+4.  Aditya won India\u2019s first gold of the World Under-19 Boxing Championships in Montenegro, beating Russia\u2019s Islam Magomedov 4-1 in the 55 kg final. Harshika (65 kg) and Prachi Tokas (+80 kg) won bronze medals.
+
+5.  England captain Harry Kane won the 2026 men\u2019s Ballon d\u2019Or \u2014 the first Englishman since Michael Owen in 2001 \u2014 after scoring 73 goals for Bayern Munich, while Spain\u2019s Alexia Putellas won the women\u2019s award for the third time.
+
+6.  India\u2019s men stormed into the semi-finals of the inaugural Commonwealth Kabaddi Championship in Ahmedabad with a 48-20 win over Tanzania, led by Neeraj Narwal\u2019s 12 points. They face Sri Lanka in their last group match on 29 October.`;
+
+// server.ts
+dotenv.config();
+var app = express();
+var PORT = 3e3;
+app.set("trust proxy", 1);
+app.use((req, res, next) => {
+  const matchedPath = req.headers["x-matched-path"];
+  if (matchedPath) {
+    req.url = matchedPath;
+  } else {
+    const realUrl = req.originalUrl || req.url;
+    if (realUrl && (req.url === "/api" || req.url === "/api/index" || req.url.startsWith("/api?"))) {
+      req.url = realUrl;
+    }
+  }
+  next();
+});
+app.disable("x-powered-by");
+app.use(
+  helmet({
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        scriptSrc: [
+          "'self'",
+          "'unsafe-inline'",
+          "'unsafe-eval'",
+          "https://apis.google.com",
+          "https://*.firebaseapp.com",
+          "https://*.gstatic.com",
+          "https://accounts.google.com"
+        ],
+        connectSrc: [
+          "'self'",
+          "https://*.googleapis.com",
+          "https://*.firebaseio.com",
+          "https://identitytoolkit.googleapis.com",
+          "https://securetoken.googleapis.com",
+          "https://*.google.com",
+          "https://accounts.google.com",
+          "https://*.unsplash.com",
+          "ws:",
+          "wss:"
+        ],
+        imgSrc: ["'self'", "data:", "blob:", "https:", "http:"],
+        styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
+        fontSrc: ["'self'", "https://fonts.gstatic.com", "data:"],
+        objectSrc: ["'none'"],
+        frameSrc: ["'self'", "https://*.firebaseapp.com", "https://*.google.com", "https://accounts.google.com"],
+        upgradeInsecureRequests: process.env.NODE_ENV === "production" ? [] : null
+      }
+    },
+    // Essential for Firebase signInWithPopup so the authentication popup can communicate with the opener window
+    crossOriginOpenerPolicy: { policy: "same-origin-allow-popups" },
+    crossOriginEmbedderPolicy: false,
+    crossOriginResourcePolicy: { policy: "cross-origin" },
+    frameguard: { action: "sameorigin" }
+  })
+);
+var ALLOWED_ORIGINS = [
+  "http://localhost:3000",
+  "http://localhost:5173",
+  "http://127.0.0.1:3000",
+  "http://127.0.0.1:5173",
+  "https://nishchaydefence.in",
+  "https://www.nishchaydefence.in",
+  process.env.CLIENT_URL,
+  process.env.FRONTEND_URL
+].filter(Boolean);
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      if (!origin) return callback(null, true);
+      if (ALLOWED_ORIGINS.includes(origin) || origin.endsWith(".vercel.app")) {
+        return callback(null, true);
+      }
+      return callback(new Error(`CORS blocked request from origin: ${origin}`));
+    },
+    credentials: true,
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization", "X-Original-Name"]
+  })
+);
+app.use(express.raw({ type: "application/pdf", limit: "10mb" }));
+app.use(express.json({ limit: "50mb" }));
+app.use(express.urlencoded({ extended: true, limit: "50mb" }));
+app.use((err, req, res, next) => {
+  if (err && (err.type === "entity.too.large" || err.status === 413)) {
+    return res.status(413).json({
+      success: false,
+      error: 'The uploaded file payload is too large for direct processing. Please choose a file under 35 MB or use the "Paste PDF / Drive Link" tab.'
+    });
+  }
+  if (err && err instanceof SyntaxError && "body" in err) {
+    return res.status(400).json({
+      success: false,
+      error: "Malformed JSON payload received."
+    });
+  }
+  next(err);
+});
+var globalApiLimiter = rateLimit({
+  windowMs: 10 * 60 * 1e3,
+  // 10 minutes
+  max: 300,
+  // 300 requests per 10 minutes per IP
+  standardHeaders: true,
+  legacyHeaders: false,
+  validate: false,
+  message: { success: false, error: "Too many requests from this network. Please slow down." }
+});
+app.use("/api", globalApiLimiter);
+var contactLimiter = rateLimit({
+  windowMs: 60 * 60 * 1e3,
+  // 1 hour
+  max: 5,
+  // 5 submissions per hour per IP
+  standardHeaders: true,
+  legacyHeaders: false,
+  validate: false,
+  message: { success: false, error: "Submission limit reached. Please wait before submitting another message." }
+});
+var uploadLimiter = rateLimit({
+  windowMs: 15 * 60 * 1e3,
+  // 15 minutes
+  max: 30,
+  // 30 uploads per 15 min per IP
+  standardHeaders: true,
+  legacyHeaders: false,
+  validate: false,
+  message: { success: false, error: "Upload limit exceeded. Please try again later." }
+});
+var downloadLimiter = rateLimit({
+  windowMs: 1 * 60 * 1e3,
+  // 1 minute
+  max: 50,
+  // 50 increments per minute per IP
+  standardHeaders: true,
+  legacyHeaders: false,
+  validate: false,
+  message: { success: false, error: "Download limit exceeded." }
+});
+var publishLimiter = rateLimit({
+  windowMs: 15 * 60 * 1e3,
+  // 15 minutes
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  validate: false,
+  message: { success: false, error: "Publishing rate limit exceeded." }
+});
+var IS_VERCEL5 = Boolean(process.env.VERCEL);
+var UPLOADS_DIR = IS_VERCEL5 ? path5.join(os5.tmpdir(), "nishchay_uploads") : path5.join(process.cwd(), "public", "uploads");
+var PYQ_UPLOADS_DIR = path5.join(UPLOADS_DIR, "pyq");
+var NOTES_UPLOADS_DIR = path5.join(UPLOADS_DIR, "notes");
+try {
+  if (!fs5.existsSync(UPLOADS_DIR)) {
+    fs5.mkdirSync(UPLOADS_DIR, { recursive: true });
+  }
+  if (!fs5.existsSync(PYQ_UPLOADS_DIR)) {
+    fs5.mkdirSync(PYQ_UPLOADS_DIR, { recursive: true });
+  }
+  if (!fs5.existsSync(NOTES_UPLOADS_DIR)) {
+    fs5.mkdirSync(NOTES_UPLOADS_DIR, { recursive: true });
+  }
+} catch (fsErr) {
+  console.warn("Could not initialize local upload directories:", fsErr);
+}
+app.use(
+  "/uploads",
+  express.static(UPLOADS_DIR, {
+    dotfiles: "ignore",
+    setHeaders: (res, filePath) => {
+      res.setHeader("X-Content-Type-Options", "nosniff");
+      if (filePath.toLowerCase().endsWith(".pdf")) {
+        res.setHeader("Content-Type", "application/pdf");
+        res.setHeader("Content-Disposition", "inline");
+      } else {
+        res.setHeader("Content-Security-Policy", "default-src 'none'; sandbox");
+      }
+    }
+  })
+);
+try {
+  if (!admin.apps.length) {
+    const projectId = process.env.VITE_FIREBASE_PROJECT_ID || "nishchay-defence";
+    const serviceEmail = process.env.FIREBASE_SERVICE_ACCOUNT_EMAIL;
+    const serviceKey = process.env.FIREBASE_PRIVATE_KEY ? process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, "\n").replace(/^"(.*)"$/, "$1").trim() : void 0;
+    if (serviceEmail && serviceKey && serviceKey.includes("BEGIN PRIVATE KEY")) {
+      admin.initializeApp({
+        credential: admin.credential.cert({
+          projectId,
+          clientEmail: serviceEmail,
+          privateKey: serviceKey
+        }),
+        projectId
+      });
+      console.log("\u2705 Firebase Admin initialized with dedicated Service Account for:", projectId);
+    } else {
+      admin.initializeApp({
+        projectId
+      });
+      console.log("\u2705 Firebase Admin initialized with Project ID (public cert verification):", projectId);
+    }
+  }
+} catch (error) {
+  console.error("\u274C Firebase Admin initialization error:", error.message);
+}
+var ADMIN_EMAILS = [
+  "diyawalunj@gmail.com",
+  "vedantranjeetjadhav@gmail.com",
+  "abhijeetgaikwad1904@gmail.com",
+  "muthalrishikesh2006@gmail.com",
+  "adityasahane076@gmail.com"
+];
+function isValidUrlOrPath(url) {
+  if (!url || typeof url !== "string") return false;
+  const trimmed = url.trim();
+  if (trimmed.startsWith("/uploads/") && !trimmed.includes("..")) {
+    return true;
+  }
+  try {
+    const parsed = new URL(trimmed);
+    return parsed.protocol === "http:" || parsed.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+function sanitizeSheetCell(val) {
+  if (val === null || val === void 0) return "";
+  let str = String(val).trim();
+  if (/^[=\+\-@\t\r]/.test(str)) {
+    str = `'${str}`;
+  }
+  return str;
+}
+var authenticate = async (req, res, next) => {
+  const authHeader = req.headers.authorization;
+  const clientIp = req.ip || req.socket.remoteAddress || "unknown";
+  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    console.warn(`[SECURITY WARN] Missing or malformed Authorization header from IP: ${clientIp} for ${req.method} ${req.originalUrl}`);
+    return res.status(401).json({
+      success: false,
+      error: "Unauthorized: Authentication required with a valid Bearer token."
+    });
+  }
+  const token = authHeader.split("Bearer ")[1].trim();
+  if (!token) {
+    return res.status(401).json({
+      success: false,
+      error: "Unauthorized: Empty token provided."
+    });
+  }
+  try {
+    const decodedToken = await admin.auth().verifyIdToken(token);
+    const email = decodedToken.email?.trim().toLowerCase();
+    if (!email) {
+      return res.status(403).json({
+        success: false,
+        error: "Access denied: Token contains no verified email address."
+      });
+    }
+    const isEmailAdmin = ADMIN_EMAILS.some((e) => e.toLowerCase() === email);
+    if (!isEmailAdmin) {
+      console.warn(`[SECURITY WARN] Forbidden admin access attempt by ${email} from IP: ${clientIp}`);
+      return res.status(403).json({
+        success: false,
+        error: `Access denied: Account ${email} is not authorized for administrative operations.`
+      });
+    }
+    req.user = {
+      ...decodedToken,
+      email,
+      isAdmin: true
+    };
+    next();
+  } catch (error) {
+    console.error(`[SECURITY ERROR] Token verification failed from IP: ${clientIp}:`, error.code || error.message);
+    return res.status(401).json({
+      success: false,
+      error: "Unauthorized: Authentication token is invalid, expired, or revoked."
+    });
+  }
+};
+app.use((req, res, next) => {
+  if (req.url.startsWith("/api")) {
+    console.log(`[${(/* @__PURE__ */ new Date()).toISOString()}] ${req.method} ${req.url}`);
+  }
+  next();
+});
+function getSheetAuth() {
+  const { GOOGLE_SERVICE_ACCOUNT_EMAIL, GOOGLE_PRIVATE_KEY } = process.env;
+  if (!GOOGLE_SERVICE_ACCOUNT_EMAIL || !GOOGLE_PRIVATE_KEY) {
+    throw new Error("Missing Google Service Account credentials");
+  }
+  const privateKey = GOOGLE_PRIVATE_KEY.replace(/\\n/g, "\n").replace(/^"(.*)"$/, "$1").trim();
+  if (!privateKey.includes("BEGIN PRIVATE KEY")) {
+    throw new Error("GOOGLE_PRIVATE_KEY is malformed");
+  }
+  return new JWT({
+    email: GOOGLE_SERVICE_ACCOUNT_EMAIL,
+    key: privateKey,
+    scopes: ["https://www.googleapis.com/auth/spreadsheets"]
+  });
+}
+async function getSheet(sheetId, tabName, defaultHeaders) {
+  const auth = getSheetAuth();
+  const doc = new GoogleSpreadsheet(sheetId, auth);
+  await doc.loadInfo();
+  let sheet = doc.sheetsByTitle[tabName];
+  if (!sheet && tabName === "contactform") {
+    const commonNames = ["contactform", "responses", "Sheet1", "Sheet 1", "Form Responses 1", "contact"];
+    for (const name of commonNames) {
+      if (doc.sheetsByTitle[name]) {
+        sheet = doc.sheetsByTitle[name];
+        console.log(`\u2139\uFE0F Found existing tab: "${name}" instead of "${tabName}"`);
+        break;
+      }
+    }
+    if (!sheet && doc.sheetCount > 0) {
+      sheet = doc.sheetsByIndex[0];
+      console.log(`\u2139\uFE0F Defaulting to first sheet tab: "${sheet.title}"`);
+    }
+  }
+  if (!sheet) {
+    sheet = await doc.addSheet({ title: tabName, headerValues: defaultHeaders });
+    console.log(`\u2705 Created new sheet tab: "${tabName}"`);
+  } else {
+    try {
+      await sheet.loadHeaderRow();
+      console.log(`\u2139\uFE0F Loaded header row for tab: "${sheet.title}" (${sheet.headerValues.join(", ")})`);
+    } catch (error) {
+      console.warn(`\u26A0\uFE0F Could not load headers for "${sheet.title}", setting defaults...`);
+      await sheet.setHeaderRow(defaultHeaders);
+    }
+  }
+  return sheet;
+}
+async function saveToGoogleSheet(data) {
+  const sheetId = process.env.GOOGLE_SHEET_ID_CONTACT || "1gGWQxXAuKCpt99m6efSBwaDUqLFJn_7f-WnESPOnmQY";
+  if (!sheetId) {
+    console.error("\u274C [contact] Missing Sheet ID in environment variables");
+    throw new Error("Technical Error: Sheet ID for contact is not configured.");
+  }
+  console.log(`[contact] Using Sheet ID: ${sheetId.substring(0, 5)}...${sheetId.substring(sheetId.length - 4)}`);
+  const tabName = "contactform";
+  const headers = ["Date", "Full Name", "Email", "Message"];
+  try {
+    const sheet = await getSheet(sheetId, tabName, headers);
+    const now = (/* @__PURE__ */ new Date()).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" });
+    let rowData = {};
+    const mappings = [
+      { key: "Date", value: now },
+      { key: "Full Name", value: data.fullName || data.name || "(No Name)", aliases: ["name", "full name", "fullname", "full_name", "names"] },
+      { key: "Email", value: data.email || data.emailAddress || "(No Email)", aliases: ["email", "email address", "email_address", "emailaddress", "emails"] },
+      { key: "Message", value: data.message || data.msg || data.body || data.question || "(No Message)", aliases: ["message", "question", "msg", "body", "messages", "queries", "query"] }
+    ];
+    console.log("\u2139\uFE0F [contact] Mapping data:", JSON.stringify(data));
+    mappings.forEach((m) => {
+      const sanitizedVal = sanitizeSheetCell(m.value);
+      const match = sheet.headerValues.find(
+        (h) => h.toLowerCase().trim() === m.key.toLowerCase() || m.aliases && m.aliases.includes(h.toLowerCase().trim())
+      );
+      if (match) {
+        rowData[match] = sanitizedVal;
+      } else {
+        rowData[m.key] = sanitizedVal;
+      }
+    });
+    await sheet.addRow(rowData);
+    console.log("\u2705 [contact] Row added successfully to contact form sheet");
+  } catch (error) {
+    console.error("\u274C [contact] Google Sheet Error:", error.message);
+    if (error.message.includes("403") || error.message.includes("permission")) {
+      throw new Error(`Permission Denied: Service Account has insufficient permissions.`);
+    }
+    if (error.message.includes("404")) {
+      throw new Error(`Sheet Not Found: Ensure the Sheet ID is correct and the tab exists.`);
+    }
+    throw error;
+  }
+}
+app.get("/api/health", (req, res) => {
+  res.json({
+    status: "ok",
+    uptime: Math.floor(process.uptime()),
+    timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+    services: {
+      sheetsConfigured: !!(process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL && process.env.GOOGLE_PRIVATE_KEY),
+      firebaseConfigured: !!admin.apps.length
+    }
+  });
+});
+app.post("/api/contact", contactLimiter, async (req, res) => {
+  try {
+    const { fullName, name, email, emailAddress, message, msg, question } = req.body || {};
+    const contactName = (fullName || name || "").trim();
+    const contactEmail = (email || emailAddress || "").trim().toLowerCase();
+    const contactMessage = (message || msg || question || "").trim();
+    if (!contactName || contactName.length < 2 || contactName.length > 100) {
+      return res.status(400).json({
+        success: false,
+        error: "Please provide a valid full name (between 2 and 100 characters)."
+      });
+    }
+    const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+    if (!contactEmail || !emailRegex.test(contactEmail) || contactEmail.length > 150) {
+      return res.status(400).json({
+        success: false,
+        error: "Please provide a valid email address."
+      });
+    }
+    if (!contactMessage || contactMessage.length < 5 || contactMessage.length > 3e3) {
+      return res.status(400).json({
+        success: false,
+        error: "Message must be between 5 and 3000 characters."
+      });
+    }
+    await saveToGoogleSheet({
+      fullName: contactName,
+      email: contactEmail,
+      message: contactMessage
+    });
+    res.json({ success: true, message: "Your message has been received successfully." });
+  } catch (error) {
+    console.error("\u274C Contact submission error:", error.message);
+    res.status(500).json({
+      success: false,
+      error: "An error occurred while submitting your message. Please try again later."
+    });
+  }
+});
+app.get("/api/n-intel/stories", (req, res) => {
+  try {
+    const { date, month, category, search, includeDeleted } = req.query;
+    const stories = getAllStories({
+      date,
+      month,
+      category,
+      search,
+      includeDeleted: includeDeleted === "true"
+    });
+    res.json({ success: true, stories });
+  } catch (error) {
+    console.error("Error fetching N-INTEL stories:", error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+app.param("id", (req, res, next, id) => {
+  if (!id || typeof id !== "string" || !/^[a-zA-Z0-9_-]{1,128}$/.test(id)) {
+    return res.status(400).json({ success: false, error: "Invalid identifier parameter format." });
+  }
+  next();
+});
+app.get("/api/n-intel/stories/:id", (req, res) => {
+  try {
+    const story = getStoryById(req.params.id);
+    if (!story) {
+      return res.status(404).json({ success: false, error: "Story not found" });
+    }
+    res.json({ success: true, story });
+  } catch (error) {
+    console.error("Error fetching story:", error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+app.get("/api/n-intel/editions", (req, res) => {
+  try {
+    const editions = getAvailableEditions();
+    res.json({ success: true, editions });
+  } catch (error) {
+    console.error("Error fetching editions:", error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+app.get("/api/articles", (req, res) => {
+  try {
+    const articles = getAllArticles();
+    res.json({ success: true, articles });
+  } catch (error) {
+    console.error("Error fetching articles:", error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+app.get("/api/articles/:id", (req, res) => {
+  try {
+    const article = getArticleById(req.params.id);
+    if (!article) {
+      return res.status(404).json({ success: false, error: "Article not found." });
+    }
+    res.json({ success: true, article });
+  } catch (error) {
+    console.error("Error fetching article:", error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+app.post("/api/articles/:id/download", downloadLimiter, (req, res) => {
+  try {
+    incrementDownloadCount(req.params.id);
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ success: false, error: "Failed to record download count." });
+  }
+});
+app.post("/api/articles/upload-banner", uploadLimiter, authenticate, (req, res) => {
+  if (!req.user?.isAdmin) {
+    return res.status(403).json({ success: false, error: "Access denied: Admin privileges required." });
+  }
+  try {
+    const { imageBase64 } = req.body;
+    if (!imageBase64 || typeof imageBase64 !== "string") {
+      return res.status(400).json({ success: false, error: "No image data provided." });
+    }
+    const matches = imageBase64.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
+    let buffer;
+    if (matches && matches.length === 3) {
+      buffer = Buffer.from(matches[2], "base64");
+    } else {
+      buffer = Buffer.from(imageBase64, "base64");
+    }
+    if (buffer.length > 5 * 1024 * 1024) {
+      return res.status(400).json({ success: false, error: "Image size exceeds maximum limit of 5MB." });
+    }
+    let ext = "";
+    if (buffer.length >= 8 && buffer[0] === 137 && buffer[1] === 80 && buffer[2] === 78 && buffer[3] === 71) {
+      ext = "png";
+    } else if (buffer.length >= 3 && buffer[0] === 255 && buffer[1] === 216 && buffer[2] === 255) {
+      ext = "jpg";
+    } else if (buffer.length >= 12 && buffer.toString("ascii", 0, 4) === "RIFF" && buffer.toString("ascii", 8, 12) === "WEBP") {
+      ext = "webp";
+    } else {
+      return res.status(400).json({
+        success: false,
+        error: "Invalid file signature. Only verified PNG, JPEG, and WebP images are permitted."
+      });
+    }
+    try {
+      if (!fs5.existsSync(UPLOADS_DIR)) {
+        fs5.mkdirSync(UPLOADS_DIR, { recursive: true });
+      }
+      const safeRandomToken = crypto2.randomBytes(16).toString("hex");
+      const safeName = `banner-${Date.now()}-${safeRandomToken}.${ext}`;
+      const filePath = path5.join(UPLOADS_DIR, safeName);
+      fs5.writeFileSync(filePath, buffer, { flag: "wx" });
+      const publicUrl = `/uploads/${safeName}`;
+      res.json({ success: true, url: publicUrl });
+    } catch (writeErr) {
+      console.error("Error writing banner image:", writeErr);
+      res.status(500).json({ success: false, error: "Failed to save banner image to server storage." });
+    }
+  } catch (err) {
+    console.error("Error uploading banner image:", err);
+    res.status(500).json({ success: false, error: "Failed to process image upload." });
+  }
+});
+app.post("/api/articles", authenticate, (req, res) => {
+  if (!req.user?.isAdmin) {
+    return res.status(403).json({ success: false, error: "Access denied: Admin privileges required." });
+  }
+  try {
+    const {
+      title,
+      bannerImageUrl,
+      category,
+      authorName,
+      authorRole,
+      authorAvatarUrl,
+      publishDate,
+      pullQuote,
+      content,
+      tags,
+      sourceReference
+    } = req.body;
+    if (!title || typeof title !== "string" || !title.trim() || title.length > 300) {
+      return res.status(400).json({ success: false, error: "Article headline is required (max 300 characters)." });
+    }
+    if (!bannerImageUrl || !isValidUrlOrPath(bannerImageUrl)) {
+      return res.status(400).json({ success: false, error: "A valid banner image URL or uploaded file is required." });
+    }
+    if (authorAvatarUrl && !isValidUrlOrPath(authorAvatarUrl)) {
+      return res.status(400).json({ success: false, error: "Author avatar URL must be a valid HTTP/HTTPS or uploaded image URL." });
+    }
+    if (!authorName || typeof authorName !== "string" || !authorName.trim() || authorName.length > 100) {
+      return res.status(400).json({ success: false, error: "Author name is required (max 100 characters)." });
+    }
+    if (!content || typeof content !== "string" || content.trim().length < 20 || content.length > 3e5) {
+      return res.status(400).json({ success: false, error: "Article content must be between 20 and 300,000 characters." });
+    }
+    const newArticle = createArticle({
+      title: title.trim(),
+      bannerImageUrl: bannerImageUrl.trim(),
+      category: typeof category === "string" && category.trim() ? category.trim() : "International Relations",
+      authorName: authorName.trim(),
+      authorRole: typeof authorRole === "string" && authorRole.trim() ? authorRole.trim() : "Editorial Contributor",
+      authorAvatarUrl: authorAvatarUrl ? authorAvatarUrl.trim() : void 0,
+      publishDate: publishDate || void 0,
+      pullQuote: typeof pullQuote === "string" ? pullQuote.trim() : void 0,
+      content: content.trim(),
+      tags: Array.isArray(tags) ? tags.map((t) => String(t).trim()).filter(Boolean) : void 0,
+      sourceReference: typeof sourceReference === "string" ? sourceReference.trim() : void 0,
+      authorEmail: req.user?.email
+    });
+    res.status(201).json({ success: true, article: newArticle });
+  } catch (error) {
+    console.error("Error creating article:", error);
+    res.status(500).json({ success: false, error: "Failed to create article." });
+  }
+});
+app.put("/api/articles/:id", authenticate, (req, res) => {
+  if (!req.user?.isAdmin) {
+    return res.status(403).json({ success: false, error: "Access denied: Admin privileges required." });
+  }
+  try {
+    const { bannerImageUrl, authorAvatarUrl, title, authorName, content } = req.body;
+    if (bannerImageUrl !== void 0 && !isValidUrlOrPath(bannerImageUrl)) {
+      return res.status(400).json({ success: false, error: "Invalid banner image URL provided." });
+    }
+    if (authorAvatarUrl !== void 0 && authorAvatarUrl && !isValidUrlOrPath(authorAvatarUrl)) {
+      return res.status(400).json({ success: false, error: "Invalid author avatar URL provided." });
+    }
+    if (title !== void 0 && (typeof title !== "string" || !title.trim() || title.length > 300)) {
+      return res.status(400).json({ success: false, error: "Article title must be between 1 and 300 characters." });
+    }
+    if (authorName !== void 0 && (typeof authorName !== "string" || !authorName.trim() || authorName.length > 100)) {
+      return res.status(400).json({ success: false, error: "Author name must be between 1 and 100 characters." });
+    }
+    if (content !== void 0 && (typeof content !== "string" || content.trim().length < 20 || content.length > 3e5)) {
+      return res.status(400).json({ success: false, error: "Content must be between 20 and 300,000 characters." });
+    }
+    const updated = updateArticle(req.params.id, req.body);
+    if (!updated) {
+      return res.status(404).json({ success: false, error: "Article not found." });
+    }
+    res.json({ success: true, article: updated });
+  } catch (error) {
+    console.error("Error updating article:", error);
+    res.status(500).json({ success: false, error: "Failed to update article." });
+  }
+});
+app.delete("/api/articles/:id", authenticate, (req, res) => {
+  if (!req.user?.isAdmin) {
+    return res.status(403).json({ success: false, error: "Access denied: Admin privileges required." });
+  }
+  try {
+    const success = deleteArticle(req.params.id);
+    if (!success) {
+      return res.status(404).json({ success: false, error: "Article not found." });
+    }
+    res.json({ success: true, message: "Article deleted successfully." });
+  } catch (error) {
+    console.error("Error deleting article:", error);
+    res.status(500).json({ success: false, error: "Failed to delete article." });
+  }
+});
+app.post("/api/n-intel/publish", publishLimiter, authenticate, (req, res) => {
+  if (!req.user?.isAdmin) {
+    return res.status(403).json({ success: false, error: "Access denied: Admin privileges required." });
+  }
+  try {
+    const { rawText, date } = req.body;
+    if (!rawText || typeof rawText !== "string" || !rawText.trim()) {
+      return res.status(400).json({ success: false, error: "Pasted news text is required." });
+    }
+    if (rawText.length > 5e5) {
+      return res.status(400).json({ success: false, error: "Pasted news text exceeds 500,000 characters limit." });
+    }
+    const pubDate = date && /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : getLocalTodayDate();
+    const parseResult = parseDailyNewsPost(rawText, pubDate);
+    if (!parseResult.success) {
+      return res.status(400).json({ success: false, error: parseResult.error || "Failed to parse news text." });
+    }
+    const duplicate = findDuplicateBatch(parseResult.hash, pubDate);
+    if (duplicate) {
+      return res.status(409).json({
+        success: false,
+        error: `Duplicate post detected! This exact news bulletin was already published on ${duplicate.publishedAt} for date ${pubDate}. Duplicate submission was prevented.`
+      });
+    }
+    const batch = {
+      id: `batch-${pubDate.replace(/-/g, "")}-${parseResult.hash.slice(0, 8)}`,
+      date: pubDate,
+      rawContentHash: parseResult.hash,
+      publishedAt: (/* @__PURE__ */ new Date()).toISOString(),
+      publishedBy: req.user.email || "Admin",
+      storyCount: parseResult.totalStories,
+      categories: parseResult.categories
+    };
+    saveBatchAndStories(batch, parseResult.stories, req.user.email || "Admin");
+    console.log(`\u2705 [N-INTEL] Published ${parseResult.totalStories} stories for ${pubDate} by ${req.user.email}`);
+    res.json({
+      success: true,
+      message: `Successfully published ${parseResult.totalStories} stories across ${parseResult.categories.length} categories for ${pubDate}.`,
+      count: parseResult.totalStories,
+      categories: parseResult.categories,
+      batchId: batch.id,
+      date: pubDate
+    });
+  } catch (error) {
+    console.error("Error publishing N-INTEL batch:", error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+var handleStoryUpdate = (req, res) => {
+  if (!req.user?.isAdmin) {
+    return res.status(403).json({ success: false, error: "Access denied: Admin privileges required." });
+  }
+  try {
+    const updated = updateStory(req.params.id, req.body, req.user.email || "Admin");
+    if (!updated) {
+      return res.status(404).json({ success: false, error: "Story not found" });
+    }
+    res.json({ success: true, story: updated });
+  } catch (error) {
+    console.error("Error updating story:", error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+app.patch("/api/n-intel/stories/:id", authenticate, handleStoryUpdate);
+app.put("/api/n-intel/stories/:id", authenticate, handleStoryUpdate);
+app.delete("/api/n-intel/stories/:id", authenticate, (req, res) => {
+  if (!req.user?.isAdmin) {
+    return res.status(403).json({ success: false, error: "Access denied: Admin privileges required." });
+  }
+  try {
+    const isPermanent = req.query.permanent === "true";
+    const adminEmail = req.user.email || "Admin";
+    if (isPermanent) {
+      const success2 = purgeStory(req.params.id, adminEmail);
+      if (!success2) {
+        return res.status(404).json({ success: false, error: "Story not found" });
+      }
+      return res.json({ success: true, message: "Story permanently purged from database.", permanent: true });
+    }
+    const success = deleteStory(req.params.id, adminEmail);
+    if (!success) {
+      return res.status(404).json({ success: false, error: "Story not found" });
+    }
+    res.json({ success: true, message: "Story removed from public feed.", permanent: false });
+  } catch (error) {
+    console.error("Error deleting story:", error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+app.post("/api/n-intel/stories/:id/restore", authenticate, (req, res) => {
+  if (!req.user?.isAdmin) {
+    return res.status(403).json({ success: false, error: "Access denied: Admin privileges required." });
+  }
+  try {
+    const adminEmail = req.user.email || "Admin";
+    const success = restoreStory(req.params.id, adminEmail);
+    if (!success) {
+      return res.status(404).json({ success: false, error: "Story not found" });
+    }
+    res.json({ success: true, message: "Story restored to public feed." });
+  } catch (error) {
+    console.error("Error restoring story:", error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+app.delete("/api/n-intel/trash/empty", authenticate, (req, res) => {
+  if (!req.user?.isAdmin) {
+    return res.status(403).json({ success: false, error: "Access denied: Admin privileges required." });
+  }
+  try {
+    const adminEmail = req.user.email || "Admin";
+    const purgedCount = purgeAllDeletedStories(adminEmail);
+    res.json({
+      success: true,
+      message: `Trash emptied successfully. ${purgedCount} stories permanently erased.`,
+      purgedCount
+    });
+  } catch (error) {
+    console.error("Error emptying trash:", error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+app.get("/api/n-intel/audit", authenticate, (req, res) => {
+  if (!req.user?.isAdmin) {
+    return res.status(403).json({ success: false, error: "Access denied: Admin privileges required." });
+  }
+  try {
+    const logs = getAuditLogs();
+    res.json({ success: true, logs });
+  } catch (error) {
+    console.error("Error fetching audit logs:", error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+app.get("/api/pyq", (req, res) => {
+  try {
+    const sessions = getAllPyqSessions();
+    res.json({ success: true, sessions });
+  } catch (err) {
+    console.error("Error retrieving PYQ sessions:", err);
+    res.status(500).json({ success: false, error: err.message || "Failed to load PYQ papers" });
+  }
+});
+app.post("/api/pyq/upload", uploadLimiter, authenticate, async (req, res) => {
+  if (!req.user?.isAdmin) {
+    return res.status(403).json({ success: false, error: "Access denied: Administrator privileges required." });
+  }
+  try {
+    const sessionId = (req.query.sessionId || req.body?.sessionId || "").trim();
+    const exam = req.query.exam || req.body?.exam || (sessionId.startsWith("nda") ? "NDA" : "CDS");
+    const session = req.query.session || req.body?.session || "I";
+    const year = Number(req.query.year || req.body?.year) || 2026;
+    const title = (req.query.title || req.body?.title || sessionId).trim();
+    const subjectKey = req.query.subjectKey || req.body?.subjectKey || "";
+    const fileType = req.query.fileType || req.body?.fileType || "";
+    const rawOrigName = req.headers["x-original-name"] || req.query.originalName || req.body?.originalName;
+    const originalName = rawOrigName ? decodeURIComponent(rawOrigName) : title ? `${title}.pdf` : "Paper.pdf";
+    const fileSize = req.query.fileSize || req.body?.fileSize;
+    if (!sessionId || !subjectKey || !fileType) {
+      return res.status(400).json({ success: false, error: "Missing required upload parameters (sessionId, subjectKey, fileType)." });
+    }
+    let buffer;
+    if (Buffer.isBuffer(req.body)) {
+      buffer = req.body;
+    } else if (req.body?.fileBase64) {
+      const base64Data = req.body.fileBase64.replace(/^data:application\/pdf;base64,/, "").replace(/^data:.*?;base64,/, "");
+      buffer = Buffer.from(base64Data, "base64");
+    } else {
+      return res.status(400).json({ success: false, error: "No PDF file received in request." });
+    }
+    const MAX_DIRECT_UPLOAD_BYTES = 4.5 * 1024 * 1024;
+    if (buffer.length > MAX_DIRECT_UPLOAD_BYTES) {
+      return res.status(400).json({
+        success: false,
+        error: "File size exceeds maximum 4 MB limit for direct upload. Please use the Google Drive link option."
+      });
+    }
+    if (buffer.length < 5 || buffer[0] !== 37 || buffer[1] !== 80 || buffer[2] !== 68 || buffer[3] !== 70) {
+      return res.status(400).json({ success: false, error: "Invalid file signature. Only authentic PDF documents are allowed." });
+    }
+    let publicUrl = "";
+    let driveFileId;
+    let driveErrorMsg;
+    if (isDriveConfigured()) {
+      try {
+        const subfolderName = `PYQ - ${exam || "NDA"}`;
+        const driveFileName = `${title || sessionId} - ${String(subjectKey).toUpperCase()} ${fileType === "key" ? "Answer Key" : "Question Paper"}.pdf`;
+        const driveResult = await uploadPdfToDrive({
+          buffer,
+          fileName: driveFileName,
+          subfolderName
+        });
+        publicUrl = driveResult.url;
+        driveFileId = driveResult.fileId;
+      } catch (driveErr) {
+        driveErrorMsg = driveErr?.message || String(driveErr);
+        console.warn("\u26A0\uFE0F Google Drive upload failed, falling back to local disk storage:", driveErrorMsg);
+      }
+    }
+    if (!publicUrl && process.env.VERCEL) {
+      const errDetail = driveErrorMsg ? `Google Drive upload failed: ${driveErrorMsg}` : 'Google Drive is not fully configured on Vercel. Direct PDF upload requires all 3 environment variables in Vercel: GOOGLE_SERVICE_ACCOUNT_EMAIL, GOOGLE_PRIVATE_KEY, and GOOGLE_DRIVE_FOLDER_ID. Please set them in your Vercel project settings, or use the "Paste PDF / Drive Link" tab.';
+      return res.status(400).json({ success: false, error: errDetail });
+    }
+    if (!publicUrl) {
+      try {
+        if (!fs5.existsSync(PYQ_UPLOADS_DIR)) {
+          fs5.mkdirSync(PYQ_UPLOADS_DIR, { recursive: true });
+        }
+        const cleanSession = String(sessionId).replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 50);
+        const cleanSubject = String(subjectKey).replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 20);
+        const cleanType = String(fileType).replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 10);
+        const randomHex = crypto2.randomBytes(8).toString("hex");
+        const safeFileName = `${cleanSession}-${cleanSubject}-${cleanType}-${Date.now()}-${randomHex}.pdf`;
+        const targetPath = path5.join(PYQ_UPLOADS_DIR, safeFileName);
+        fs5.writeFileSync(targetPath, buffer, { flag: "wx" });
+        publicUrl = `/uploads/pyq/${safeFileName}`;
+      } catch (writeErr) {
+        console.error("Local PYQ storage write failed:", writeErr);
+        return res.status(500).json({
+          success: false,
+          error: "Failed to store file on local disk."
+        });
+      }
+    }
+    const sessionRecord = savePyqFileRecord({
+      sessionId,
+      exam: exam || (sessionId.startsWith("nda") ? "NDA" : "CDS"),
+      session: session || "I",
+      year: Number(year) || 2026,
+      title: title || sessionId,
+      subjectKey,
+      fileType,
+      url: publicUrl,
+      driveFileId,
+      fileName: originalName || (title ? `${title}.pdf` : "Paper.pdf"),
+      fileSize: fileSize || `${(buffer.length / (1024 * 1024)).toFixed(2)} MB`
+    });
+    res.json({ success: true, url: publicUrl, driveFileId, session: sessionRecord });
+  } catch (err) {
+    console.error("Error handling PYQ upload:", err);
+    res.status(500).json({ success: false, error: "Failed to process file upload." });
+  }
+});
+app.post("/api/pyq/link", authenticate, (req, res) => {
+  if (!req.user?.isAdmin) {
+    return res.status(403).json({ success: false, error: "Access denied: Administrator privileges required." });
+  }
+  try {
+    const {
+      sessionId,
+      exam,
+      session,
+      year,
+      title,
+      subjectKey,
+      fileType,
+      url,
+      fileName,
+      fileSize
+    } = req.body;
+    if (!sessionId || !subjectKey || !fileType || !url) {
+      return res.status(400).json({ success: false, error: "Missing required parameters." });
+    }
+    if (!isValidUrlOrPath(url)) {
+      return res.status(400).json({ success: false, error: "Invalid URL. Only valid HTTP/HTTPS URLs are accepted." });
+    }
+    const sessionRecord = savePyqFileRecord({
+      sessionId,
+      exam: exam || (sessionId.startsWith("nda") ? "NDA" : "CDS"),
+      session: session || "I",
+      year: Number(year) || 2026,
+      title: title || sessionId,
+      subjectKey,
+      fileType,
+      url,
+      fileName: fileName || `${title || sessionId} ${subjectKey} ${fileType}`,
+      fileSize: fileSize || "Drive Link"
+    });
+    res.json({ success: true, session: sessionRecord });
+  } catch (err) {
+    console.error("Error linking PYQ URL:", err);
+    res.status(500).json({ success: false, error: "Failed to save link." });
+  }
+});
+app.post("/api/pyq/delete", authenticate, (req, res) => {
+  if (!req.user?.isAdmin) {
+    return res.status(403).json({ success: false, error: "Access denied: Administrator privileges required." });
+  }
+  try {
+    const { sessionId, subjectKey, fileType } = req.body;
+    if (!sessionId || !subjectKey || !fileType) {
+      return res.status(400).json({ success: false, error: "Missing required parameters." });
+    }
+    const currentSessions = getAllPyqSessions();
+    const existingFile = currentSessions[sessionId]?.subjects?.[subjectKey]?.[fileType];
+    if (existingFile?.driveFileId) {
+      deletePdfFromDrive(existingFile.driveFileId).catch((e) => console.warn("Could not delete PYQ from Drive:", e));
+    } else if (existingFile?.url) {
+      const driveId = extractDriveFileId(existingFile.url);
+      if (driveId) {
+        deletePdfFromDrive(driveId).catch((e) => console.warn("Could not delete PYQ from Drive:", e));
+      }
+    }
+    if (existingFile?.url && existingFile.url.startsWith("/uploads/pyq/")) {
+      const filename = path5.basename(existingFile.url);
+      const diskPath = path5.join(PYQ_UPLOADS_DIR, filename);
+      if (fs5.existsSync(diskPath)) {
+        try {
+          fs5.unlinkSync(diskPath);
+        } catch (cleanupErr) {
+          console.warn("Could not remove PYQ file from disk:", cleanupErr);
+        }
+      }
+    }
+    const sessionRecord = deletePyqFileRecord({ sessionId, subjectKey, fileType });
+    res.json({ success: true, session: sessionRecord });
+  } catch (err) {
+    console.error("Error deleting PYQ file:", err);
+    res.status(500).json({ success: false, error: "Failed to delete file." });
+  }
+});
+app.get("/api/notes", (req, res) => {
+  try {
+    const { subject } = req.query;
+    if (typeof subject === "string" && subject.trim()) {
+      const notes2 = getNotesBySubject(subject.trim());
+      return res.json({ success: true, notes: notes2 });
+    }
+    const notes = getAllNotes();
+    res.json({ success: true, notes });
+  } catch (err) {
+    console.error("Error fetching subject notes:", err);
+    res.status(500).json({ success: false, error: "Failed to retrieve notes." });
+  }
+});
+app.post("/api/notes/upload", uploadLimiter, authenticate, async (req, res) => {
+  if (!req.user?.isAdmin) {
+    return res.status(403).json({ success: false, error: "Access denied: Administrator privileges required." });
+  }
+  try {
+    const subjectId = (req.query.subjectId || req.body?.subjectId || "").trim();
+    const subjectTitle = (req.query.subjectTitle || req.body?.subjectTitle || "").trim();
+    const title = (req.query.title || req.body?.title || "").trim();
+    const category = (req.query.category || req.body?.category || "").trim() || void 0;
+    const rawOrigName = req.headers["x-original-name"] || req.query.originalName || req.body?.originalName;
+    const originalName = rawOrigName ? decodeURIComponent(rawOrigName) : `${title}.pdf`;
+    const fileSize = req.query.fileSize || req.body?.fileSize;
+    if (!subjectId || !subjectTitle || !title) {
+      return res.status(400).json({ success: false, error: "Missing required note metadata (subjectId, subjectTitle, title)." });
+    }
+    let buffer;
+    if (Buffer.isBuffer(req.body)) {
+      buffer = req.body;
+    } else if (req.body?.fileBase64) {
+      const base64Data = req.body.fileBase64.replace(/^data:application\/pdf;base64,/, "").replace(/^data:.*?;base64,/, "");
+      buffer = Buffer.from(base64Data, "base64");
+    } else {
+      return res.status(400).json({ success: false, error: "No PDF file received in request." });
+    }
+    const MAX_DIRECT_UPLOAD_BYTES = 4.5 * 1024 * 1024;
+    if (buffer.length > MAX_DIRECT_UPLOAD_BYTES) {
+      return res.status(400).json({
+        success: false,
+        error: "File size exceeds maximum 4 MB limit for direct upload. Please use the Google Drive link option."
+      });
+    }
+    if (buffer.length < 5 || buffer[0] !== 37 || buffer[1] !== 80 || buffer[2] !== 68 || buffer[3] !== 70) {
+      return res.status(400).json({ success: false, error: "File rejected: Not a valid PDF document." });
+    }
+    let publicUrl = "";
+    let driveFileId;
+    let driveErrorMsg;
+    if (isDriveConfigured()) {
+      try {
+        const driveFileName = `${title}.pdf`;
+        const driveResult = await uploadPdfToDrive({
+          buffer,
+          fileName: driveFileName,
+          subfolderName: subjectTitle.trim()
+        });
+        publicUrl = driveResult.url;
+        driveFileId = driveResult.fileId;
+      } catch (driveErr) {
+        driveErrorMsg = driveErr?.message || String(driveErr);
+        console.warn("\u26A0\uFE0F Google Drive upload failed, falling back to local storage:", driveErrorMsg);
+      }
+    }
+    if (!publicUrl && process.env.VERCEL) {
+      const errDetail = driveErrorMsg ? `Google Drive upload failed: ${driveErrorMsg}` : 'Google Drive is not fully configured on Vercel. Direct PDF upload requires all 3 environment variables in Vercel: GOOGLE_SERVICE_ACCOUNT_EMAIL, GOOGLE_PRIVATE_KEY, and GOOGLE_DRIVE_FOLDER_ID. Please set them in your Vercel project settings, or use the "Paste PDF / Drive Link" tab.';
+      return res.status(400).json({ success: false, error: errDetail });
+    }
+    if (!publicUrl) {
+      try {
+        if (!fs5.existsSync(NOTES_UPLOADS_DIR)) {
+          fs5.mkdirSync(NOTES_UPLOADS_DIR, { recursive: true });
+        }
+        const timestamp = Date.now();
+        const cleanSubject = subjectId.toLowerCase().replace(/[^a-z0-9]/g, "-");
+        const sanitizedTitle = (originalName || title || "note").replace(/[^a-zA-Z0-9.-]/g, "_").replace(/\.pdf$/i, "");
+        const safeFileName = `${cleanSubject}-${timestamp}-${sanitizedTitle}.pdf`;
+        const targetPath = path5.join(NOTES_UPLOADS_DIR, safeFileName);
+        fs5.writeFileSync(targetPath, buffer);
+        publicUrl = `/uploads/notes/${safeFileName}`;
+      } catch (writeErr) {
+        console.error("Local note storage write failed:", writeErr);
+        return res.status(500).json({
+          success: false,
+          error: "Failed to store note on local disk."
+        });
+      }
+    }
+    const note = saveNote({
+      subjectId,
+      subjectTitle,
+      title,
+      category,
+      url: publicUrl,
+      driveFileId,
+      fileName: originalName || `${title}.pdf`,
+      fileSize: fileSize || `${(buffer.length / (1024 * 1024)).toFixed(2)} MB`
+    });
+    res.json({ success: true, note });
+  } catch (err) {
+    console.error("Error uploading subject note:", err);
+    res.status(500).json({ success: false, error: "Failed to process note upload." });
+  }
+});
+app.post("/api/notes/link", authenticate, (req, res) => {
+  if (!req.user?.isAdmin) {
+    return res.status(403).json({ success: false, error: "Access denied: Administrator privileges required." });
+  }
+  try {
+    const { subjectId, subjectTitle, title, category, url, fileSize } = req.body;
+    if (!subjectId || !subjectTitle || !title || !url) {
+      return res.status(400).json({ success: false, error: "Missing required parameters." });
+    }
+    const note = saveNote({
+      subjectId,
+      subjectTitle,
+      title,
+      category,
+      url: url.trim(),
+      fileName: title.trim(),
+      fileSize: fileSize || "Online Document"
+    });
+    res.json({ success: true, note });
+  } catch (err) {
+    console.error("Error linking subject note:", err);
+    res.status(500).json({ success: false, error: "Failed to save note link." });
+  }
+});
+app.post("/api/notes/delete", authenticate, (req, res) => {
+  if (!req.user?.isAdmin) {
+    return res.status(403).json({ success: false, error: "Access denied: Administrator privileges required." });
+  }
+  try {
+    const { id } = req.body;
+    if (!id) {
+      return res.status(400).json({ success: false, error: "Missing note ID." });
+    }
+    const note = getNoteById(id);
+    if (note?.driveFileId) {
+      deletePdfFromDrive(note.driveFileId).catch((e) => console.warn("Could not delete note from Drive:", e));
+    } else if (note?.url) {
+      const driveId = extractDriveFileId(note.url);
+      if (driveId) {
+        deletePdfFromDrive(driveId).catch((e) => console.warn("Could not delete note from Drive:", e));
+      }
+    }
+    if (note?.url && note.url.startsWith("/uploads/notes/")) {
+      const filename = path5.basename(note.url);
+      const diskPath = path5.join(NOTES_UPLOADS_DIR, filename);
+      if (fs5.existsSync(diskPath)) {
+        try {
+          fs5.unlinkSync(diskPath);
+        } catch (cleanupErr) {
+          console.warn("Could not remove note file from disk:", cleanupErr);
+        }
+      }
+    }
+    const success = deleteNote(id);
+    res.json({ success });
+  } catch (err) {
+    console.error("Error deleting subject note:", err);
+    res.status(500).json({ success: false, error: "Failed to delete note." });
+  }
+});
+app.use((err, req, res, next) => {
+  console.error(`[SERVER ERROR] ${req.method} ${req.url}:`, err.message || err);
+  if (res.headersSent) {
+    return next(err);
+  }
+  const status = typeof err.status === "number" && err.status >= 400 && err.status < 600 ? err.status : 500;
+  res.status(status).json({
+    success: false,
+    error: process.env.NODE_ENV === "production" ? "An unexpected internal error occurred. Please try again later." : err.message || "Internal server error"
+  });
+});
+async function setupServer() {
+  const {
+    GOOGLE_SERVICE_ACCOUNT_EMAIL,
+    GOOGLE_PRIVATE_KEY,
+    GOOGLE_SHEET_ID_CONTACT
+  } = process.env;
+  console.log("--- Environment Variable Check ---");
+  console.log("GOOGLE_SERVICE_ACCOUNT_EMAIL:", GOOGLE_SERVICE_ACCOUNT_EMAIL ? "\u2705 Present" : "\u274C Missing");
+  console.log("GOOGLE_PRIVATE_KEY:", GOOGLE_PRIVATE_KEY ? "\u2705 Present" : "\u274C Missing");
+  console.log("GOOGLE_SHEET_ID_CONTACT:", GOOGLE_SHEET_ID_CONTACT || "1gGWQxXAuKCpt99m6efSBwaDUqLFJn_7f-WnESPOnmQY" ? "\u2705 Present" : "\u274C Missing");
+  console.log("GOOGLE_DRIVE_FOLDER_ID:", process.env.GOOGLE_DRIVE_FOLDER_ID ? "\u2705 Present (Google Drive Uploads Active)" : "\u26A0\uFE0F Not Set (Using Local Storage fallback)");
+  console.log("---------------------------------");
+  if (!process.env.VERCEL) {
+    try {
+      seedSampleDataIfEmpty(SAMPLE_NINTEL_POST);
+    } catch (err) {
+      console.warn("\u26A0\uFE0F Could not seed sample N-INTEL data:", err);
+    }
+  }
+  if (process.env.NODE_ENV !== "production" && !process.env.VERCEL) {
+    const { createServer: createViteServer } = await import("vite");
+    const vite = await createViteServer({
+      server: { middlewareMode: true },
+      appType: "spa"
+    });
+    app.use(vite.middlewares);
+  } else if (!process.env.VERCEL) {
+    const distPath = path5.join(process.cwd(), "dist");
+    if (fs5.existsSync(distPath)) {
+      app.use(express.static(distPath));
+      app.get("*", (req, res) => {
+        res.sendFile(path5.join(distPath, "index.html"));
+      });
+    }
+  }
+  if (!process.env.VERCEL) {
+    app.listen(PORT, () => {
+      console.log(`\u{1F680} Server running on http://localhost:${PORT}`);
+    });
+  }
+}
+if (!process.env.VERCEL) {
+  setupServer();
+}
+var config = {
+  api: {
+    bodyParser: false,
+    externalResolver: true
+  }
+};
+var server_default = app;
+export {
+  config,
+  server_default as default
+};
