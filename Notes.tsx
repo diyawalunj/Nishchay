@@ -368,10 +368,7 @@ export default function Notes() {
         const actualMb = (file.size / (1024 * 1024)).toFixed(1);
         alert(
           `⚠️ File Size Limit Exceeded (${actualMb} MB)\n\n` +
-          `The maximum allowed file size for direct uploads is ${MAX_FILE_SIZE_MB} MB.\n\n` +
-          `How to proceed:\n` +
-          `1. Compress your PDF in seconds using iLovePDF.com (recommended), or\n` +
-          `2. Upload the file to your Google Drive and paste its link in the "Paste PDF / Drive Link" tab.`
+          `The maximum allowed file size for direct uploads is ${MAX_FILE_SIZE_MB} MB.`
         );
         e.target.value = '';
         setSelectedFile(null);
@@ -439,7 +436,7 @@ export default function Notes() {
 
           if (selectedFile.size > MAX_FILE_SIZE_BYTES) {
             const actualMb = (selectedFile.size / (1024 * 1024)).toFixed(1);
-            alert(`⚠️ File Size Limit Exceeded (${actualMb} MB)\n\nThe maximum allowed file size for direct uploads is ${MAX_FILE_SIZE_MB} MB. Please compress your PDF or use the "Paste PDF / Drive Link" tab.`);
+            alert(`⚠️ File Size Limit Exceeded (${actualMb} MB)\n\nThe maximum allowed file size for direct uploads is ${MAX_FILE_SIZE_MB} MB.`);
             throw new Error(`File size (${actualMb} MB) exceeds ${MAX_FILE_SIZE_MB} MB limit.`);
           }
 
@@ -513,7 +510,7 @@ export default function Notes() {
 
         if (selectedFile.size > MAX_FILE_SIZE_BYTES) {
           const actualMb = (selectedFile.size / (1024 * 1024)).toFixed(1);
-          alert(`⚠️ File Size Limit Exceeded (${actualMb} MB)\n\nThe maximum allowed file size for direct uploads is ${MAX_FILE_SIZE_MB} MB. Please compress your PDF or use the "Paste PDF / Drive Link" tab.`);
+          alert(`⚠️ File Size Limit Exceeded (${actualMb} MB)\n\nThe maximum allowed file size for direct uploads is ${MAX_FILE_SIZE_MB} MB.`);
           throw new Error(`File size (${actualMb} MB) exceeds ${MAX_FILE_SIZE_MB} MB limit.`);
         }
 
