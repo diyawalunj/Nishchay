@@ -1014,28 +1014,49 @@ export default function Notes() {
           </div>
 
           {/* Paper Header Banner */}
-          <div className="bg-white rounded-[2.5rem] p-8 md:p-12 shadow-[0_20px_50px_rgba(0,0,0,0.03)] border border-gray-100 mb-10">
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 pb-8 border-b border-gray-100">
+          <div
+            className={`rounded-[2.5rem] p-8 md:p-12 shadow-2xl relative overflow-hidden mb-10 border text-white ${
+              isNda
+                ? 'bg-gradient-to-br from-[#1B4332] via-[#245A43] to-[#123827] border-emerald-400/25 shadow-[#1B4332]/25'
+                : 'bg-gradient-to-br from-[#1B3A5B] via-[#254C75] to-[#12273D] border-sky-400/25 shadow-[#1B3A5B]/25'
+            }`}
+          >
+            {/* Top Sheen & Subtle Mesh Glow */}
+            <div className="absolute inset-x-0 top-0 h-40 bg-gradient-to-b from-white/20 via-white/5 to-transparent pointer-events-none" />
+            <div className="absolute top-0 right-0 w-96 h-96 bg-white/10 rounded-full blur-3xl pointer-events-none" />
+            <div className="absolute -bottom-16 -left-16 w-80 h-80 bg-black/20 rounded-full blur-2xl pointer-events-none" />
+
+            {/* Giant Watermark Background Icon */}
+            <div className="absolute -right-8 -bottom-12 opacity-[0.07] pointer-events-none text-white">
+              {isNda ? <Shield size={280} /> : <Award size={280} />}
+            </div>
+
+            <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6 pb-8 border-b border-white/15">
               <div className="flex items-center gap-6">
-                <div className={`w-20 h-20 ${isNda ? 'bg-[#1B4332]' : 'bg-[#1B3A5B]'} rounded-3xl flex items-center justify-center text-white shadow-xl`}>
-                  {isNda ? <Shield size={40} /> : <Award size={40} />}
+                <div className="w-20 h-20 md:w-24 md:h-24 bg-white/15 backdrop-blur-xl rounded-3xl flex items-center justify-center text-white border border-white/25 shadow-2xl ring-1 ring-white/20 shrink-0">
+                  {isNda ? (
+                    <Shield size={44} className="text-emerald-300 drop-shadow-md" />
+                  ) : (
+                    <Award size={44} className="text-sky-300 drop-shadow-md" />
+                  )}
                 </div>
                 <div>
                   <div className="flex items-center gap-3 mb-2 flex-wrap">
-                    <span className="px-3 py-1 bg-[#1B4332]/10 text-[#1B4332] text-[10px] font-black tracking-widest uppercase rounded-full">
+                    <span className="px-3.5 py-1.5 bg-white/15 backdrop-blur-md text-white border border-white/25 text-[10px] font-black tracking-widest uppercase rounded-full shadow-xs">
                       {selectedPaper.exam} {selectedPaper.session}
                     </span>
-                    <span className="px-3 py-1 bg-gray-100 text-gray-700 text-[10px] font-black tracking-widest uppercase rounded-full">
+                    <span className="px-3.5 py-1.5 bg-white/10 backdrop-blur-md text-white/90 border border-white/15 text-[10px] font-black tracking-widest uppercase rounded-full">
                       Year {selectedPaper.year}
                     </span>
-                    <span className="px-3 py-1 bg-emerald-50 text-emerald-700 text-[10px] font-black tracking-widest uppercase rounded-full flex items-center gap-1">
-                      <FileUp size={12} /> {isAdmin ? 'Admin Archive Console' : 'Official Defence Archive'}
+                    <span className="px-3.5 py-1.5 bg-white/20 backdrop-blur-md text-white border border-white/30 text-[10px] font-black tracking-widest uppercase rounded-full flex items-center gap-1.5 shadow-xs">
+                      <Sparkles size={11} className={isNda ? 'text-amber-300' : 'text-sky-200'} />
+                      {isAdmin ? 'Admin Archive Console' : 'Official Defence Archive'}
                     </span>
                   </div>
-                  <h1 className="text-4xl md:text-5xl font-black text-[#1A1A1A] tracking-tighter">
+                  <h1 className="text-3xl md:text-5xl font-black text-white tracking-tight drop-shadow-sm">
                     {selectedPaper.title}
                   </h1>
-                  <p className="text-gray-500 font-medium text-base md:text-lg mt-1">
+                  <p className="text-white/80 font-medium text-sm md:text-base mt-1.5">
                     {isAdmin
                       ? 'Upload, replace, and manage Question Papers and Official Answer Keys for each subject'
                       : 'Download and practice official Question Papers and Answer Keys for each subject'}
@@ -1297,41 +1318,62 @@ export default function Notes() {
           </div>
 
           {/* Exam Header Banner */}
-          <div className="bg-white rounded-[2.5rem] p-8 md:p-12 shadow-[0_20px_50px_rgba(0,0,0,0.03)] border border-gray-100 mb-10">
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 pb-8 border-b border-gray-100">
+          <div
+            className={`rounded-[2.5rem] p-8 md:p-12 shadow-2xl relative overflow-hidden mb-10 border text-white ${
+              isNda
+                ? 'bg-gradient-to-br from-[#1B4332] via-[#245A43] to-[#123827] border-emerald-400/25 shadow-[#1B4332]/25'
+                : 'bg-gradient-to-br from-[#1B3A5B] via-[#254C75] to-[#12273D] border-sky-400/25 shadow-[#1B3A5B]/25'
+            }`}
+          >
+            {/* Top Sheen & Subtle Mesh Glow */}
+            <div className="absolute inset-x-0 top-0 h-40 bg-gradient-to-b from-white/20 via-white/5 to-transparent pointer-events-none" />
+            <div className="absolute top-0 right-0 w-96 h-96 bg-white/10 rounded-full blur-3xl pointer-events-none" />
+            <div className="absolute -bottom-16 -left-16 w-80 h-80 bg-black/20 rounded-full blur-2xl pointer-events-none" />
+
+            {/* Giant Watermark Background Icon */}
+            <div className="absolute -right-8 -bottom-12 opacity-[0.07] pointer-events-none text-white">
+              {isNda ? <Shield size={280} /> : <Award size={280} />}
+            </div>
+
+            <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6 pb-8 border-b border-white/15">
               <div className="flex items-center gap-6">
-                <div className={`w-20 h-20 ${isNda ? 'bg-[#1B4332]' : 'bg-[#1B3A5B]'} rounded-3xl flex items-center justify-center text-white shadow-xl`}>
-                  {isNda ? <Shield size={40} /> : <Award size={40} />}
+                <div className="w-20 h-20 md:w-24 md:h-24 bg-white/15 backdrop-blur-xl rounded-3xl flex items-center justify-center text-white border border-white/25 shadow-2xl ring-1 ring-white/20 shrink-0">
+                  {isNda ? (
+                    <Shield size={44} className="text-emerald-300 drop-shadow-md" />
+                  ) : (
+                    <Award size={44} className="text-sky-300 drop-shadow-md" />
+                  )}
                 </div>
                 <div>
-                  <span className="px-3.5 py-1.5 bg-[#1B4332]/10 text-[#1B4332] text-[10px] font-black tracking-widest uppercase rounded-full inline-block mb-2">
+                  <span className="px-3.5 py-1.5 bg-white/15 backdrop-blur-md text-white border border-white/25 text-[10px] font-black tracking-widest uppercase rounded-full inline-flex items-center gap-1.5 mb-2 shadow-xs">
+                    <Sparkles size={11} className={isNda ? 'text-amber-300' : 'text-sky-200'} />
                     EXAM SESSIONS • 2021 – 2026
                   </span>
-                  <h1 className="text-4xl md:text-5xl font-black text-[#1A1A1A] tracking-tighter">
+                  <h1 className="text-3xl md:text-5xl font-black text-white tracking-tight drop-shadow-sm">
                     {selectedExam} Previous Year Papers
                   </h1>
-                  <p className="text-gray-500 font-medium text-base md:text-lg mt-1">
+                  <p className="text-white/80 font-medium text-sm md:text-base mt-1.5 max-w-2xl">
                     {isNda
-                      ? 'National Defence Academy (GAT & Maths Papers with Answer Keys)'
-                      : 'Combined Defence Services (English, GS & Maths Papers with Answer Keys)'}
+                      ? 'National Defence Academy (GAT & Maths Papers with Official Answer Keys)'
+                      : 'Combined Defence Services (English, GS & Maths Papers with Official Answer Keys)'}
                   </p>
                 </div>
               </div>
             </div>
 
             {/* Filter and Search Bar Row */}
-            <div className="mt-8 flex flex-col md:flex-row md:items-center justify-between gap-6">
+            <div className="relative z-10 mt-8 flex flex-col md:flex-row md:items-center justify-between gap-6">
               {/* Year Filters */}
               <div className="flex items-center gap-2 overflow-x-auto pb-2 md:pb-0 scrollbar-none">
-                <span className="text-xs font-black uppercase tracking-wider text-gray-400 mr-1 shrink-0">Year:</span>
+                <span className="text-xs font-black uppercase tracking-wider text-white/60 mr-1 shrink-0">Year:</span>
                 {(['All', ...YEARS] as const).map((yr) => (
                   <button
                     key={yr}
                     onClick={() => setSelectedYearFilter(yr)}
-                    className={`px-4 py-2 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer ${
+                    className={`px-4 py-2 rounded-xl text-xs font-black tracking-wider transition-all shrink-0 cursor-pointer ${
                       selectedYearFilter === yr
-                        ? 'bg-[#1B4332] text-white shadow-md'
-                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                        ? 'bg-white text-gray-900 shadow-xl scale-105'
+                        : 'bg-white/15 hover:bg-white/25 text-white border border-white/20 backdrop-blur-md'
                     }`}
                   >
                     {yr}
@@ -1340,130 +1382,201 @@ export default function Notes() {
               </div>
 
               {/* Quick Search inside this exam */}
-              <div className="relative min-w-[260px]">
-                <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
+              <div className="relative min-w-[280px]">
+                <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-white/60" size={16} />
                 <input
                   type="text"
                   placeholder={`Search ${selectedExam} papers (e.g. 2025, II)...`}
                   value={paperSearch}
                   onChange={(e) => setPaperSearch(e.target.value)}
-                  className="w-full pl-11 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-xs font-bold text-gray-800 outline-none focus:border-[#1B4332] focus:bg-white transition-all"
+                  className="w-full pl-11 pr-4 py-3 bg-white/15 border border-white/25 rounded-2xl text-xs font-bold text-white placeholder:text-white/60 outline-none backdrop-blur-md focus:bg-white focus:text-gray-900 focus:placeholder:text-gray-400 transition-all shadow-inner"
                 />
               </div>
             </div>
           </div>
 
           {/* Paper Cards Grid (format: NDA II, 2026 -> NDA I, 2021) */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 md:gap-8">
             {filteredPapers.map((paper, idx) => {
               const uploadStatus = getSessionUploadCount(paper);
               const sessionRecord = pyqSessions[paper.id];
+              const isSessionII = paper.session === 'II';
 
               return (
                 <motion.div
                   key={paper.id}
                   initial={{ opacity: 0, y: 15 }}
                   animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: idx * 0.04 }}
-                  whileHover={{ y: -6 }}
+                  transition={{ delay: idx * 0.03 }}
+                  whileHover={{ y: -8 }}
                   onClick={() => setSelectedPaper(paper)}
-                  className="bg-white rounded-[2rem] p-6 md:p-8 shadow-[0_15px_35px_rgba(0,0,0,0.03)] border border-gray-100 hover:border-[#1B4332]/40 hover:shadow-xl transition-all duration-300 flex flex-col justify-between group cursor-pointer relative overflow-hidden"
+                  className="bg-white rounded-[2rem] p-6 md:p-8 shadow-[0_12px_32px_rgba(0,0,0,0.05)] hover:shadow-[0_24px_50px_rgba(0,0,0,0.12)] border border-gray-100 hover:border-gray-200 transition-all duration-300 flex flex-col justify-between group cursor-pointer relative overflow-hidden"
                 >
+                  {/* Top Colored Accent Bar */}
+                  <div
+                    className={`absolute top-0 inset-x-0 h-1.5 group-hover:h-2 transition-all duration-300 ${
+                      isSessionII
+                        ? 'bg-gradient-to-r from-amber-500 via-orange-400 to-amber-600'
+                        : 'bg-gradient-to-r from-emerald-500 via-teal-400 to-emerald-600'
+                    }`}
+                  />
+
                   <div className="relative z-10">
                     {/* Top Badges */}
                     <div className="flex items-center justify-between mb-4">
                       <span
-                        className={`px-3 py-1 text-[10px] font-black tracking-widest uppercase rounded-full ${
-                          paper.session === 'II'
-                            ? 'bg-amber-50 text-amber-700 border border-amber-200/60'
-                            : 'bg-emerald-50 text-emerald-700 border border-emerald-200/60'
+                        className={`px-3 py-1 text-[10px] font-black tracking-widest uppercase rounded-full flex items-center gap-1.5 border shadow-2xs ${
+                          isSessionII
+                            ? 'bg-amber-500/10 text-amber-800 border-amber-500/30'
+                            : 'bg-emerald-500/10 text-emerald-800 border-emerald-500/30'
                         }`}
                       >
+                        <span
+                          className={`w-1.5 h-1.5 rounded-full ${
+                            isSessionII ? 'bg-amber-500' : 'bg-emerald-500'
+                          } animate-pulse`}
+                        />
                         SESSION {paper.session}
                       </span>
                       <span
-                        className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full ${
+                        className={`text-[10px] font-black px-2.5 py-0.5 rounded-full border shadow-2xs flex items-center gap-1 ${
                           uploadStatus.count === uploadStatus.total
-                            ? 'bg-emerald-100 text-emerald-800'
+                            ? 'bg-emerald-100 text-emerald-900 border-emerald-300'
                             : uploadStatus.count > 0
-                            ? 'bg-blue-50 text-blue-700'
-                            : 'bg-gray-100 text-gray-500'
+                            ? 'bg-sky-100 text-sky-900 border-sky-300'
+                            : 'bg-gray-100 text-gray-500 border-gray-200'
                         }`}
                       >
+                        {uploadStatus.count === uploadStatus.total && <Check size={11} className="text-emerald-700 stroke-[3]" />}
                         {uploadStatus.count}/{uploadStatus.total} Files
                       </span>
                     </div>
 
-                    {/* Main Title - Exact user requested format */}
-                    <h3 className="text-2xl font-black text-gray-900 tracking-tight mb-3 group-hover:text-[#1B4332] transition-colors">
+                    {/* Main Title */}
+                    <h3 className="text-2xl font-black text-gray-900 tracking-tight mb-4 group-hover:text-[#1B4332] transition-colors">
                       {paper.title}
                     </h3>
 
-                    {/* Subject Breakdown summary with upload check indicators */}
-                    <div className="space-y-2 mb-6 text-xs font-semibold text-gray-600">
+                    {/* Subject Breakdown summary with structured inspection manifest */}
+                    <div className="bg-gradient-to-b from-gray-50/90 to-gray-50/40 rounded-2xl p-4 border border-gray-100 space-y-2.5 mb-6 group-hover:border-gray-200 group-hover:bg-gray-50 transition-colors">
                       {isNda ? (
                         <>
-                          <div className="flex items-center justify-between py-1 border-b border-gray-50">
-                            <span className="font-bold text-gray-800">Maths</span>
-                            <div className="flex items-center gap-1.5 text-[10px]">
-                              <span className={sessionRecord?.subjects?.maths?.paper ? 'text-emerald-700 font-bold' : 'text-gray-400'}>
-                                Paper: {sessionRecord?.subjects?.maths?.paper ? '✓' : '—'}
-                              </span>
-                              <span>•</span>
-                              <span className={sessionRecord?.subjects?.maths?.key ? 'text-emerald-700 font-bold' : 'text-gray-400'}>
-                                Key: {sessionRecord?.subjects?.maths?.key ? '✓' : '—'}
-                              </span>
+                          <div className="flex items-center justify-between py-1 border-b border-gray-200/50">
+                            <span className="font-black text-xs text-gray-800">Mathematics</span>
+                            <div className="flex items-center gap-2">
+                              {sessionRecord?.subjects?.maths?.paper ? (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800 text-[10px] font-bold border border-emerald-200">
+                                  <Check size={10} className="text-emerald-700 stroke-[3]" /> Paper
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-gray-200/50 text-gray-400 text-[10px] font-semibold border border-gray-200/50">
+                                  — Paper
+                                </span>
+                              )}
+                              {sessionRecord?.subjects?.maths?.key ? (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800 text-[10px] font-bold border border-emerald-200">
+                                  <Check size={10} className="text-emerald-700 stroke-[3]" /> Key
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-gray-200/50 text-gray-400 text-[10px] font-semibold border border-gray-200/50">
+                                  — Key
+                                </span>
+                              )}
                             </div>
                           </div>
-                          <div className="flex items-center justify-between py-1 border-b border-gray-50">
-                            <span className="font-bold text-gray-800">GAT</span>
-                            <div className="flex items-center gap-1.5 text-[10px]">
-                              <span className={sessionRecord?.subjects?.gat?.paper ? 'text-emerald-700 font-bold' : 'text-gray-400'}>
-                                Paper: {sessionRecord?.subjects?.gat?.paper ? '✓' : '—'}
-                              </span>
-                              <span>•</span>
-                              <span className={sessionRecord?.subjects?.gat?.key ? 'text-emerald-700 font-bold' : 'text-gray-400'}>
-                                Key: {sessionRecord?.subjects?.gat?.key ? '✓' : '—'}
-                              </span>
+                          <div className="flex items-center justify-between py-1">
+                            <span className="font-black text-xs text-gray-800">GAT (General Ability)</span>
+                            <div className="flex items-center gap-2">
+                              {sessionRecord?.subjects?.gat?.paper ? (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800 text-[10px] font-bold border border-emerald-200">
+                                  <Check size={10} className="text-emerald-700 stroke-[3]" /> Paper
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-gray-200/50 text-gray-400 text-[10px] font-semibold border border-gray-200/50">
+                                  — Paper
+                                </span>
+                              )}
+                              {sessionRecord?.subjects?.gat?.key ? (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800 text-[10px] font-bold border border-emerald-200">
+                                  <Check size={10} className="text-emerald-700 stroke-[3]" /> Key
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-gray-200/50 text-gray-400 text-[10px] font-semibold border border-gray-200/50">
+                                  — Key
+                                </span>
+                              )}
                             </div>
                           </div>
                         </>
                       ) : (
                         <>
-                          <div className="flex items-center justify-between py-1 border-b border-gray-50">
-                            <span className="font-bold text-gray-800">English</span>
-                            <div className="flex items-center gap-1.5 text-[10px]">
-                              <span className={sessionRecord?.subjects?.english?.paper ? 'text-emerald-700 font-bold' : 'text-gray-400'}>
-                                Paper: {sessionRecord?.subjects?.english?.paper ? '✓' : '—'}
-                              </span>
-                              <span>•</span>
-                              <span className={sessionRecord?.subjects?.english?.key ? 'text-emerald-700 font-bold' : 'text-gray-400'}>
-                                Key: {sessionRecord?.subjects?.english?.key ? '✓' : '—'}
-                              </span>
+                          <div className="flex items-center justify-between py-1 border-b border-gray-200/50">
+                            <span className="font-black text-xs text-gray-800">English</span>
+                            <div className="flex items-center gap-2">
+                              {sessionRecord?.subjects?.english?.paper ? (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800 text-[10px] font-bold border border-emerald-200">
+                                  <Check size={10} className="text-emerald-700 stroke-[3]" /> Paper
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-gray-200/50 text-gray-400 text-[10px] font-semibold border border-gray-200/50">
+                                  — Paper
+                                </span>
+                              )}
+                              {sessionRecord?.subjects?.english?.key ? (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800 text-[10px] font-bold border border-emerald-200">
+                                  <Check size={10} className="text-emerald-700 stroke-[3]" /> Key
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-gray-200/50 text-gray-400 text-[10px] font-semibold border border-gray-200/50">
+                                  — Key
+                                </span>
+                              )}
                             </div>
                           </div>
-                          <div className="flex items-center justify-between py-1 border-b border-gray-50">
-                            <span className="font-bold text-gray-800">GS</span>
-                            <div className="flex items-center gap-1.5 text-[10px]">
-                              <span className={sessionRecord?.subjects?.gs?.paper ? 'text-emerald-700 font-bold' : 'text-gray-400'}>
-                                Paper: {sessionRecord?.subjects?.gs?.paper ? '✓' : '—'}
-                              </span>
-                              <span>•</span>
-                              <span className={sessionRecord?.subjects?.gs?.key ? 'text-emerald-700 font-bold' : 'text-gray-400'}>
-                                Key: {sessionRecord?.subjects?.gs?.key ? '✓' : '—'}
-                              </span>
+                          <div className="flex items-center justify-between py-1 border-b border-gray-200/50">
+                            <span className="font-black text-xs text-gray-800">General Studies (GS)</span>
+                            <div className="flex items-center gap-2">
+                              {sessionRecord?.subjects?.gs?.paper ? (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800 text-[10px] font-bold border border-emerald-200">
+                                  <Check size={10} className="text-emerald-700 stroke-[3]" /> Paper
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-gray-200/50 text-gray-400 text-[10px] font-semibold border border-gray-200/50">
+                                  — Paper
+                                </span>
+                              )}
+                              {sessionRecord?.subjects?.gs?.key ? (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800 text-[10px] font-bold border border-emerald-200">
+                                  <Check size={10} className="text-emerald-700 stroke-[3]" /> Key
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-gray-200/50 text-gray-400 text-[10px] font-semibold border border-gray-200/50">
+                                  — Key
+                                </span>
+                              )}
                             </div>
                           </div>
-                          <div className="flex items-center justify-between py-1 border-b border-gray-50">
-                            <span className="font-bold text-gray-800">Maths</span>
-                            <div className="flex items-center gap-1.5 text-[10px]">
-                              <span className={sessionRecord?.subjects?.maths?.paper ? 'text-emerald-700 font-bold' : 'text-gray-400'}>
-                                Paper: {sessionRecord?.subjects?.maths?.paper ? '✓' : '—'}
-                              </span>
-                              <span>•</span>
-                              <span className={sessionRecord?.subjects?.maths?.key ? 'text-emerald-700 font-bold' : 'text-gray-400'}>
-                                Key: {sessionRecord?.subjects?.maths?.key ? '✓' : '—'}
-                              </span>
+                          <div className="flex items-center justify-between py-1">
+                            <span className="font-black text-xs text-gray-800">Mathematics</span>
+                            <div className="flex items-center gap-2">
+                              {sessionRecord?.subjects?.maths?.paper ? (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800 text-[10px] font-bold border border-emerald-200">
+                                  <Check size={10} className="text-emerald-700 stroke-[3]" /> Paper
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-gray-200/50 text-gray-400 text-[10px] font-semibold border border-gray-200/50">
+                                  — Paper
+                                </span>
+                              )}
+                              {sessionRecord?.subjects?.maths?.key ? (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800 text-[10px] font-bold border border-emerald-200">
+                                  <Check size={10} className="text-emerald-700 stroke-[3]" /> Key
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-gray-200/50 text-gray-400 text-[10px] font-semibold border border-gray-200/50">
+                                  — Key
+                                </span>
+                              )}
                             </div>
                           </div>
                         </>
@@ -1473,10 +1586,10 @@ export default function Notes() {
 
                   {/* Card Action Footer */}
                   <div className="relative z-10 pt-4 border-t border-gray-100 flex items-center justify-between text-xs font-bold text-gray-700 group-hover:text-[#1B4332] transition-colors">
-                    <span className="tracking-wide uppercase text-[11px] font-black">
-                      {uploadStatus.count > 0 ? (isAdmin ? 'Manage & Download' : 'View & Download') : (isAdmin ? 'Upload Papers' : 'View Session')}
+                    <span className="tracking-wider uppercase text-[11px] font-black">
+                      {uploadStatus.count > 0 ? (isAdmin ? 'Manage & Download' : 'View & Download') : (isAdmin ? 'Upload Papers' : 'Explore Session')}
                     </span>
-                    <div className="w-8 h-8 rounded-full bg-gray-50 group-hover:bg-[#1B4332] group-hover:text-white flex items-center justify-center transition-all">
+                    <div className="w-9 h-9 rounded-xl bg-gray-100 group-hover:bg-[#1B4332] text-gray-600 group-hover:text-white flex items-center justify-center transition-all duration-300 shadow-xs group-hover:shadow-md group-hover:scale-105">
                       <ChevronRight size={16} />
                     </div>
                   </div>
@@ -1527,27 +1640,34 @@ export default function Notes() {
           </div>
 
           {/* Folder Hero Banner */}
-          <div className="bg-white rounded-[2.5rem] p-8 md:p-12 shadow-[0_20px_50px_rgba(0,0,0,0.03)] border border-gray-100 mb-12">
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 pb-8 border-b border-gray-100">
+          <div className="rounded-[2.5rem] p-8 md:p-12 shadow-2xl relative overflow-hidden mb-12 border text-white bg-gradient-to-br from-[#1B4332] via-[#245A43] to-[#123827] border-emerald-400/25 shadow-[#1B4332]/25">
+            <div className="absolute inset-x-0 top-0 h-40 bg-gradient-to-b from-white/20 via-white/5 to-transparent pointer-events-none" />
+            <div className="absolute top-0 right-0 w-96 h-96 bg-white/10 rounded-full blur-3xl pointer-events-none" />
+            <div className="absolute -right-8 -bottom-12 opacity-[0.07] pointer-events-none text-white">
+              <FileCheck size={280} />
+            </div>
+
+            <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6 pb-8 border-b border-white/15">
               <div className="flex items-center gap-6">
-                <div className="w-20 h-20 bg-[#1B4332] rounded-3xl flex items-center justify-center text-white shadow-xl">
-                  <FileCheck size={40} />
+                <div className="w-20 h-20 md:w-24 md:h-24 bg-white/15 backdrop-blur-xl rounded-3xl flex items-center justify-center text-white border border-white/25 shadow-2xl ring-1 ring-white/20 shrink-0">
+                  <FileCheck size={44} className="text-emerald-300 drop-shadow-md" />
                 </div>
                 <div>
-                  <span className="px-3.5 py-1.5 bg-[#1B4332]/10 text-[#1B4332] text-[10px] font-black tracking-widest uppercase rounded-full inline-block mb-2">
+                  <span className="px-3.5 py-1.5 bg-white/15 backdrop-blur-md text-white border border-white/25 text-[10px] font-black tracking-widest uppercase rounded-full inline-flex items-center gap-1.5 mb-2 shadow-xs">
+                    <Sparkles size={11} className="text-amber-300" />
                     NISHCHAY DEFENCE ARCHIVE
                   </span>
-                  <h1 className="text-4xl md:text-5xl font-black text-[#1A1A1A] tracking-tighter">
+                  <h1 className="text-3xl md:text-5xl font-black text-white tracking-tight drop-shadow-sm">
                     PYQ Papers
                   </h1>
-                  <p className="text-gray-500 font-medium text-base md:text-lg mt-1">
+                  <p className="text-white/80 font-medium text-sm md:text-base mt-1.5">
                     Previous Year Question Papers & Answer Keys (2021 – 2026)
                   </p>
                 </div>
               </div>
             </div>
 
-            <p className="text-gray-600 mt-6 text-base font-medium max-w-3xl leading-relaxed">
+            <p className="relative z-10 text-white/80 mt-6 text-sm md:text-base font-medium max-w-3xl leading-relaxed">
               Select an examination below to open session folders from 2021 to 2026. You can upload and download Question Papers and Answer Keys for Maths and GAT (NDA) or English, GS, and Maths (CDS).
             </p>
           </div>
