@@ -10,7 +10,6 @@ import crypto from 'crypto';
 import { GoogleSpreadsheet } from 'google-spreadsheet';
 import { JWT } from 'google-auth-library';
 import admin from 'firebase-admin';
-import { createRequire } from 'module';
 import {
   getAllStories,
   getStoryById,
@@ -54,9 +53,6 @@ import {
 import { parseDailyNewsPost, getLocalTodayDate } from './n-intel-parser';
 import { SAMPLE_NINTEL_POST } from './n-intel-sample-data';
 
-const require = createRequire(import.meta.url);
-const firebaseConfigJson = require('./firebase-applet-config.json');
-
 dotenv.config();
 
 const app = express();
@@ -67,9 +63,14 @@ app.set('trust proxy', 1);
 
 // Normalize Vercel Serverless Function rewritten paths
 app.use((req: Request, res: Response, next: NextFunction) => {
-  const realUrl = (req.headers['x-matched-path'] as string) || req.originalUrl || req.url;
-  if (realUrl && (req.url === '/api' || req.url === '/api/index' || req.url.startsWith('/api?'))) {
-    req.url = realUrl;
+  const matchedPath = req.headers['x-matched-path'] as string;
+  if (matchedPath) {
+    req.url = matchedPath;
+  } else {
+    const realUrl = req.originalUrl || req.url;
+    if (realUrl && (req.url === '/api' || req.url === '/api/index' || req.url.startsWith('/api?'))) {
+      req.url = realUrl;
+    }
   }
   next();
 });
@@ -260,7 +261,7 @@ app.use(
 // Initialize Firebase Admin for token verification
 try {
   if (!admin.apps.length) {
-    const projectId = process.env.VITE_FIREBASE_PROJECT_ID || firebaseConfigJson.projectId || 'nishchay-defence';
+    const projectId = process.env.VITE_FIREBASE_PROJECT_ID || 'nishchay-defence';
     const serviceEmail = process.env.FIREBASE_SERVICE_ACCOUNT_EMAIL;
     const serviceKey = process.env.FIREBASE_PRIVATE_KEY
       ? process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n').replace(/^"(.*)"$/, '$1').trim()
@@ -1069,6 +1070,7 @@ app.post('/api/pyq/upload', uploadLimiter, authenticate as any, async (req: Auth
 
     let publicUrl: string = '';
     let driveFileId: string | undefined;
+    let driveErrorMsg: string | undefined;
 
     // Automated Google Drive Upload
     if (isDriveConfigured()) {
@@ -1083,8 +1085,17 @@ app.post('/api/pyq/upload', uploadLimiter, authenticate as any, async (req: Auth
         publicUrl = driveResult.url;
         driveFileId = driveResult.fileId;
       } catch (driveErr: any) {
-        console.warn('⚠️ Google Drive upload failed, falling back to local disk storage:', driveErr?.message);
+        driveErrorMsg = driveErr?.message || String(driveErr);
+        console.warn('⚠️ Google Drive upload failed, falling back to local disk storage:', driveErrorMsg);
       }
+    }
+
+    // On Vercel, ephemeral local disk is not persistent across serverless containers.
+    if (!publicUrl && process.env.VERCEL) {
+      const errDetail = driveErrorMsg
+        ? `Google Drive upload failed: ${driveErrorMsg}`
+        : 'Google Drive is not fully configured on Vercel. Direct PDF upload requires all 3 environment variables in Vercel: GOOGLE_SERVICE_ACCOUNT_EMAIL, GOOGLE_PRIVATE_KEY, and GOOGLE_DRIVE_FOLDER_ID. Please set them in your Vercel project settings, or use the "Paste PDF / Drive Link" tab.';
+      return res.status(400).json({ success: false, error: errDetail });
     }
 
     // Local Storage Fallback if Google Drive is not configured or fails
@@ -1107,9 +1118,7 @@ app.post('/api/pyq/upload', uploadLimiter, authenticate as any, async (req: Auth
         console.error('Local PYQ storage write failed:', writeErr);
         return res.status(500).json({
           success: false,
-          error: isDriveConfigured()
-            ? 'Failed to store file on server or Google Drive.'
-            : 'Google Drive storage is not configured in Vercel. Please add GOOGLE_SERVICE_ACCOUNT_EMAIL, GOOGLE_PRIVATE_KEY, and GOOGLE_DRIVE_FOLDER_ID to Vercel environment variables, or use the "Paste PDF / Drive Link" tab.'
+          error: 'Failed to store file on local disk.'
         });
       }
     }
@@ -1291,6 +1300,7 @@ app.post('/api/notes/upload', uploadLimiter, authenticate as any, async (req: Au
 
     let publicUrl: string = '';
     let driveFileId: string | undefined;
+    let driveErrorMsg: string | undefined;
 
     // Automated Google Drive Upload
     if (isDriveConfigured()) {
@@ -1304,8 +1314,17 @@ app.post('/api/notes/upload', uploadLimiter, authenticate as any, async (req: Au
         publicUrl = driveResult.url;
         driveFileId = driveResult.fileId;
       } catch (driveErr: any) {
-        console.warn('⚠️ Google Drive upload failed, falling back to local storage:', driveErr?.message);
+        driveErrorMsg = driveErr?.message || String(driveErr);
+        console.warn('⚠️ Google Drive upload failed, falling back to local storage:', driveErrorMsg);
       }
+    }
+
+    // On Vercel, ephemeral local disk is not persistent across serverless containers.
+    if (!publicUrl && process.env.VERCEL) {
+      const errDetail = driveErrorMsg
+        ? `Google Drive upload failed: ${driveErrorMsg}`
+        : 'Google Drive is not fully configured on Vercel. Direct PDF upload requires all 3 environment variables in Vercel: GOOGLE_SERVICE_ACCOUNT_EMAIL, GOOGLE_PRIVATE_KEY, and GOOGLE_DRIVE_FOLDER_ID. Please set them in your Vercel project settings, or use the "Paste PDF / Drive Link" tab.';
+      return res.status(400).json({ success: false, error: errDetail });
     }
 
     // Local Storage Fallback if Google Drive is not configured or fails
@@ -1326,9 +1345,7 @@ app.post('/api/notes/upload', uploadLimiter, authenticate as any, async (req: Au
         console.error('Local note storage write failed:', writeErr);
         return res.status(500).json({
           success: false,
-          error: isDriveConfigured()
-            ? 'Failed to store note on server or Google Drive.'
-            : 'Google Drive storage is not configured in Vercel. Please add GOOGLE_SERVICE_ACCOUNT_EMAIL, GOOGLE_PRIVATE_KEY, and GOOGLE_DRIVE_FOLDER_ID to Vercel environment variables, or use the "Paste PDF / Drive Link" tab.'
+          error: 'Failed to store note on local disk.'
         });
       }
     }
@@ -1489,6 +1506,8 @@ async function setupServer() {
   }
 }
 
-setupServer();
+if (!process.env.VERCEL) {
+  setupServer();
+}
 
 export default app;

@@ -450,7 +450,7 @@ export default function Notes() {
       throw new Error('The selected PDF is too large for direct processing. Please select a file under 4 MB or use the "Paste PDF / Drive Link" tab.');
     }
     if (rawText.includes('FUNCTION_INVOCATION_FAILED')) {
-      throw new Error('Cloud storage execution error. Please use the "Paste PDF / Drive Link" tab or ensure Google Drive environment variables are set in Vercel.');
+      throw new Error('Serverless function error (FUNCTION_INVOCATION_FAILED). Please try again or use the "Paste PDF / Drive Link" tab.');
     }
     throw new Error(rawText ? rawText.slice(0, 150) : `${fallbackErrMsg} (HTTP ${res.status})`);
   };
