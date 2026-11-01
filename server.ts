@@ -138,9 +138,26 @@ app.use(
   })
 );
 
-// Request body size limit (support PDF uploads up to 50MB)
-app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+// Request body size limit (support PDF uploads up to 150MB to accommodate Base64 overhead)
+app.use(express.json({ limit: '150mb' }));
+app.use(express.urlencoded({ extended: true, limit: '150mb' }));
+
+// Middleware to catch 413 Payload Too Large / JSON parse errors from body-parser and return clean JSON
+app.use((err: any, req: Request, res: Response, next: NextFunction) => {
+  if (err && (err.type === 'entity.too.large' || err.status === 413)) {
+    return res.status(413).json({
+      success: false,
+      error: 'The uploaded file payload is too large for direct processing. Please choose a file under 35 MB or use the "Paste PDF / Drive Link" tab.'
+    });
+  }
+  if (err && err instanceof SyntaxError && 'body' in err) {
+    return res.status(400).json({
+      success: false,
+      error: 'Malformed JSON payload received.'
+    });
+  }
+  next(err);
+});
 
 // Rate Limiters
 const globalApiLimiter = rateLimit({

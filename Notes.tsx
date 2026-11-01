@@ -450,6 +450,23 @@ export default function Notes() {
     };
   };
 
+  // Safe API response parser preventing raw HTML / 413 syntax errors
+  const parseApiResponse = async (res: Response, fallbackErrMsg = 'Upload failed'): Promise<any> => {
+    const contentType = res.headers.get('content-type') || '';
+    if (contentType.includes('application/json')) {
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || fallbackErrMsg);
+      }
+      return data;
+    }
+    const rawText = await res.text();
+    if (res.status === 413 || rawText.includes('Entity Too Large') || rawText.includes('too large')) {
+      throw new Error('The selected PDF is too large for direct processing. Please select a file under 35 MB or use the "Paste PDF / Drive Link" tab.');
+    }
+    throw new Error(rawText ? rawText.slice(0, 150) : `${fallbackErrMsg} (HTTP ${res.status})`);
+  };
+
   // Execute Upload
   const handleExecuteUpload = async () => {
     if (!uploadModal) return;
@@ -496,10 +513,7 @@ export default function Notes() {
             }),
           });
 
-          const data = await res.json();
-          if (!data.success) {
-            throw new Error(data.error || 'Upload failed');
-          }
+          const data = await parseApiResponse(res, 'Note upload failed');
 
           const updatedNotes = [data.note, ...allSubjectNotes.filter((n) => n.id !== data.note.id)];
           setAllSubjectNotes(updatedNotes);
@@ -526,10 +540,7 @@ export default function Notes() {
             }),
           });
 
-          const data = await res.json();
-          if (!data.success) {
-            throw new Error(data.error || 'Failed to save link');
-          }
+          const data = await parseApiResponse(res, 'Failed to save note link');
 
           const updatedNotes = [data.note, ...allSubjectNotes.filter((n) => n.id !== data.note.id)];
           setAllSubjectNotes(updatedNotes);
@@ -573,10 +584,7 @@ export default function Notes() {
           }),
         });
 
-        const data = await res.json();
-        if (!data.success) {
-          throw new Error(data.error || 'Upload failed');
-        }
+        const data = await parseApiResponse(res, 'PYQ paper upload failed');
 
         const updatedSessions = {
           ...pyqSessions,
@@ -610,10 +618,7 @@ export default function Notes() {
           }),
         });
 
-        const data = await res.json();
-        if (!data.success) {
-          throw new Error(data.error || 'Failed to save link');
-        }
+        const data = await parseApiResponse(res, 'Failed to save PYQ link');
 
         const updatedSessions = {
           ...pyqSessions,
