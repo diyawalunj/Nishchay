@@ -840,29 +840,16 @@ export default function Articles() {
 
                   <div>
                     <label className="block text-[11px] font-bold text-gray-600 mb-1">
-                      Author Avatar / Photo URL (Optional)
+                      Author Designation / Academic Affiliation
                     </label>
                     <input
                       type="text"
-                      placeholder="https://... or photo URL"
-                      value={authorAvatarUrl}
-                      onChange={(e) => setAuthorAvatarUrl(e.target.value)}
+                      placeholder="e.g. Professor Emeritus of International Relations, Michigan State University"
+                      value={authorRole}
+                      onChange={(e) => setAuthorRole(e.target.value)}
                       className="w-full px-3.5 py-2 bg-white border border-gray-200 rounded-xl text-xs font-bold text-gray-800"
                     />
                   </div>
-                </div>
-
-                <div>
-                  <label className="block text-[11px] font-bold text-gray-600 mb-1">
-                    Author Designation / Academic Affiliation
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="e.g. Professor Emeritus of International Relations, Michigan State University"
-                    value={authorRole}
-                    onChange={(e) => setAuthorRole(e.target.value)}
-                    className="w-full px-3.5 py-2 bg-white border border-gray-200 rounded-xl text-xs font-bold text-gray-800"
-                  />
                 </div>
               </div>
 
@@ -887,13 +874,13 @@ export default function Articles() {
                     Editorial Content <span className="text-red-500">*</span>
                   </label>
                   <span className="text-[10px] font-bold text-gray-500">
-                    Use <code className="bg-yellow-100 text-yellow-900 px-1 py-0.5 rounded">==yellow==</code> or <code className="bg-emerald-100 text-emerald-900 px-1 py-0.5 rounded">^^green^^</code> for exam highlights
+                    Use <code className="bg-yellow-100 text-yellow-900 px-1 py-0.5 rounded">==yellow==</code> or <code className="bg-emerald-100 text-emerald-900 px-1 py-0.5 rounded">""green""</code> for exam highlights
                   </span>
                 </div>
                 <textarea
                   rows={12}
                   required
-                  placeholder="Write article paragraphs... Use ### Subheading for editorial sub-sections, ==text== for yellow exam highlights, and ^^text^^ for green exam highlights."
+                  placeholder='Write article paragraphs... Use ### Subheading for editorial sub-sections, ==text== for yellow exam highlights, and ""text"" for green exam highlights.'
                   value={content}
                   onChange={(e) => setContent(e.target.value)}
                   className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:border-[#1B4332] focus:bg-white outline-none text-xs font-medium text-gray-800 leading-relaxed font-mono"

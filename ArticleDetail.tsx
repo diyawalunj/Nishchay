@@ -119,7 +119,7 @@ export default function ArticleDetail() {
   };
 
   /**
-   * Parses markdown-style headings (###), highlights (==yellow==, ^^green^^), and paragraphs.
+   * Parses markdown-style headings (###), highlights (==yellow==, ""green""), and paragraphs.
    * Supports both interactive screen view and authentic newspaper print editorial dossier.
    */
   const renderFormattedContent = (rawText: string, isPrint = false) => {
@@ -162,9 +162,9 @@ export default function ArticleDetail() {
         return;
       }
 
-      // 2. Format inline highlights (==yellow== and ^^green^^), bold (**text**), and underline (__text__ or <u>text</u>)
+      // 2. Format inline highlights (==yellow== and ""green""), bold (**text**), and underline (__text__ or <u>text</u>)
       const parseInline = (textStr: string) => {
-        const regex = /(==.*?==|\^\^.*?\^\^|\*\*.*?\*\*|__.*?__|<u>.*?<\/u>)/g;
+        const regex = /(==.*?==|""[^"\n]+""|[“”]{2}[^“”\n]+[“”]{2}|\^\^.*?\^\^|\*\*.*?\*\*|__.*?__|<u>.*?<\/u>)/g;
         const parts = textStr.split(regex);
 
         return parts.map((part, pIdx) => {
@@ -184,7 +184,11 @@ export default function ArticleDetail() {
               </mark>
             );
           }
-          if (part.startsWith('^^') && part.endsWith('^^')) {
+          if (
+            (part.startsWith('""') && part.endsWith('""') && part.length >= 4) ||
+            (part.startsWith('““') && part.endsWith('””') && part.length >= 4) ||
+            (part.startsWith('^^') && part.endsWith('^^') && part.length >= 4)
+          ) {
             const inner = part.slice(2, -2);
             return (
               <mark
