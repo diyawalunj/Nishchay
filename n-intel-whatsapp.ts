@@ -23,18 +23,22 @@ export function getLocalTodayDate(): string {
 }
 
 /**
- * Formats a clean date string for sharing (e.g. "28 Oct 2026")
+ * Formats a clean date string for sharing (e.g. "2 Nov 2026").
+ * Automatically fetches current local date if omitted or invalid.
  */
-export function formatDisplayDate(dateStr: string): string {
+export function formatDisplayDate(dateStr?: string): string {
   try {
-    const parts = dateStr.split('-');
+    const target = (dateStr && /^\d{4}-\d{2}-\d{2}$/.test(dateStr))
+      ? dateStr
+      : getLocalTodayDate();
+    const parts = target.split('-');
     if (parts.length === 3) {
       const d = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
       return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
     }
-    return dateStr;
+    return target;
   } catch {
-    return dateStr;
+    return dateStr || getLocalTodayDate();
   }
 }
 
@@ -72,13 +76,17 @@ export function getStoryWhatsAppShareUrl(story: NIntelStory, customBaseUrl?: str
 }
 
 /**
- * Builds the official WhatsApp share URL for the full daily edition
+ * Builds the official WhatsApp share URL for the full daily edition.
+ * Automatically fetches the current local calendar date (e.g. "2 Nov 2026")
+ * and current URL parameter (e.g. ?date=2026-11-02) if dateStr is omitted or invalid.
  */
-export function getDailyEditionWhatsAppShareUrl(dateStr: string, totalStories?: number, customBaseUrl?: string): string {
+export function getDailyEditionWhatsAppShareUrl(dateStr?: string, totalStories?: number, customBaseUrl?: string): string {
   const base = customBaseUrl || getBaseUrl();
-  const canonicalUrl = `${base}/n-intel?date=${encodeURIComponent(dateStr)}`;
-  const dateFormatted = formatDisplayDate(dateStr);
-  const countText = totalStories ? `${totalStories} top updates` : "55 top updates";
+  const today = getLocalTodayDate();
+  const effectiveDate = (dateStr && /^\d{4}-\d{2}-\d{2}$/.test(dateStr)) ? dateStr : today;
+  const canonicalUrl = `${base}/n-intel?date=${encodeURIComponent(effectiveDate)}`;
+  const dateFormatted = formatDisplayDate(effectiveDate);
+  const countText = (totalStories && totalStories > 0) ? `${totalStories} top updates` : "55 top updates";
 
   const message = [
     'N-INTEL Daily Edition | Team Nishchay',

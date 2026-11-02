@@ -5,11 +5,17 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Upload, Edit3, Trash2, Shield, Calendar, Search, AlertCircle,
   CheckCircle2, Clock, Lock, RefreshCw, Eye, ArrowLeft, History as HistoryIcon,
-  Save, X, FileText, Check, RotateCcw, Download, Sparkles, ChevronDown, ChevronUp
+  Save, X, FileText, Check, RotateCcw, Download, Sparkles, ChevronDown, ChevronUp,
+  MessageCircle
 } from 'lucide-react';
 import type { NIntelStory, NIntelAuditLog } from './types';
 import { auth, onAuthStateChanged, checkIfAdmin, type User } from './firebase';
-import { formatDisplayDate, getLocalTodayDate } from './n-intel-whatsapp';
+import {
+  formatDisplayDate,
+  getLocalTodayDate,
+  getDailyEditionWhatsAppShareUrl,
+  openWhatsAppShare
+} from './n-intel-whatsapp';
 import { parseDailyNewsPost } from './n-intel-parser';
 import {
   saveLocalStories,
@@ -40,6 +46,7 @@ export default function NIntelAdmin() {
     type: 'success' | 'error' | 'warning';
     message: string;
     details?: string[];
+    shareUrl?: string;
   } | null>(null);
 
   // Live Client-side Parsing State
@@ -261,7 +268,8 @@ export default function NIntelAdmin() {
         setPublishFeedback({
           type: 'success',
           message: data.message || `Successfully published ${data.count} stories!`,
-          details: data.categories?.map((c: string) => `${c}`)
+          details: data.categories?.map((c: string) => `${c}`),
+          shareUrl: getDailyEditionWhatsAppShareUrl(targetDate, data.count)
         });
         setRawText('');
         setShowLivePreview(false);
@@ -761,6 +769,21 @@ export default function NIntelAdmin() {
                               {c}
                             </span>
                           ))}
+                        </div>
+                      )}
+                      {publishFeedback.type === 'success' && publishFeedback.shareUrl && (
+                        <div className="mt-3 pt-3 border-t border-emerald-200/80 flex flex-wrap items-center gap-3">
+                          <button
+                            type="button"
+                            onClick={() => openWhatsAppShare(publishFeedback.shareUrl!)}
+                            className="inline-flex items-center gap-2 px-4 py-2 bg-[#25D366] hover:bg-[#20ba59] text-white rounded-xl text-xs font-black tracking-wide uppercase transition-all shadow-md shadow-[#25D366]/20 cursor-pointer"
+                          >
+                            <MessageCircle size={15} />
+                            <span>Share This Edition on WhatsApp</span>
+                          </button>
+                          <span className="text-[11px] text-emerald-800 font-bold">
+                            Auto-fetches current date & direct briefing link
+                          </span>
                         </div>
                       )}
                     </div>
