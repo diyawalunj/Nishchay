@@ -54,7 +54,7 @@ class ErrorBoundary extends Component<Props, State> {
                 onClick={() => {
                   // @ts-expect-error — React 19 types removed setState from Component; runtime is correct
                   this.setState({ hasError: false });
-                  window.location.reload();
+                  window.location.href = window.location.pathname + '?reload=' + Date.now();
                 }}
                 className="w-full px-8 py-4 bg-[#1B4332] text-white rounded-2xl font-black tracking-widest text-xs uppercase shadow-lg shadow-[#1B4332]/20 hover:bg-[#2D6A4F] transition-all cursor-pointer"
               >
@@ -66,8 +66,13 @@ class ErrorBoundary extends Component<Props, State> {
                   try {
                     localStorage.removeItem('nishchay_subject_notes');
                     localStorage.removeItem('nishchay_pyq_papers');
+                    if (typeof window !== 'undefined' && 'caches' in window) {
+                      caches.keys().then((keys) => {
+                        keys.forEach((key) => caches.delete(key));
+                      });
+                    }
                   } catch {}
-                  window.location.reload();
+                  window.location.href = window.location.pathname + '?reload=' + Date.now();
                 }}
                 className="w-full px-6 py-3 bg-gray-50 text-gray-500 hover:text-gray-800 rounded-2xl font-bold text-xs uppercase tracking-wider transition-all border border-gray-200 cursor-pointer"
               >

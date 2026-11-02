@@ -1059,7 +1059,7 @@ app.post('/api/pyq/link', authenticate as any, (req: AuthRequest, res: Response)
 
     const sessionRecord = savePyqFileRecord({
       sessionId,
-      exam: exam || (sessionId.startsWith('nda') ? 'NDA' : 'CDS'),
+      exam: exam || (sessionId.startsWith('nda') ? 'NDA' : sessionId.startsWith('afcat') ? 'AFCAT' : 'CDS'),
       session: session || 'I',
       year: Number(year) || 2026,
       title: title || sessionId,

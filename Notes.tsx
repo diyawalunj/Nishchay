@@ -8,7 +8,7 @@ import {
   Dna, Landmark, Coins, Map as MapIcon, BookOpen, FileCheck, Shield,
   Award, CheckCircle2, ArrowRight,
   Download, Sparkles, Folder, Check, Clock,
-  X, Trash2, RefreshCw, Link as LinkIcon, AlertCircle
+  X, Trash2, RefreshCw, Link as LinkIcon, AlertCircle, Plane
 } from 'lucide-react';
 
 interface Subject {
@@ -27,7 +27,7 @@ interface Subject {
 interface ExamPaper {
   id: string;
   title: string;
-  exam: 'NDA' | 'CDS';
+  exam: 'NDA' | 'CDS' | 'AFCAT';
   session: 'I' | 'II';
   year: number;
 }
@@ -47,7 +47,7 @@ interface PyqSubjectSlot {
 
 interface PyqSessionData {
   sessionId: string;
-  exam: 'NDA' | 'CDS';
+  exam: 'NDA' | 'CDS' | 'AFCAT';
   session: 'I' | 'II';
   year: number;
   title: string;
@@ -56,6 +56,7 @@ interface PyqSessionData {
     gat?: PyqSubjectSlot;
     english?: PyqSubjectSlot;
     gs?: PyqSubjectSlot;
+    afcat?: PyqSubjectSlot;
   };
   updatedAt: string;
 }
@@ -65,7 +66,7 @@ interface UploadModalState {
   mode: 'pyq' | 'subject';
   // PYQ fields
   paper?: ExamPaper;
-  subjectKey?: 'maths' | 'gat' | 'english' | 'gs';
+  subjectKey?: 'maths' | 'gat' | 'english' | 'gs' | 'afcat';
   fileType?: 'paper' | 'key';
   typeLabel?: string;
   // Subject Note fields
@@ -232,28 +233,48 @@ const CDS_PAPERS: ExamPaper[] = YEARS.flatMap((year) => [
   },
 ]);
 
+const AFCAT_PAPERS: ExamPaper[] = YEARS.flatMap((year) => [
+  {
+    id: `afcat-2-${year}`,
+    title: `AFCAT II, ${year}`,
+    exam: 'AFCAT',
+    session: 'II',
+    year,
+  },
+  {
+    id: `afcat-1-${year}`,
+    title: `AFCAT I, ${year}`,
+    exam: 'AFCAT',
+    session: 'I',
+    year,
+  },
+]);
+
 // LocalStorage Keys & Deleted Items Blacklist (prevents resurrection of explicitly deleted items)
 const LOCAL_STORAGE_NOTES_KEY = 'nishchay_subject_notes';
 const LOCAL_STORAGE_PYQ_KEY = 'nishchay_pyq_papers';
 const DELETED_NOTES_KEY = 'nishchay_deleted_notes';
 const DELETED_PYQ_SLOTS_KEY = 'nishchay_deleted_pyq_slots';
 
-const getDeletedNoteIds = (): Set<string> => {
+const getDeletedNoteIds = (): Record<string, boolean> => {
   try {
     const raw = localStorage.getItem(DELETED_NOTES_KEY);
-    if (!raw) return new Set();
+    if (!raw) return {};
     const parsed = JSON.parse(raw);
-    return new Set(Array.isArray(parsed) ? parsed : []);
+    if (!Array.isArray(parsed)) return {};
+    const dict: Record<string, boolean> = {};
+    for (const id of parsed) dict[String(id)] = true;
+    return dict;
   } catch {
-    return new Set();
+    return {};
   }
 };
 
 const markNoteDeleted = (id: string) => {
   try {
-    const set = getDeletedNoteIds();
-    set.add(id);
-    localStorage.setItem(DELETED_NOTES_KEY, JSON.stringify(Array.from(set)));
+    const dict = getDeletedNoteIds();
+    dict[id] = true;
+    localStorage.setItem(DELETED_NOTES_KEY, JSON.stringify(Object.keys(dict)));
   } catch (e) {
     console.warn('Could not mark note deleted:', e);
   }
@@ -261,31 +282,34 @@ const markNoteDeleted = (id: string) => {
 
 const unmarkNoteDeleted = (id: string) => {
   try {
-    const set = getDeletedNoteIds();
-    set.delete(id);
-    localStorage.setItem(DELETED_NOTES_KEY, JSON.stringify(Array.from(set)));
+    const dict = getDeletedNoteIds();
+    delete dict[id];
+    localStorage.setItem(DELETED_NOTES_KEY, JSON.stringify(Object.keys(dict)));
   } catch (e) {
     console.warn('Could not unmark note deleted:', e);
   }
 };
 
-const getDeletedPyqSlots = (): Set<string> => {
+const getDeletedPyqSlots = (): Record<string, boolean> => {
   try {
     const raw = localStorage.getItem(DELETED_PYQ_SLOTS_KEY);
-    if (!raw) return new Set();
+    if (!raw) return {};
     const parsed = JSON.parse(raw);
-    return new Set(Array.isArray(parsed) ? parsed : []);
+    if (!Array.isArray(parsed)) return {};
+    const dict: Record<string, boolean> = {};
+    for (const key of parsed) dict[String(key)] = true;
+    return dict;
   } catch {
-    return new Set();
+    return {};
   }
 };
 
 const markPyqSlotDeleted = (sessionId: string, subjectKey: string, fileType: string) => {
   try {
     const key = `${sessionId}::${subjectKey}::${fileType}`;
-    const set = getDeletedPyqSlots();
-    set.add(key);
-    localStorage.setItem(DELETED_PYQ_SLOTS_KEY, JSON.stringify(Array.from(set)));
+    const dict = getDeletedPyqSlots();
+    dict[key] = true;
+    localStorage.setItem(DELETED_PYQ_SLOTS_KEY, JSON.stringify(Object.keys(dict)));
   } catch (e) {
     console.warn('Could not mark PYQ slot deleted:', e);
   }
@@ -294,9 +318,9 @@ const markPyqSlotDeleted = (sessionId: string, subjectKey: string, fileType: str
 const unmarkPyqSlotDeleted = (sessionId: string, subjectKey: string, fileType: string) => {
   try {
     const key = `${sessionId}::${subjectKey}::${fileType}`;
-    const set = getDeletedPyqSlots();
-    set.delete(key);
-    localStorage.setItem(DELETED_PYQ_SLOTS_KEY, JSON.stringify(Array.from(set)));
+    const dict = getDeletedPyqSlots();
+    delete dict[key];
+    localStorage.setItem(DELETED_PYQ_SLOTS_KEY, JSON.stringify(Object.keys(dict)));
   } catch (e) {
     console.warn('Could not unmark PYQ slot deleted:', e);
   }
@@ -308,7 +332,7 @@ const mergeNotesSafely = (current: any, incoming: any): SubjectNote[] => {
 
   const safeIncoming = Array.isArray(incoming) ? incoming : [];
   for (const n of safeIncoming) {
-    if (n && typeof n === 'object' && n.id && !deleted.has(n.id)) {
+    if (n && typeof n === 'object' && n.id && !deleted[n.id]) {
       dict[n.id] = {
         id: String(n.id),
         subjectId: String(n.subjectId || '').toLowerCase(),
@@ -326,7 +350,7 @@ const mergeNotesSafely = (current: any, incoming: any): SubjectNote[] => {
 
   const safeCurrent = Array.isArray(current) ? current : [];
   for (const n of safeCurrent) {
-    if (n && typeof n === 'object' && n.id && !deleted.has(n.id) && !dict[n.id]) {
+    if (n && typeof n === 'object' && n.id && !deleted[n.id] && !dict[n.id]) {
       dict[n.id] = {
         id: String(n.id),
         subjectId: String(n.subjectId || '').toLowerCase(),
@@ -357,7 +381,20 @@ const mergePyqSessionsSafely = (
   const safeCurrent = (current && typeof current === 'object' && !Array.isArray(current)) ? current : {};
   const safeIncoming = (incoming && typeof incoming === 'object' && !Array.isArray(incoming)) ? incoming : {};
 
-  const allSessionIds = Array.from(new Set([...Object.keys(safeCurrent), ...Object.keys(safeIncoming)]));
+  const allSessionIds: string[] = [];
+  const seenIds: Record<string, boolean> = {};
+  for (const k of Object.keys(safeCurrent)) {
+    if (!seenIds[k]) {
+      seenIds[k] = true;
+      allSessionIds.push(k);
+    }
+  }
+  for (const k of Object.keys(safeIncoming)) {
+    if (!seenIds[k]) {
+      seenIds[k] = true;
+      allSessionIds.push(k);
+    }
+  }
 
   for (const sessionId of allSessionIds) {
     const curSession = safeCurrent[sessionId];
@@ -367,7 +404,7 @@ const mergePyqSessionsSafely = (
 
     const sessionObj: PyqSessionData = {
       sessionId: String(base.sessionId || sessionId),
-      exam: base.exam || (sessionId.startsWith('nda') ? 'NDA' : 'CDS'),
+      exam: base.exam || (sessionId.startsWith('nda') ? 'NDA' : sessionId.startsWith('afcat') ? 'AFCAT' : 'CDS'),
       session: base.session || 'I',
       year: Number(base.year) || 2026,
       title: String(base.title || sessionId),
@@ -375,7 +412,7 @@ const mergePyqSessionsSafely = (
       updatedAt: base.updatedAt || new Date().toISOString(),
     };
 
-    const subjectKeys: ('maths' | 'gat' | 'english' | 'gs')[] = ['maths', 'gat', 'english', 'gs'];
+    const subjectKeys: ('maths' | 'gat' | 'english' | 'gs' | 'afcat')[] = ['maths', 'gat', 'english', 'gs', 'afcat'];
 
     for (const subKey of subjectKeys) {
       const curSlot = curSession?.subjects?.[subKey];
@@ -384,7 +421,7 @@ const mergePyqSessionsSafely = (
       const slot: { paper?: PyqFileItem; key?: PyqFileItem } = {};
 
       const paperSlotKey = `${sessionId}::${subKey}::paper`;
-      if (!deletedSlots.has(paperSlotKey)) {
+      if (!deletedSlots[paperSlotKey]) {
         const item = incSlot?.paper || curSlot?.paper;
         if (item && item.url) {
           slot.paper = {
@@ -398,7 +435,7 @@ const mergePyqSessionsSafely = (
       }
 
       const keySlotKey = `${sessionId}::${subKey}::key`;
-      if (!deletedSlots.has(keySlotKey)) {
+      if (!deletedSlots[keySlotKey]) {
         const item = incSlot?.key || curSlot?.key;
         if (item && item.url) {
           slot.key = {
@@ -425,7 +462,7 @@ const mergePyqSessionsSafely = (
 export default function Notes() {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedSubject, setSelectedSubject] = useState<Subject | null>(null);
-  const [selectedExam, setSelectedExam] = useState<'NDA' | 'CDS' | null>(null);
+  const [selectedExam, setSelectedExam] = useState<'NDA' | 'CDS' | 'AFCAT' | null>(null);
   const [selectedPaper, setSelectedPaper] = useState<ExamPaper | null>(null);
   const [paperSearch, setPaperSearch] = useState('');
   const [selectedYearFilter, setSelectedYearFilter] = useState<number | 'All'>('All');
@@ -548,7 +585,7 @@ export default function Notes() {
 
   const openUploadModal = (
     paper: ExamPaper,
-    subjectKey: 'maths' | 'gat' | 'english' | 'gs',
+    subjectKey: 'maths' | 'gat' | 'english' | 'gs' | 'afcat',
     subjectTitle: string,
     fileType: 'paper' | 'key'
   ) => {
@@ -761,7 +798,7 @@ export default function Notes() {
   // Delete file
   const handleDeleteFile = async (
     sessionId: string,
-    subjectKey: 'maths' | 'gat' | 'english' | 'gs',
+    subjectKey: 'maths' | 'gat' | 'english' | 'gs' | 'afcat',
     fileType: 'paper' | 'key',
     label: string
   ) => {
@@ -810,22 +847,33 @@ export default function Notes() {
   // Helper to count uploaded files for a session
   const getSessionUploadCount = (paper: ExamPaper) => {
     const session = pyqSessions?.[paper.id];
-    if (!session || !session.subjects) return { count: 0, total: paper.exam === 'NDA' ? 4 : 6 };
-    let count = 0;
-    const subjects = session.subjects;
+    const subjects = session?.subjects;
     if (paper.exam === 'NDA') {
-      if (subjects.maths?.paper) count++;
-      if (subjects.maths?.key) count++;
-      if (subjects.gat?.paper) count++;
-      if (subjects.gat?.key) count++;
+      let count = 0;
+      if (subjects?.maths?.paper) count++;
+      if (subjects?.maths?.key) count++;
+      if (subjects?.gat?.paper) count++;
+      if (subjects?.gat?.key) count++;
       return { count, total: 4 };
+    } else if (paper.exam === 'AFCAT') {
+      let count = 0;
+      if (subjects?.afcat?.paper) count++;
+      if (subjects?.afcat?.key) count++;
+      if (subjects?.english?.paper) count++;
+      if (subjects?.english?.key) count++;
+      if (subjects?.gs?.paper) count++;
+      if (subjects?.gs?.key) count++;
+      if (subjects?.maths?.paper) count++;
+      if (subjects?.maths?.key) count++;
+      return { count, total: 8 };
     } else {
-      if (subjects.english?.paper) count++;
-      if (subjects.english?.key) count++;
-      if (subjects.gs?.paper) count++;
-      if (subjects.gs?.key) count++;
-      if (subjects.maths?.paper) count++;
-      if (subjects.maths?.key) count++;
+      let count = 0;
+      if (subjects?.english?.paper) count++;
+      if (subjects?.english?.key) count++;
+      if (subjects?.gs?.paper) count++;
+      if (subjects?.gs?.key) count++;
+      if (subjects?.maths?.paper) count++;
+      if (subjects?.maths?.key) count++;
       return { count, total: 6 };
     }
   };
@@ -963,6 +1011,8 @@ export default function Notes() {
   // ─────────────────────────────────────────────────────────────
   if (selectedPaper) {
     const isNda = selectedPaper.exam === 'NDA';
+    const isAfcat = selectedPaper.exam === 'AFCAT';
+    const isCds = selectedPaper.exam === 'CDS';
     const sessionRecord = pyqSessions?.[selectedPaper.id];
 
     // Subjects configuration
@@ -984,6 +1034,45 @@ export default function Notes() {
         desc: '150 MCQs • 600 Marks • Duration: 2.5 Hours',
         icon: BookOpen,
         color: 'text-[#1B3A5B]',
+      },
+    ];
+
+    const afcatSubjects = [
+      {
+        key: 'afcat' as const,
+        title: 'AFCAT Paper',
+        fullName: 'AFCAT Question Paper',
+        code: '100 MCQs • 300 MARKS • 2 HOURS',
+        desc: 'Complete Official Question Paper with Answer Key',
+        icon: Plane,
+        color: 'text-[#0284C7]',
+      },
+      {
+        key: 'english' as const,
+        title: 'English',
+        fullName: 'Verbal Ability in English',
+        code: 'SECTION A • 30 MCQs',
+        desc: 'Comprehension, Grammar, Vocabulary & Error Detection',
+        icon: Book,
+        color: 'text-[#1B3A5B]',
+      },
+      {
+        key: 'gs' as const,
+        title: 'General Awareness',
+        fullName: 'General Awareness (GA / GK)',
+        code: 'SECTION B • 25 MCQs',
+        desc: 'Defence, Current Affairs, History, Geography, Polity & Sports',
+        icon: Globe,
+        color: 'text-[#2D5A27]',
+      },
+      {
+        key: 'maths' as const,
+        title: 'Maths & Reasoning',
+        fullName: 'Numerical Ability & Military Reasoning',
+        code: 'SECTION C & D • 45 MCQs',
+        desc: 'Numerical Ability, Spatial Ability & Non-Verbal Aptitude',
+        icon: Calculator,
+        color: 'text-[#B57C00]',
       },
     ];
 
@@ -1017,7 +1106,7 @@ export default function Notes() {
       },
     ];
 
-    const currentSubjects = isNda ? ndaSubjects : cdsSubjects;
+    const currentSubjects = isNda ? ndaSubjects : isAfcat ? afcatSubjects : cdsSubjects;
 
     return (
       <div className="min-h-screen bg-[#F8F9FA] pt-32 pb-24">
@@ -1073,6 +1162,8 @@ export default function Notes() {
             className={`rounded-[2.5rem] p-8 md:p-12 shadow-2xl relative overflow-hidden mb-10 border text-white ${
               isNda
                 ? 'bg-gradient-to-br from-[#991B1B] via-[#C52222] to-[#6E1010] border-rose-400/30 shadow-[#991B1B]/25'
+                : isAfcat
+                ? 'bg-gradient-to-br from-[#075985] via-[#0284C7] to-[#0369A1] border-sky-400/30 shadow-[#0284C7]/25'
                 : 'bg-gradient-to-br from-[#B45309] via-[#D97706] to-[#78350F] border-amber-400/25 shadow-[#B45309]/25'
             }`}
           >
@@ -1083,7 +1174,7 @@ export default function Notes() {
 
             {/* Giant Watermark Background Icon */}
             <div className="absolute -right-8 -bottom-12 opacity-[0.07] pointer-events-none text-white">
-              {isNda ? <Shield size={280} /> : <Award size={280} />}
+              {isNda ? <Shield size={280} /> : isAfcat ? <Plane size={280} /> : <Award size={280} />}
             </div>
 
             <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6 pb-8 border-b border-white/15">
@@ -1091,6 +1182,8 @@ export default function Notes() {
                 <div className="w-20 h-20 md:w-24 md:h-24 bg-white/15 backdrop-blur-xl rounded-3xl flex items-center justify-center text-white border border-white/25 shadow-2xl ring-1 ring-white/20 shrink-0">
                   {isNda ? (
                     <Shield size={44} className="text-white drop-shadow-md" />
+                  ) : isAfcat ? (
+                    <Plane size={44} className="text-sky-200 drop-shadow-md" />
                   ) : (
                     <Award size={44} className="text-amber-200 drop-shadow-md" />
                   )}
@@ -1303,7 +1396,8 @@ export default function Notes() {
   // ─────────────────────────────────────────────────────────────
   if (selectedExam) {
     const isNda = selectedExam === 'NDA';
-    const paperList = isNda ? NDA_PAPERS : CDS_PAPERS;
+    const isAfcat = selectedExam === 'AFCAT';
+    const paperList = isNda ? NDA_PAPERS : isAfcat ? AFCAT_PAPERS : CDS_PAPERS;
 
     // Filter papers by year or search query
     const filteredPapers = paperList.filter((paper) => {
@@ -1358,6 +1452,8 @@ export default function Notes() {
             className={`rounded-[2.5rem] p-8 md:p-12 shadow-2xl relative overflow-hidden mb-10 border text-white ${
               isNda
                 ? 'bg-gradient-to-br from-[#991B1B] via-[#C52222] to-[#6E1010] border-rose-400/30 shadow-[#991B1B]/25'
+                : isAfcat
+                ? 'bg-gradient-to-br from-[#075985] via-[#0284C7] to-[#0369A1] border-sky-400/30 shadow-[#0284C7]/25'
                 : 'bg-gradient-to-br from-[#B45309] via-[#D97706] to-[#78350F] border-amber-400/25 shadow-[#B45309]/25'
             }`}
           >
@@ -1368,7 +1464,7 @@ export default function Notes() {
 
             {/* Giant Watermark Background Icon */}
             <div className="absolute -right-8 -bottom-12 opacity-[0.07] pointer-events-none text-white">
-              {isNda ? <Shield size={280} /> : <Award size={280} />}
+              {isNda ? <Shield size={280} /> : isAfcat ? <Plane size={280} /> : <Award size={280} />}
             </div>
 
             <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6 pb-8 border-b border-white/15">
@@ -1376,13 +1472,15 @@ export default function Notes() {
                 <div className="w-20 h-20 md:w-24 md:h-24 bg-white/15 backdrop-blur-xl rounded-3xl flex items-center justify-center text-white border border-white/25 shadow-2xl ring-1 ring-white/20 shrink-0">
                   {isNda ? (
                     <Shield size={44} className="text-white drop-shadow-md" />
+                  ) : isAfcat ? (
+                    <Plane size={44} className="text-sky-200 drop-shadow-md" />
                   ) : (
                     <Award size={44} className="text-amber-200 drop-shadow-md" />
                   )}
                 </div>
                 <div>
                   <span className="px-3.5 py-1.5 bg-white/15 backdrop-blur-md text-white border border-white/25 text-[10px] font-black tracking-widest uppercase rounded-full inline-flex items-center gap-1.5 mb-2 shadow-xs">
-                    <Sparkles size={11} className={isNda ? 'text-amber-300' : 'text-amber-200'} />
+                    <Sparkles size={11} className={isNda ? 'text-amber-300' : isAfcat ? 'text-sky-200' : 'text-amber-200'} />
                     EXAM SESSIONS • 2021 – 2026
                   </span>
                   <h1 className="text-3xl md:text-5xl font-black text-white tracking-tight drop-shadow-sm">
@@ -1391,6 +1489,8 @@ export default function Notes() {
                   <p className="text-white/80 font-medium text-sm md:text-base mt-1.5 max-w-2xl">
                     {isNda
                       ? 'National Defence Academy (GAT & Maths Papers with Official Answer Keys)'
+                      : isAfcat
+                      ? 'Air Force Common Admission Test (Complete Papers & Section Keys)'
                       : 'Combined Defence Services (English, GS & Maths Papers with Official Answer Keys)'}
                   </p>
                 </div>
@@ -1449,6 +1549,8 @@ export default function Notes() {
                   className={`bg-white rounded-[2rem] p-6 md:p-7 shadow-[0_10px_30px_rgba(0,0,0,0.04)] hover:shadow-[0_22px_45px_rgba(0,0,0,0.1)] border transition-all duration-300 flex flex-col justify-between group cursor-pointer relative overflow-hidden ${
                     isNda
                       ? 'border-gray-100 hover:border-rose-200/80 hover:shadow-rose-900/5'
+                      : isAfcat
+                      ? 'border-gray-100 hover:border-sky-200/80 hover:shadow-sky-900/5'
                       : 'border-gray-100 hover:border-amber-200/80 hover:shadow-amber-900/5'
                   }`}
                 >
@@ -1509,17 +1611,19 @@ export default function Notes() {
                         className={`w-11 h-11 rounded-2xl flex items-center justify-center border shadow-xs group-hover:scale-105 transition-transform duration-300 shrink-0 ${
                           isNda
                             ? 'bg-rose-50 text-[#991B1B] border-rose-200/80'
+                            : isAfcat
+                            ? 'bg-sky-50 text-[#0284C7] border-sky-200/80'
                             : 'bg-amber-50 text-[#B45309] border-amber-200/80'
                         }`}
                       >
-                        {isNda ? <Shield size={20} /> : <Award size={20} />}
+                        {isNda ? <Shield size={20} /> : isAfcat ? <Plane size={20} /> : <Award size={20} />}
                       </div>
                       <div>
                         <h3 className="text-xl md:text-2xl font-black text-gray-900 tracking-tight group-hover:text-black transition-colors leading-tight">
                           {paper.title}
                         </h3>
                         <p className="text-[11px] font-bold text-gray-400 tracking-wide uppercase">
-                          UPSC {paper.exam} {paper.year} • Session {paper.session}
+                          {isAfcat ? 'IAF' : 'UPSC'} {paper.exam} {paper.year} • Session {paper.session}
                         </p>
                       </div>
                     </div>
@@ -1577,6 +1681,128 @@ export default function Notes() {
                                 </span>
                               )}
                               {sessionRecord?.subjects?.gat?.key ? (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-100 text-emerald-800 text-[10px] font-black border border-emerald-200 shadow-2xs">
+                                  <Check size={10} className="text-emerald-700 stroke-[3]" /> Key
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-gray-100 text-gray-400 text-[10px] font-bold border border-gray-200/80">
+                                  <Clock size={9} className="text-gray-300" /> Key
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </>
+                      ) : isAfcat ? (
+                        <>
+                          {/* AFCAT Complete Paper */}
+                          <div className="flex items-center justify-between py-1.5 px-2 rounded-xl hover:bg-white/80 transition-colors border-b border-gray-100/80">
+                            <div className="flex items-center gap-2">
+                              <div className="w-5 h-5 rounded-lg bg-sky-50 text-sky-600 flex items-center justify-center">
+                                <Plane size={11} />
+                              </div>
+                              <span className="font-extrabold text-xs text-gray-800">AFCAT QP (Complete)</span>
+                            </div>
+                            <div className="flex items-center gap-1.5">
+                              {sessionRecord?.subjects?.afcat?.paper ? (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-100 text-emerald-800 text-[10px] font-black border border-emerald-200 shadow-2xs">
+                                  <Check size={10} className="text-emerald-700 stroke-[3]" /> QP
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-gray-100 text-gray-400 text-[10px] font-bold border border-gray-200/80">
+                                  <Clock size={9} className="text-gray-300" /> QP
+                                </span>
+                              )}
+                              {sessionRecord?.subjects?.afcat?.key ? (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-100 text-emerald-800 text-[10px] font-black border border-emerald-200 shadow-2xs">
+                                  <Check size={10} className="text-emerald-700 stroke-[3]" /> Key
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-gray-100 text-gray-400 text-[10px] font-bold border border-gray-200/80">
+                                  <Clock size={9} className="text-gray-300" /> Key
+                                </span>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Verbal Ability in English */}
+                          <div className="flex items-center justify-between py-1.5 px-2 rounded-xl hover:bg-white/80 transition-colors border-b border-gray-100/80">
+                            <div className="flex items-center gap-2">
+                              <div className="w-5 h-5 rounded-lg bg-purple-50 text-purple-600 flex items-center justify-center">
+                                <BookOpen size={11} />
+                              </div>
+                              <span className="font-extrabold text-xs text-gray-800">English</span>
+                            </div>
+                            <div className="flex items-center gap-1.5">
+                              {sessionRecord?.subjects?.english?.paper ? (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-100 text-emerald-800 text-[10px] font-black border border-emerald-200 shadow-2xs">
+                                  <Check size={10} className="text-emerald-700 stroke-[3]" /> QP
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-gray-100 text-gray-400 text-[10px] font-bold border border-gray-200/80">
+                                  <Clock size={9} className="text-gray-300" /> QP
+                                </span>
+                              )}
+                              {sessionRecord?.subjects?.english?.key ? (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-100 text-emerald-800 text-[10px] font-black border border-emerald-200 shadow-2xs">
+                                  <Check size={10} className="text-emerald-700 stroke-[3]" /> Key
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-gray-100 text-gray-400 text-[10px] font-bold border border-gray-200/80">
+                                  <Clock size={9} className="text-gray-300" /> Key
+                                </span>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* General Awareness */}
+                          <div className="flex items-center justify-between py-1.5 px-2 rounded-xl hover:bg-white/80 transition-colors border-b border-gray-100/80">
+                            <div className="flex items-center gap-2">
+                              <div className="w-5 h-5 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center">
+                                <Globe size={11} />
+                              </div>
+                              <span className="font-extrabold text-xs text-gray-800">General Awareness</span>
+                            </div>
+                            <div className="flex items-center gap-1.5">
+                              {sessionRecord?.subjects?.gs?.paper ? (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-100 text-emerald-800 text-[10px] font-black border border-emerald-200 shadow-2xs">
+                                  <Check size={10} className="text-emerald-700 stroke-[3]" /> QP
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-gray-100 text-gray-400 text-[10px] font-bold border border-gray-200/80">
+                                  <Clock size={9} className="text-gray-300" /> QP
+                                </span>
+                              )}
+                              {sessionRecord?.subjects?.gs?.key ? (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-100 text-emerald-800 text-[10px] font-black border border-emerald-200 shadow-2xs">
+                                  <Check size={10} className="text-emerald-700 stroke-[3]" /> Key
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-gray-100 text-gray-400 text-[10px] font-bold border border-gray-200/80">
+                                  <Clock size={9} className="text-gray-300" /> Key
+                                </span>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Numerical Ability & Reasoning */}
+                          <div className="flex items-center justify-between py-1.5 px-2 rounded-xl hover:bg-white/80 transition-colors">
+                            <div className="flex items-center gap-2">
+                              <div className="w-5 h-5 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center">
+                                <Calculator size={11} />
+                              </div>
+                              <span className="font-extrabold text-xs text-gray-800">Maths & Reasoning</span>
+                            </div>
+                            <div className="flex items-center gap-1.5">
+                              {sessionRecord?.subjects?.maths?.paper ? (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-100 text-emerald-800 text-[10px] font-black border border-emerald-200 shadow-2xs">
+                                  <Check size={10} className="text-emerald-700 stroke-[3]" /> QP
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-gray-100 text-gray-400 text-[10px] font-bold border border-gray-200/80">
+                                  <Clock size={9} className="text-gray-300" /> QP
+                                </span>
+                              )}
+                              {sessionRecord?.subjects?.maths?.key ? (
                                 <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-100 text-emerald-800 text-[10px] font-black border border-emerald-200 shadow-2xs">
                                   <Check size={10} className="text-emerald-700 stroke-[3]" /> Key
                                 </span>
@@ -1775,12 +2001,12 @@ export default function Notes() {
             </div>
 
             <p className="relative z-10 text-white/80 mt-6 text-sm md:text-base font-medium max-w-3xl leading-relaxed">
-              Select an examination below to open session folders from 2021 to 2026. You can upload and download Question Papers and Answer Keys for Maths and GAT (NDA) or English, GS, and Maths (CDS).
+              Select an examination below to open session folders from 2021 to 2026. You can upload and download Question Papers and Answer Keys for Maths and GAT (NDA), English, GS, and Maths (CDS), or complete AFCAT papers and sections.
             </p>
           </div>
 
-          {/* The 2 Sub-Cards: 1st "NDA", 2nd "CDS" */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 md:gap-10">
+          {/* The 3 Sub-Cards: NDA, CDS & AFCAT */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 md:gap-8">
             {/* 1st Card: NDA (Cadet Crimson / Heroic Ruby Red) */}
             <motion.div
               initial={{ opacity: 0, y: 20 }}
@@ -1865,6 +2091,50 @@ export default function Notes() {
                 <span className="text-white/80 text-xs font-black tracking-[0.2em] uppercase">English, GS & Maths</span>
                 <button className="px-8 py-3.5 bg-white text-[#B45309] rounded-2xl text-xs font-black tracking-widest uppercase hover:bg-amber-50 transition-all duration-300 shadow-lg flex items-center gap-2 group-hover:scale-105">
                   Open CDS <ArrowRight size={14} />
+                </button>
+              </div>
+            </motion.div>
+
+            {/* 3rd Card: AFCAT (Air Force Sky Blue / Deep Oceanic Blue) */}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.3 }}
+              whileHover={{ y: -12 }}
+              onClick={() => setSelectedExam('AFCAT')}
+              className="bg-gradient-to-br from-[#075985] via-[#0284C7] to-[#0369A1] border border-sky-400/35 p-8 md:p-12 rounded-[2.5rem] md:rounded-[3rem] text-white transition-all duration-500 flex flex-col justify-between group cursor-pointer shadow-2xl shadow-[#0284C7]/30 hover:shadow-[#0284C7]/50 relative overflow-hidden min-h-[380px]"
+            >
+              {/* Ambient Sheen & Glow Orbs */}
+              <div className="absolute inset-x-0 top-0 h-32 bg-gradient-to-b from-white/20 via-white/5 to-transparent pointer-events-none" />
+              <div className="absolute -top-12 -right-12 w-48 h-48 rounded-full bg-white/15 blur-2xl pointer-events-none" />
+
+              <div className="absolute -right-8 -bottom-8 opacity-[0.08] group-hover:opacity-[0.18] transition-opacity duration-500">
+                <Plane size={220} />
+              </div>
+
+              <div className="relative z-10">
+                <div className="flex items-center justify-between mb-8">
+                  <div className="w-20 h-20 bg-white/20 backdrop-blur-xl rounded-3xl flex items-center justify-center premium-zoom group-hover:scale-110 group-hover:rotate-6 border border-white/30 shadow-xl ring-1 ring-white/25">
+                    <Plane size={40} className="text-white drop-shadow-md" />
+                  </div>
+                  <span className="px-4 py-1.5 bg-white/20 backdrop-blur-md border border-white/30 rounded-full text-white text-[10px] font-black tracking-widest uppercase shadow-xs">
+                    12 Sessions
+                  </span>
+                </div>
+
+                <h3 className="text-4xl md:text-5xl font-black mb-2 tracking-tighter drop-shadow-sm">AFCAT</h3>
+                <p className="text-white/95 font-bold text-sm tracking-wide mb-3">
+                  Air Force Common Admission Test
+                </p>
+                <p className="text-white/80 text-xs font-medium leading-relaxed max-w-md mb-8">
+                  Session papers from 2021 to 2026. Manage and download complete AFCAT Question Papers and Section Keys (English, GA, Maths & Reasoning).
+                </p>
+              </div>
+
+              <div className="relative z-10 flex items-center justify-between pt-6 border-t border-white/20">
+                <span className="text-white/90 text-xs font-black tracking-[0.2em] uppercase">Paper, English, GA, Maths</span>
+                <button className="px-8 py-3.5 bg-white text-[#0284C7] rounded-2xl text-xs font-black tracking-widest uppercase hover:bg-sky-50 transition-all duration-300 shadow-lg flex items-center gap-2 group-hover:scale-105">
+                  Open AFCAT <ArrowRight size={14} />
                 </button>
               </div>
             </motion.div>
@@ -2012,7 +2282,7 @@ export default function Notes() {
     const matchesDesc = subject.description?.toLowerCase().includes(q) ?? false;
     const matchesPyq =
       subject.id === 'pyq-papers' &&
-      ('nda'.includes(q) || 'cds'.includes(q) || 'pyq'.includes(q) || 'paper'.includes(q) || 'previous'.includes(q));
+      ('nda'.includes(q) || 'cds'.includes(q) || 'afcat'.includes(q) || 'pyq'.includes(q) || 'paper'.includes(q) || 'previous'.includes(q) || q.includes('afcat') || q.includes('nda') || q.includes('cds'));
     return matchesTitle || matchesCount || matchesDesc || matchesPyq;
   });
 
@@ -2063,7 +2333,7 @@ export default function Notes() {
             <Search className="absolute left-6 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-[#1B4332] transition-colors" size={24} />
             <input
               type="text"
-              placeholder="Search subjects, PYQ papers, NDA, CDS..."
+              placeholder="Search subjects, PYQ papers, NDA, CDS, AFCAT..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full pl-16 pr-6 py-6 bg-white border border-gray-100 rounded-[2rem] focus:border-[#1B4332] focus:ring-0 transition-all outline-none text-gray-700 font-bold text-lg shadow-[0_20px_50px_rgba(0,0,0,0.03)] placeholder:text-gray-300"
@@ -2079,7 +2349,7 @@ export default function Notes() {
             ).length;
             const subtitleText =
               subject.id === 'pyq-papers'
-                ? 'NDA & CDS PYQ Archive'
+                ? 'NDA, CDS & AFCAT Archive'
                 : count > 0
                 ? `${count} ${count === 1 ? 'Study Note' : 'Study Notes'}`
                 : 'Curated Study Vault';

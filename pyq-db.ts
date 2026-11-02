@@ -16,8 +16,8 @@ export interface PyqSubjectSlot {
 }
 
 export interface PyqSessionData {
-  sessionId: string; // e.g. "nda-2-2026"
-  exam: 'NDA' | 'CDS';
+  sessionId: string; // e.g. "nda-2-2026", "afcat-1-2025"
+  exam: 'NDA' | 'CDS' | 'AFCAT';
   session: 'I' | 'II';
   year: number;
   title: string;
@@ -26,6 +26,7 @@ export interface PyqSessionData {
     gat?: PyqSubjectSlot;
     english?: PyqSubjectSlot;
     gs?: PyqSubjectSlot;
+    afcat?: PyqSubjectSlot;
   };
   updatedAt: string;
 }
@@ -93,11 +94,11 @@ function persistPyqData(data: Record<string, PyqSessionData>) {
 
 export function savePyqFileRecord(params: {
   sessionId: string;
-  exam: 'NDA' | 'CDS';
+  exam: 'NDA' | 'CDS' | 'AFCAT';
   session: 'I' | 'II';
   year: number;
   title: string;
-  subjectKey: 'maths' | 'gat' | 'english' | 'gs';
+  subjectKey: 'maths' | 'gat' | 'english' | 'gs' | 'afcat';
   fileType: 'paper' | 'key';
   url: string;
   driveFileId?: string;
@@ -145,7 +146,7 @@ export function savePyqFileRecord(params: {
 
 export function deletePyqFileRecord(params: {
   sessionId: string;
-  subjectKey: 'maths' | 'gat' | 'english' | 'gs';
+  subjectKey: 'maths' | 'gat' | 'english' | 'gs' | 'afcat';
   fileType: 'paper' | 'key';
 }): PyqSessionData | null {
   const all = getAllPyqSessions();
