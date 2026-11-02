@@ -4,12 +4,21 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Upload, Edit3, Trash2, Shield, Calendar, Search, AlertCircle,
-  CheckCircle2, Clock, Lock, RefreshCw, Eye, ArrowLeft, History,
-  Save, X, FileText, Check, RotateCcw
+  CheckCircle2, Clock, Lock, RefreshCw, Eye, ArrowLeft, History as HistoryIcon,
+  Save, X, FileText, Check, RotateCcw, Download, Sparkles, ChevronDown, ChevronUp
 } from 'lucide-react';
 import type { NIntelStory, NIntelAuditLog } from './types';
 import { auth, onAuthStateChanged, checkIfAdmin, type User } from './firebase';
 import { formatDisplayDate, getLocalTodayDate } from './n-intel-whatsapp';
+import { parseDailyNewsPost } from './n-intel-parser';
+import {
+  saveLocalStories,
+  saveLocalBatches,
+  mergeStoriesWithLocal,
+  syncLocalWithServer,
+  getLocalStories,
+  getLocalBatches
+} from './n-intel-storage';
 
 export default function NIntelAdmin() {
   const navigate = useNavigate();
@@ -32,6 +41,16 @@ export default function NIntelAdmin() {
     message: string;
     details?: string[];
   } | null>(null);
+
+  // Live Client-side Parsing State
+  const [showLivePreview, setShowLivePreview] = useState(false);
+  const [backupMessage, setBackupMessage] = useState<string | null>(null);
+
+  // Instant real-time parsing preview
+  const liveParseResult = useMemo(() => {
+    if (!rawText.trim()) return null;
+    return parseDailyNewsPost(rawText, publishDate || getLocalTodayDate());
+  }, [rawText, publishDate]);
 
   // Management State
   const [stories, setStories] = useState<NIntelStory[]>([]);
@@ -94,6 +113,11 @@ export default function NIntelAdmin() {
       const isAdm = checkIfAdmin(currentUser);
       setIsAdmin(isAdm);
       setLoadingAuth(false);
+      if (isAdm && currentUser) {
+        currentUser.getIdToken().then(token => {
+          if (token) syncLocalWithServer(token).catch(() => {});
+        }).catch(() => {});
+      }
     });
     return () => unsubscribe();
   }, []);
@@ -135,14 +159,8 @@ export default function NIntelAdmin() {
       const res = await fetch(url, { headers });
       const data = await res.json();
       if (data.success) {
-        const sorted = (data.stories || []).sort((a: NIntelStory, b: NIntelStory) => {
-          if (a.date !== b.date) return b.date.localeCompare(a.date);
-          const timeA = a.createdAt || '';
-          const timeB = b.createdAt || '';
-          if (timeA && timeB && timeA !== timeB) return timeB.localeCompare(timeA);
-          return (b.itemNumber || 0) - (a.itemNumber || 0);
-        });
-        setStories(sorted);
+        const merged = mergeStoriesWithLocal(data.stories || [], filterDate || undefined);
+        setStories(merged);
       }
     } catch (err) {
       console.error('Error fetching stories for management:', err);
@@ -228,12 +246,25 @@ export default function NIntelAdmin() {
           message: data.error || 'Failed to publish news post.'
         });
       } else {
+        if (Array.isArray(data.stories) && data.stories.length > 0) {
+          saveLocalStories(data.stories);
+          if (data.batch) {
+            saveLocalBatches([data.batch]);
+          }
+          setStories(prev => {
+            const map = new Map<string, NIntelStory>();
+            for (const s of data.stories) map.set(s.id, s);
+            for (const s of prev) if (!map.has(s.id)) map.set(s.id, s);
+            return Array.from(map.values());
+          });
+        }
         setPublishFeedback({
           type: 'success',
           message: data.message || `Successfully published ${data.count} stories!`,
           details: data.categories?.map((c: string) => `${c}`)
         });
         setRawText('');
+        setShowLivePreview(false);
       }
     } catch (err: any) {
       console.error('Publish error:', err);
@@ -244,6 +275,65 @@ export default function NIntelAdmin() {
     } finally {
       setIsPublishing(false);
     }
+  };
+
+  const handleExportBackup = () => {
+    try {
+      const allStories = getLocalStories();
+      const allBatches = getLocalBatches();
+      const backupData = {
+        exportedAt: new Date().toISOString(),
+        stories: allStories,
+        batches: allBatches
+      };
+      const blob = new Blob([JSON.stringify(backupData, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `nishchay-nintel-backup-${getLocalTodayDate()}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      setBackupMessage('✅ Backup downloaded successfully!');
+      setTimeout(() => setBackupMessage(null), 3000);
+    } catch (e: any) {
+      alert(`Export failed: ${e.message}`);
+    }
+  };
+
+  const handleImportBackup = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      try {
+        const text = event.target?.result as string;
+        const parsed = JSON.parse(text);
+        if (Array.isArray(parsed.stories)) {
+          saveLocalStories(parsed.stories);
+          if (Array.isArray(parsed.batches)) {
+            saveLocalBatches(parsed.batches);
+          }
+          setStories(prev => {
+            const map = new Map<string, NIntelStory>();
+            for (const s of parsed.stories) map.set(s.id, s);
+            for (const s of prev) if (!map.has(s.id)) map.set(s.id, s);
+            return Array.from(map.values());
+          });
+          const token = await getAuthToken();
+          if (token) {
+            await syncLocalWithServer(token);
+          }
+          setBackupMessage(`✅ Restored ${parsed.stories.length} stories from backup!`);
+          setTimeout(() => setBackupMessage(null), 4000);
+        } else {
+          alert('Invalid backup file: missing stories array.');
+        }
+      } catch (err: any) {
+        alert(`Restore failed: ${err.message}`);
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
   };
 
   // Open Edit Modal
@@ -530,7 +620,7 @@ export default function NIntelAdmin() {
                 : 'border-transparent text-gray-400 hover:text-gray-700'
             }`}
           >
-            <History size={16} />
+            <HistoryIcon size={16} />
             <span>Audit History</span>
           </button>
         </div>
@@ -591,6 +681,62 @@ export default function NIntelAdmin() {
                     className="w-full p-4 bg-gray-50 border border-gray-200 rounded-2xl text-xs sm:text-sm font-mono text-gray-800 placeholder-gray-400 focus:outline-none focus:border-[#1B4332] focus:bg-white transition-all leading-relaxed"
                   />
                 </div>
+
+                {/* Live Parser Dynamic Feedback */}
+                {liveParseResult && liveParseResult.success && (
+                  <div className="mb-6 p-4 bg-emerald-50/90 border border-emerald-200 rounded-2xl">
+                    <div className="flex flex-wrap items-center justify-between gap-3 mb-2">
+                      <div className="flex items-center gap-2">
+                        <Sparkles size={16} className="text-emerald-700" />
+                        <span className="text-xs font-black text-emerald-900 tracking-wide uppercase">
+                          Live Parser: Ready to Publish ({liveParseResult.totalStories} Updates)
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setShowLivePreview(!showLivePreview)}
+                        className="inline-flex items-center gap-1.5 px-3 py-1 bg-white border border-emerald-300 text-emerald-800 rounded-lg text-xs font-bold hover:bg-emerald-100/60 transition-colors"
+                      >
+                        <span>{showLivePreview ? 'Hide Preview' : 'Preview Extracted Stories'}</span>
+                        {showLivePreview ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                      </button>
+                    </div>
+
+                    <div className="flex flex-wrap gap-1.5 mb-2">
+                      {liveParseResult.categories.map((c, i) => (
+                        <span key={i} className="px-2.5 py-0.5 bg-white text-emerald-800 border border-emerald-200 rounded-full text-[11px] font-bold">
+                          {c}
+                        </span>
+                      ))}
+                    </div>
+
+                    {showLivePreview && (
+                      <div className="mt-3 pt-3 border-t border-emerald-200 max-h-72 overflow-y-auto space-y-2 pr-1">
+                        {liveParseResult.stories.map((st, sIdx) => (
+                          <div key={sIdx} className="p-2.5 bg-white rounded-xl border border-emerald-100 text-xs">
+                            <div className="flex items-center gap-2 mb-1">
+                              <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded text-[10px] font-black uppercase">
+                                {st.category}
+                              </span>
+                              <span className="font-bold text-gray-800 line-clamp-1">{st.headline}</span>
+                            </div>
+                            <p className="text-gray-500 line-clamp-2">{st.content}</p>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {liveParseResult && !liveParseResult.success && rawText.trim().length > 30 && (
+                  <div className="mb-6 p-4 bg-amber-50 border border-amber-200 rounded-2xl flex items-start gap-3">
+                    <AlertCircle size={18} className="text-amber-700 shrink-0 mt-0.5" />
+                    <div className="text-xs text-amber-900 font-medium">
+                      <p className="font-bold mb-1">Notice from Parser:</p>
+                      <p>{liveParseResult.error || 'Check formatting of the broadcast text.'}</p>
+                    </div>
+                  </div>
+                )}
 
                 {/* Feedback Alert */}
                 {publishFeedback && (
@@ -699,8 +845,47 @@ export default function NIntelAdmin() {
                 <ul className="space-y-2 text-xs text-gray-600 font-medium">
                   <li>• <strong>Zero Approval Delay:</strong> Published immediately upon paste.</li>
                   <li>• <strong>Duplicate Safe:</strong> Content hashes prevent accidental double-posting.</li>
-                  <li>• <strong>Clean Briefing:</strong> Non-exam accidents and mishaps are excluded automatically.</li>
+                  <li>• <strong>Multi-Layer Persistence:</strong> Locally cached and synced across serverless containers.</li>
                 </ul>
+              </div>
+
+              {/* Data Safety & Backup Panel */}
+              <div className="bg-white rounded-3xl p-6 border border-gray-100 shadow-sm">
+                <h3 className="text-sm font-black text-gray-900 tracking-tight uppercase mb-3 flex items-center gap-2">
+                  <Shield size={16} className="text-[#1B4332]" />
+                  <span>Data Safety & Backup</span>
+                </h3>
+                <p className="text-xs text-gray-500 font-medium mb-4">
+                  Export all published N-INTEL editions or restore them onto any device with one click.
+                </p>
+
+                {backupMessage && (
+                  <div className="p-3 bg-emerald-50 text-emerald-800 border border-emerald-200 rounded-xl text-xs font-bold mb-3">
+                    {backupMessage}
+                  </div>
+                )}
+
+                <div className="space-y-2">
+                  <button
+                    type="button"
+                    onClick={handleExportBackup}
+                    className="w-full py-2.5 px-4 bg-gray-50 hover:bg-gray-100 border border-gray-200 text-gray-800 text-xs font-bold rounded-xl flex items-center justify-center gap-2 transition-colors"
+                  >
+                    <Download size={15} />
+                    <span>Download JSON Backup</span>
+                  </button>
+
+                  <label className="w-full py-2.5 px-4 bg-gray-50 hover:bg-gray-100 border border-gray-200 text-gray-800 text-xs font-bold rounded-xl flex items-center justify-center gap-2 transition-colors cursor-pointer text-center">
+                    <Upload size={15} />
+                    <span>Restore from JSON Backup</span>
+                    <input
+                      type="file"
+                      accept=".json"
+                      onChange={handleImportBackup}
+                      className="hidden"
+                    />
+                  </label>
+                </div>
               </div>
             </div>
           </div>

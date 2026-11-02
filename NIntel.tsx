@@ -18,15 +18,12 @@ import {
   getLocalTodayDate
 } from './n-intel-whatsapp';
 import { auth, onAuthStateChanged, checkIfAdmin } from './firebase';
-
-interface EditionSummary {
-  date: string;
-  storyCount: number;
-  categories: string[];
-  highlights?: string[];
-  defenceCount?: number;
-  categoryCounts?: Record<string, number>;
-}
+import {
+  mergeEditionsWithLocal,
+  mergeStoriesWithLocal,
+  syncLocalWithServer,
+  type EditionSummary
+} from './n-intel-storage';
 
 interface StoryBreakdown {
   lead: string;
@@ -679,26 +676,36 @@ export default function NIntel() {
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-      setIsAdmin(checkIfAdmin(currentUser));
+      const isAdm = checkIfAdmin(currentUser);
+      setIsAdmin(isAdm);
+      if (isAdm && currentUser) {
+        currentUser.getIdToken().then(token => {
+          if (token) syncLocalWithServer(token).catch(() => {});
+        }).catch(() => {});
+      }
     });
     return () => unsubscribe();
   }, []);
 
-  // Fetch all editions
+  // Fetch all editions with client-side multi-layer persistence
   useEffect(() => {
     setLoadingEditions(true);
     fetch('/api/n-intel/editions')
       .then(res => res.json())
       .then(data => {
-        if (data.success && data.editions) {
-          setEditions(data.editions);
-        }
+        const serverEditions = (data.success && Array.isArray(data.editions)) ? data.editions : [];
+        const merged = mergeEditionsWithLocal(serverEditions);
+        setEditions(merged);
       })
-      .catch(err => console.error('Error fetching editions:', err))
+      .catch(err => {
+        console.error('Error fetching editions:', err);
+        const fallback = mergeEditionsWithLocal([]);
+        if (fallback.length > 0) setEditions(fallback);
+      })
       .finally(() => setLoadingEditions(false));
   }, []);
 
-  // When activeDate changes, fetch stories for that date
+  // When activeDate changes, fetch stories for that date with local cache fallback
   useEffect(() => {
     if (!activeDate) {
       setStories([]);
@@ -711,15 +718,14 @@ export default function NIntel() {
     fetch(`/api/n-intel/stories?date=${encodeURIComponent(activeDate)}`)
       .then(res => res.json())
       .then(data => {
-        if (data.success && data.stories) {
-          setStories(data.stories);
-        } else {
-          setStories([]);
-        }
+        const serverStories = (data.success && Array.isArray(data.stories)) ? data.stories : [];
+        const merged = mergeStoriesWithLocal(serverStories, activeDate);
+        setStories(merged);
       })
       .catch(err => {
         console.error('Error fetching stories for date:', err);
-        setStories([]);
+        const fallback = mergeStoriesWithLocal([], activeDate);
+        setStories(fallback);
       })
       .finally(() => setLoadingStories(false));
   }, [activeDate]);

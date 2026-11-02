@@ -7,7 +7,7 @@ import cors from "cors";
 import dotenv from "dotenv";
 import helmet from "helmet";
 import { rateLimit } from "express-rate-limit";
-import crypto2 from "crypto";
+import crypto from "crypto";
 import { GoogleSpreadsheet } from "google-spreadsheet";
 import { JWT } from "google-auth-library";
 import admin from "firebase-admin";
@@ -16,9 +16,6 @@ import admin from "firebase-admin";
 import fs from "fs";
 import path from "path";
 import os from "os";
-
-// n-intel-parser.ts
-import crypto from "crypto";
 
 // n-intel-whatsapp.ts
 function getLocalTodayDate() {
@@ -30,6 +27,18 @@ function getLocalTodayDate() {
 }
 
 // n-intel-parser.ts
+function computeTextHash(text) {
+  let h1 = 2166136261;
+  let h2 = 2654435769;
+  for (let i = 0; i < text.length; i++) {
+    const code = text.charCodeAt(i);
+    h1 ^= code;
+    h1 = Math.imul(h1, 16777619);
+    h2 ^= code;
+    h2 = Math.imul(h2, 2166136261);
+  }
+  return Math.abs(h1).toString(16).padStart(8, "0") + Math.abs(h2).toString(16).padStart(8, "0");
+}
 var EXCLUDED_CATEGORY_KEYWORDS = [
   // Mishaps / Accidents / Local Crime
   "MISHAP",
@@ -94,8 +103,13 @@ var EXCLUDED_CATEGORY_KEYWORDS = [
   "SUBSCRIBE",
   "COMMUNITY LINK"
 ];
+function isExcludedHeader(text) {
+  const cleaned = text.replace(/[^\p{L}\p{N}\s&/()-]/gu, " ").replace(/\s+/g, " ").trim().toUpperCase();
+  if (!cleaned) return false;
+  return EXCLUDED_CATEGORY_KEYWORDS.some((kw) => cleaned === kw || cleaned.includes(kw));
+}
 function resolveCategory(header) {
-  const cleaned = header.replace(/[✈🌎🌍🏆🚣🚴🏇🏊🎖️🇮🇳🤝🛡️🚀⚡💡🔍📌\*\-=~_#]+/gu, " ").replace(/\s+/g, " ").trim();
+  const cleaned = header.replace(/[^\p{L}\p{N}\s&/()-]/gu, " ").replace(/\s+/g, " ").trim();
   if (!cleaned || cleaned.length < 3) return null;
   const upper = cleaned.toUpperCase();
   for (const ex of EXCLUDED_CATEGORY_KEYWORDS) {
@@ -103,13 +117,13 @@ function resolveCategory(header) {
       return null;
     }
   }
-  if (upper.includes("DEFENCE") || upper.includes("DEFENSE") || upper.includes("MILITARY") || upper.includes("ARMED FORCES") || upper.includes("ARMY") || upper.includes("NAVY") || upper.includes("AIR FORCE")) {
+  if (upper.includes("DEFENCE") || upper.includes("DEFENSE") || upper.includes("MILITARY") || upper.includes("ARMED FORCES") || upper.includes("ARMY") || upper.includes("NAVY") || upper.includes("AIR FORCE") || upper.includes("COAST GUARD") || upper.includes("SECURITY")) {
     return "Defence News";
   }
-  if (upper.includes("APPOINTMENT") || upper.includes("RESIGNATION") || upper.includes("NEW CHIEF") || upper.includes("ELECTED")) {
+  if (upper.includes("APPOINTMENT") || upper.includes("RESIGNATION") || upper.includes("NEW CHIEF") || upper.includes("ELECTED") || upper.includes("APPOINTED")) {
     return "Important Appointments";
   }
-  if (upper.includes("LEGAL") || upper.includes("JUDICIARY") || upper.includes("POLITY") || upper.includes("COURT") || upper.includes("CONSTITUTION") || upper.includes("LAW")) {
+  if (upper.includes("LEGAL") || upper.includes("JUDICIARY") || upper.includes("POLITY") || upper.includes("COURT") || upper.includes("CONSTITUTION") || upper.includes("LAW") || upper.includes("SUPREME COURT") || upper.includes("HIGH COURT")) {
     return "Polity & Judiciary";
   }
   if (upper.includes("WORLD") || upper.includes("GLOBAL NEWS") || upper.includes("GLOBAL AFFAIRS")) {
@@ -118,25 +132,25 @@ function resolveCategory(header) {
   if (upper.includes("INTERNATIONAL") || upper.includes("BILATERAL") || upper.includes("DIPLOMACY") || upper.includes("FOREIGN AFFAIRS") || upper.includes("RELATION")) {
     return "International Relations";
   }
-  if (upper.includes("TOP") && upper.includes("NEWS") || upper.includes("NATIONAL") || upper.includes("INDIA NEWS") || upper.includes("BHARAT") || upper.includes("CABINET") || upper.includes("PARLIAMENT")) {
+  if (upper.includes("TOP") && upper.includes("NEWS") || upper.includes("TODAY") || upper.includes("NATIONAL") || upper.includes("INDIA NEWS") || upper.includes("BHARAT") || upper.includes("CABINET") || upper.includes("PARLIAMENT") || upper.includes("HEADLINE")) {
     return "National Affairs";
   }
-  if (upper.includes("SPORT") || upper.includes("CRICKET") || upper.includes("OLYMPIC") || upper.includes("GAMES") || upper.includes("CHAMPIONSHIP") || upper.includes("TOURNAMENT")) {
+  if (upper.includes("SPORT") || upper.includes("CRICKET") || upper.includes("OLYMPIC") || upper.includes("GAMES") || upper.includes("CHAMPIONSHIP") || upper.includes("TOURNAMENT") || upper.includes("TENNIS") || upper.includes("FOOTBALL") || upper.includes("BADMINTON")) {
     return "Sports";
   }
-  if (upper.includes("SCIENCE") || upper.includes("TECH") || upper.includes("SPACE") || upper.includes("ISRO") || upper.includes("DRDO") || upper.includes("INNOVATION")) {
+  if (upper.includes("SCIENCE") || upper.includes("TECH") || upper.includes("SPACE") || upper.includes("ISRO") || upper.includes("DRDO") || upper.includes("INNOVATION") || upper.includes("CYBER") || upper.includes("AI")) {
     return "Science & Technology";
   }
-  if (upper.includes("ECONOM") || upper.includes("BANKING") || upper.includes("FINANCE") || upper.includes("RBI") || upper.includes("BUDGET") || upper.includes("COMMERCE") || upper.includes("TRADE")) {
+  if (upper.includes("ECONOM") || upper.includes("BANKING") || upper.includes("FINANCE") || upper.includes("RBI") || upper.includes("BUDGET") || upper.includes("COMMERCE") || upper.includes("TRADE") || upper.includes("GDP")) {
     return "Economy & Banking";
   }
-  if (upper.includes("ENVIRONMENT") || upper.includes("ECOLOGY") || upper.includes("CLIMATE") || upper.includes("FOREST") || upper.includes("WILDLIFE")) {
+  if (upper.includes("ENVIRONMENT") || upper.includes("ECOLOGY") || upper.includes("CLIMATE") || upper.includes("FOREST") || upper.includes("WILDLIFE") || upper.includes("POLLUTION")) {
     return "Environment & Ecology";
   }
-  if (upper.includes("AWARD") || upper.includes("HONOUR") || upper.includes("HONOR") || upper.includes("PRIZE") || upper.includes("MEDAL")) {
+  if (upper.includes("AWARD") || upper.includes("HONOUR") || upper.includes("HONOR") || upper.includes("PRIZE") || upper.includes("MEDAL") || upper.includes("PADMA")) {
     return "Awards & Honours";
   }
-  if (upper.includes("SUMMIT") || upper.includes("CONFERENCE") || upper.includes("CONCLAVE") || upper.includes("MEETING")) {
+  if (upper.includes("SUMMIT") || upper.includes("CONFERENCE") || upper.includes("CONCLAVE") || upper.includes("MEETING") || upper.includes("G20") || upper.includes("BRICS") || upper.includes("SCO")) {
     return "Summits & Conferences";
   }
   if (upper.includes("SCHEME") || upper.includes("POLICY") || upper.includes("YOJANA") || upper.includes("MISSION") || upper.includes("INITIATIVE")) {
@@ -257,6 +271,61 @@ function generateTags(category, content, sourceName, isDefence) {
   }
   return tags.slice(0, 5);
 }
+function classifyStory(content) {
+  if (checkIsDefence("", content)) {
+    return "Defence News";
+  }
+  const upper = content.toUpperCase();
+  if (/\b(CRICKET|OLYMPIC|GAMES|CHAMPIONSHIP|TOURNAMENT|WTA|ATP|FIFA|BWF|MEDAL|TROPHY|HOCKEY|BADMINTON|CHESS|TENNIS|ATHLETE)\b/.test(upper)) {
+    return "Sports";
+  }
+  if (/\b(ISRO|DRDO|NASA|SATELLITE|ROCKET|ASTRONOMY|QUANTUM|SUPERCOMPUTER|AI|ARTIFICIAL INTELLIGENCE|CYBER|TECH|GENOME|PATENT)\b/.test(upper)) {
+    return "Science & Technology";
+  }
+  if (/\b(SUPREME COURT|HIGH COURT|CJI|BENCH|VERDICT|TRIBUNAL|CONSTITUTION|ARTICLE \d+|LEGAL|JUDICIARY|BAR COUNCIL|ADVOCATE)\b/.test(upper)) {
+    return "Polity & Judiciary";
+  }
+  if (/\b(APPOINTED|APPOINTMENT|TOOK CHARGE|ASSUMED CHARGE|NEW CHIEF|ELECTED|SWEARING-IN|OATH OF OFFICE|SWORN IN|DG |DIRECTOR GENERAL)\b/.test(upper)) {
+    return "Important Appointments";
+  }
+  if (/\b(BILATERAL|DIPLOMATIC|AMBASSADOR|HIGH COMMISSIONER|TREATY|ACCORD|SUMMIT|SCO|G20|BRICS|ASEAN|UN |UNFCCC|UNESCO|WORLD BANK|IMF)\b/.test(upper)) {
+    return "International Relations";
+  }
+  if (/\b(RESERVE BANK|RBI|INFLATION|REPO RATE|GDP|CURRENT ACCOUNT|SEBI|EXPORT|IMPORT|TRADE DEFICIT|BUDGET)\b/.test(upper)) {
+    return "Economy & Banking";
+  }
+  if (/\b(POLLUTION|AIR QUALITY|AQI|FOREST|TIGER RESERVE|WILDLIFE|BIODIVERSITY|CARBON|CLIMATE CHANGE|WETLAND|RAMSAR)\b/.test(upper)) {
+    return "Environment & Ecology";
+  }
+  return "National Affairs";
+}
+function detectHeader(line) {
+  const trimmed = line.trim();
+  if (!trimmed || trimmed.length > 110) {
+    return { isHeader: false, isExcluded: false, category: null };
+  }
+  const hasAsterisks = /^\*+[^*]+\*+$/u.test(trimmed) || trimmed.startsWith("*") && trimmed.endsWith("*");
+  const hasMarkdown = /^#{1,4}\s+/.test(trimmed);
+  const isShortNonSentence = trimmed.length <= 65 && !/[.!?]$/.test(trimmed);
+  if (!hasAsterisks && !hasMarkdown && !isShortNonSentence) {
+    return { isHeader: false, isExcluded: false, category: null };
+  }
+  const candidate = trimmed.replace(/^[\s*#_~=\-–—:;|•+[\](){}\u2022\u25E6\u25AA\p{Extended_Pictographic}]+/gu, "").replace(/[\s*#_~=\-–—:;|•+[\](){}\u2022\u25E6\u25AA\p{Extended_Pictographic}]+$/gu, "").trim();
+  if (!candidate || candidate.length < 3) {
+    return { isHeader: false, isExcluded: false, category: null };
+  }
+  if (isExcludedHeader(candidate)) {
+    return { isHeader: true, isExcluded: true, category: null };
+  }
+  const resolved = resolveCategory(candidate);
+  if (resolved) {
+    return { isHeader: true, isExcluded: false, category: resolved };
+  }
+  if (hasAsterisks || hasMarkdown) {
+    return { isHeader: true, isExcluded: true, category: null };
+  }
+  return { isHeader: false, isExcluded: false, category: null };
+}
 function parseDailyNewsPost(rawText, pubDate) {
   const dateStr = pubDate && /^\d{4}-\d{2}-\d{2}$/.test(pubDate) ? pubDate : getLocalTodayDate();
   if (!rawText || !rawText.trim()) {
@@ -271,7 +340,7 @@ function parseDailyNewsPost(rawText, pubDate) {
     };
   }
   const normalizedForHash = rawText.replace(/\s+/g, " ").trim().toLowerCase();
-  const hash = crypto.createHash("sha256").update(normalizedForHash).digest("hex");
+  const hash = computeTextHash(normalizedForHash);
   const lines = rawText.split(/\r?\n/);
   const categories = [];
   const stories = [];
@@ -280,15 +349,15 @@ function parseDailyNewsPost(rawText, pubDate) {
   let inIgnoredSection = false;
   let currentStoryText = "";
   let currentStoryNum = 0;
-  const headerRegex = /^(?:[-=\s*~_]*)(?:[^\w\s*]*\s*)?\*+([A-Za-z0-9\s&',.\-–—/()]+)\*+(?:[-=\s*~_]*)(?:[^\w\s*]*\s*)$/u;
+  let previousLineWasBlank = false;
   function commitStory() {
-    if (inIgnoredSection || !currentCategory) {
+    if (inIgnoredSection) {
       currentStoryText = "";
       return;
     }
     if (!currentStoryText.trim()) return;
     const raw = currentStoryText.trim();
-    if ((raw.includes("linktr.ee/") || raw.toLowerCase().includes("join nishchay defence")) && raw.length < 200) {
+    if ((raw.includes("linktr.ee/") || raw.toLowerCase().includes("join nishchay defence")) && raw.length < 250) {
       currentStoryText = "";
       return;
     }
@@ -296,18 +365,22 @@ function parseDailyNewsPost(rawText, pubDate) {
       currentStoryText = "";
       return;
     }
+    const effectiveCategory = currentCategory || classifyStory(raw);
+    if (!categories.includes(effectiveCategory)) {
+      categories.push(effectiveCategory);
+    }
     const headline = extractHeadline(raw);
     const { sourceName, sourceUrl } = extractSource(raw);
-    const isDefence = currentCategory === "Defence News" || checkIsDefence(currentCategory, raw);
-    const tags = generateTags(currentCategory, raw, sourceName, isDefence);
-    const categoryKey = currentCategory.toLowerCase().replace(/[^a-z0-9]+/g, "-");
+    const isDefence = effectiveCategory === "Defence News" || checkIsDefence(effectiveCategory, raw);
+    const tags = generateTags(effectiveCategory, raw, sourceName, isDefence);
+    const categoryKey = effectiveCategory.toLowerCase().replace(/[^a-z0-9]+/g, "-");
     const storyId = `nintel-${dateStr.replace(/-/g, "")}-${categoryKey.slice(0, 6)}-${(stories.length + 1).toString().padStart(2, "0")}`;
     stories.push({
       id: storyId,
       batchId,
       headline,
       content: raw,
-      category: currentCategory,
+      category: effectiveCategory,
       categoryKey,
       date: dateStr,
       itemNumber: currentStoryNum || stories.length + 1,
@@ -321,48 +394,90 @@ function parseDailyNewsPost(rawText, pubDate) {
     });
     currentStoryText = "";
   }
+  const storyStartRegex = /^(?:(?:[\[(]?(\d+)[\]).:\-]\s*)|(?:[•\-\*\u2022\u25E6\u25AA—]\s+))(.*)$/;
   for (let i = 0; i < lines.length; i++) {
-    const line = lines[i].trim();
-    if (!line) continue;
-    if (/^[-=~_]{3,}$/.test(line)) continue;
-    const hMatch = line.match(headerRegex);
-    const starMatch = line.match(/^\*+([A-Za-z0-9\s&',.\-–—/()]+)\*+$/);
-    if (hMatch || starMatch) {
-      commitStory();
-      const rawHeader = hMatch ? hMatch[1] : starMatch[1];
-      const mapped = resolveCategory(rawHeader);
-      if (mapped) {
-        currentCategory = mapped;
-        inIgnoredSection = false;
-        if (!categories.includes(mapped)) {
-          categories.push(mapped);
-        }
-      } else {
-        currentCategory = null;
-        inIgnoredSection = true;
-      }
+    const rawLine = lines[i];
+    const line = rawLine.trim();
+    if (!line) {
+      previousLineWasBlank = true;
       continue;
     }
-    const numMatch = line.match(/^(\d+)[\.\)]\s+(.*)$/);
-    if (numMatch) {
+    if (/^[-=~_]{3,}$/.test(line)) {
+      previousLineWasBlank = true;
+      continue;
+    }
+    const headerCheck = detectHeader(line);
+    if (headerCheck.isHeader) {
       commitStory();
-      currentStoryNum = parseInt(numMatch[1], 10);
-      if (!currentCategory && !inIgnoredSection) {
-        currentCategory = "National Affairs";
-        if (!categories.includes("National Affairs")) {
-          categories.push("National Affairs");
+      if (headerCheck.isExcluded) {
+        currentCategory = null;
+        inIgnoredSection = true;
+      } else if (headerCheck.category) {
+        currentCategory = headerCheck.category;
+        inIgnoredSection = false;
+        if (!categories.includes(headerCheck.category)) {
+          categories.push(headerCheck.category);
         }
       }
-      currentStoryText = numMatch[2].trim();
-    } else {
-      if (currentStoryText) {
-        currentStoryText += "\n" + line;
-      } else if (!inIgnoredSection && currentCategory) {
-        currentStoryText = line;
-      }
+      previousLineWasBlank = false;
+      continue;
     }
+    const numMatch = line.match(storyStartRegex);
+    if (numMatch) {
+      commitStory();
+      if (numMatch[1]) {
+        currentStoryNum = parseInt(numMatch[1], 10);
+      } else {
+        currentStoryNum = stories.length + 1;
+      }
+      currentStoryText = numMatch[2] ? numMatch[2].trim() : "";
+      previousLineWasBlank = false;
+      continue;
+    }
+    if (previousLineWasBlank && currentStoryText.length > 90 && /^[A-Z"'\u2018\u201C]/.test(line)) {
+      commitStory();
+      currentStoryNum = stories.length + 1;
+      currentStoryText = line;
+      previousLineWasBlank = false;
+      continue;
+    }
+    if (currentStoryText) {
+      currentStoryText += "\n" + line;
+    } else if (!inIgnoredSection) {
+      currentStoryText = line;
+    }
+    previousLineWasBlank = false;
   }
   commitStory();
+  if (stories.length === 0 && rawText.trim().length > 30) {
+    const paragraphs = rawText.split(/\r?\n\s*\r?\n/).map((p) => p.trim()).filter(Boolean);
+    for (let pIdx = 0; pIdx < paragraphs.length; pIdx++) {
+      const p = paragraphs[pIdx];
+      if (p.length < 25) continue;
+      if (p.includes("linktr.ee/") || isPureTickerOrRates(p)) continue;
+      const cat = classifyStory(p);
+      if (!categories.includes(cat)) categories.push(cat);
+      const headline = extractHeadline(p);
+      const isDefence = cat === "Defence News" || checkIsDefence(cat, p);
+      const categoryKey = cat.toLowerCase().replace(/[^a-z0-9]+/g, "-");
+      const storyId = `nintel-${dateStr.replace(/-/g, "")}-${categoryKey.slice(0, 6)}-${(stories.length + 1).toString().padStart(2, "0")}`;
+      stories.push({
+        id: storyId,
+        batchId,
+        headline,
+        content: p,
+        category: cat,
+        categoryKey,
+        date: dateStr,
+        itemNumber: stories.length + 1,
+        tags: generateTags(cat, p, void 0, isDefence),
+        isDefence,
+        isDeleted: false,
+        createdAt: (/* @__PURE__ */ new Date()).toISOString(),
+        updatedAt: (/* @__PURE__ */ new Date()).toISOString()
+      });
+    }
+  }
   if (stories.length === 0) {
     return {
       success: false,
@@ -371,7 +486,7 @@ function parseDailyNewsPost(rawText, pubDate) {
       stories: [],
       categories: [],
       totalStories: 0,
-      error: "Could not extract any stories. Ensure the text has section headings and numbered news items."
+      error: "Could not extract any stories. Ensure the text has news content or numbered updates."
     };
   }
   return {
@@ -398,6 +513,26 @@ function ensureDataDir() {
   try {
     if (!fs.existsSync(DATA_DIR)) {
       fs.mkdirSync(DATA_DIR, { recursive: true });
+    }
+    if (IS_VERCEL) {
+      if (!fs.existsSync(STORIES_FILE) && fs.existsSync(SEED_STORIES_FILE)) {
+        try {
+          fs.copyFileSync(SEED_STORIES_FILE, STORIES_FILE);
+        } catch {
+        }
+      }
+      if (!fs.existsSync(BATCHES_FILE) && fs.existsSync(SEED_BATCHES_FILE)) {
+        try {
+          fs.copyFileSync(SEED_BATCHES_FILE, BATCHES_FILE);
+        } catch {
+        }
+      }
+      if (!fs.existsSync(AUDIT_FILE) && fs.existsSync(SEED_AUDIT_FILE)) {
+        try {
+          fs.copyFileSync(SEED_AUDIT_FILE, AUDIT_FILE);
+        } catch {
+        }
+      }
     }
   } catch (err) {
     console.warn("Could not ensure data directory:", err);
@@ -705,6 +840,33 @@ function seedSampleDataIfEmpty(samplePostText) {
     saveBatchAndStories(batch, parseResult.stories, "system@nishchay.defence");
     console.log(`\u2705 Seeded ${parseResult.totalStories} N-INTEL stories for 2026-10-28!`);
   }
+}
+function syncNIntelStories(incomingStories, incomingBatches) {
+  if (!Array.isArray(incomingStories) || incomingStories.length === 0) {
+    return { count: 0, total: loadStories().length };
+  }
+  const existingStories = loadStories();
+  const storyMap = /* @__PURE__ */ new Map();
+  for (const s of existingStories) {
+    if (s && s.id) storyMap.set(s.id, s);
+  }
+  for (const s of incomingStories) {
+    if (s && s.id) storyMap.set(s.id, s);
+  }
+  const updatedStories = Array.from(storyMap.values());
+  saveStories(updatedStories);
+  if (Array.isArray(incomingBatches) && incomingBatches.length > 0) {
+    const existingBatches = loadBatches();
+    const batchMap = /* @__PURE__ */ new Map();
+    for (const b of existingBatches) {
+      if (b && b.id) batchMap.set(b.id, b);
+    }
+    for (const b of incomingBatches) {
+      if (b && b.id) batchMap.set(b.id, b);
+    }
+    saveBatches(Array.from(batchMap.values()));
+  }
+  return { count: incomingStories.length, total: updatedStories.length };
 }
 
 // articles-db.ts
@@ -1826,7 +1988,7 @@ app.post("/api/articles/upload-banner", publishLimiter, authenticate, (req, res)
       if (!fs5.existsSync(UPLOADS_DIR)) {
         fs5.mkdirSync(UPLOADS_DIR, { recursive: true });
       }
-      const safeRandomToken = crypto2.randomBytes(16).toString("hex");
+      const safeRandomToken = crypto.randomBytes(16).toString("hex");
       const safeName = `banner-${Date.now()}-${safeRandomToken}.${ext}`;
       const filePath = path5.join(UPLOADS_DIR, safeName);
       fs5.writeFileSync(filePath, buffer, { flag: "wx" });
@@ -1981,11 +2143,35 @@ app.post("/api/n-intel/publish", publishLimiter, authenticate, (req, res) => {
       count: parseResult.totalStories,
       categories: parseResult.categories,
       batchId: batch.id,
-      date: pubDate
+      date: pubDate,
+      stories: parseResult.stories,
+      batch
     });
   } catch (error) {
     console.error("Error publishing N-INTEL batch:", error);
     res.status(500).json({ success: false, error: error.message });
+  }
+});
+app.post("/api/n-intel/sync", authenticate, (req, res) => {
+  if (!req.user?.isAdmin) {
+    return res.status(403).json({ success: false, error: "Access denied: Admin privileges required." });
+  }
+  try {
+    const { stories, batches } = req.body;
+    if (!Array.isArray(stories)) {
+      return res.status(400).json({ success: false, error: "Invalid stories array." });
+    }
+    const result = syncNIntelStories(stories, batches);
+    const editions = getAvailableEditions();
+    console.log(`\u2705 [N-INTEL] Synced ${result.count} stories from client by ${req.user.email}. Store total: ${result.total}`);
+    res.json({
+      success: true,
+      message: `Synced ${result.count} stories successfully. Total in storage: ${result.total}.`,
+      editions
+    });
+  } catch (err) {
+    console.error("Error syncing N-INTEL stories:", err);
+    res.status(500).json({ success: false, error: "Failed to sync N-INTEL stories." });
   }
 });
 var handleStoryUpdate = (req, res) => {

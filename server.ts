@@ -22,7 +22,8 @@ import {
   purgeAllDeletedStories,
   getAuditLogs,
   getAvailableEditions,
-  seedSampleDataIfEmpty
+  seedSampleDataIfEmpty,
+  syncNIntelStories
 } from './n-intel-db';
 import {
   getAllArticles,
@@ -873,11 +874,40 @@ app.post('/api/n-intel/publish', publishLimiter, authenticate as any, (req: Auth
       count: parseResult.totalStories,
       categories: parseResult.categories,
       batchId: batch.id,
-      date: pubDate
+      date: pubDate,
+      stories: parseResult.stories,
+      batch
     });
   } catch (error: any) {
     console.error('Error publishing N-INTEL batch:', error);
     res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Admin Only: Sync stories and batches from client (Multi-Layer Persistence / Cold-start recovery)
+app.post('/api/n-intel/sync', authenticate as any, (req: AuthRequest, res: Response) => {
+  if (!req.user?.isAdmin) {
+    return res.status(403).json({ success: false, error: 'Access denied: Admin privileges required.' });
+  }
+
+  try {
+    const { stories, batches } = req.body;
+    if (!Array.isArray(stories)) {
+      return res.status(400).json({ success: false, error: 'Invalid stories array.' });
+    }
+
+    const result = syncNIntelStories(stories, batches);
+    const editions = getAvailableEditions();
+    console.log(`✅ [N-INTEL] Synced ${result.count} stories from client by ${req.user.email}. Store total: ${result.total}`);
+
+    res.json({
+      success: true,
+      message: `Synced ${result.count} stories successfully. Total in storage: ${result.total}.`,
+      editions
+    });
+  } catch (err: any) {
+    console.error('Error syncing N-INTEL stories:', err);
+    res.status(500).json({ success: false, error: 'Failed to sync N-INTEL stories.' });
   }
 });
 

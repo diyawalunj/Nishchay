@@ -6,11 +6,7 @@ import {
 } from 'lucide-react';
 import { formatDisplayDate } from './n-intel-whatsapp';
 import { auth, onAuthStateChanged, checkIfAdmin } from './firebase';
-
-interface EditionSummary {
-  date: string;
-  storyCount: number;
-}
+import { mergeEditionsWithLocal, type EditionSummary } from './n-intel-storage';
 
 export default function NIntelArchive() {
   const [editions, setEditions] = useState<EditionSummary[]>([]);
@@ -30,11 +26,13 @@ export default function NIntelArchive() {
     fetch('/api/n-intel/editions')
       .then(res => res.json())
       .then(data => {
-        if (data.editions && Array.isArray(data.editions)) {
-          setEditions(data.editions);
-        }
+        const serverEditions = (data.editions && Array.isArray(data.editions)) ? data.editions : [];
+        setEditions(mergeEditionsWithLocal(serverEditions));
       })
-      .catch(err => console.error('Failed to load editions:', err))
+      .catch(err => {
+        console.error('Failed to load editions:', err);
+        setEditions(mergeEditionsWithLocal([]));
+      })
       .finally(() => setLoading(false));
   }, []);
 

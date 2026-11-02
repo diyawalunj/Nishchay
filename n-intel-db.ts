@@ -21,6 +21,17 @@ function ensureDataDir() {
     if (!fs.existsSync(DATA_DIR)) {
       fs.mkdirSync(DATA_DIR, { recursive: true });
     }
+    if (IS_VERCEL) {
+      if (!fs.existsSync(STORIES_FILE) && fs.existsSync(SEED_STORIES_FILE)) {
+        try { fs.copyFileSync(SEED_STORIES_FILE, STORIES_FILE); } catch {}
+      }
+      if (!fs.existsSync(BATCHES_FILE) && fs.existsSync(SEED_BATCHES_FILE)) {
+        try { fs.copyFileSync(SEED_BATCHES_FILE, BATCHES_FILE); } catch {}
+      }
+      if (!fs.existsSync(AUDIT_FILE) && fs.existsSync(SEED_AUDIT_FILE)) {
+        try { fs.copyFileSync(SEED_AUDIT_FILE, AUDIT_FILE); } catch {}
+      }
+    }
   } catch (err) {
     console.warn('Could not ensure data directory:', err);
   }
@@ -427,4 +438,43 @@ export function seedSampleDataIfEmpty(samplePostText: string) {
     saveBatchAndStories(batch, parseResult.stories, 'system@nishchay.defence');
     console.log(`✅ Seeded ${parseResult.totalStories} N-INTEL stories for 2026-10-28!`);
   }
+}
+
+/**
+ * Merges and synchronizes client-side stories and batches into the server database.
+ * Used for multi-layer persistence and cold-start serverless container hydration.
+ */
+export function syncNIntelStories(incomingStories: NIntelStory[], incomingBatches?: NIntelBatch[]): { count: number; total: number } {
+  if (!Array.isArray(incomingStories) || incomingStories.length === 0) {
+    return { count: 0, total: loadStories().length };
+  }
+
+  const existingStories = loadStories();
+  const storyMap = new Map<string, NIntelStory>();
+
+  // Base stories first
+  for (const s of existingStories) {
+    if (s && s.id) storyMap.set(s.id, s);
+  }
+  // Incoming stories overwrite or append
+  for (const s of incomingStories) {
+    if (s && s.id) storyMap.set(s.id, s);
+  }
+
+  const updatedStories = Array.from(storyMap.values());
+  saveStories(updatedStories);
+
+  if (Array.isArray(incomingBatches) && incomingBatches.length > 0) {
+    const existingBatches = loadBatches();
+    const batchMap = new Map<string, NIntelBatch>();
+    for (const b of existingBatches) {
+      if (b && b.id) batchMap.set(b.id, b);
+    }
+    for (const b of incomingBatches) {
+      if (b && b.id) batchMap.set(b.id, b);
+    }
+    saveBatches(Array.from(batchMap.values()));
+  }
+
+  return { count: incomingStories.length, total: updatedStories.length };
 }
