@@ -154,8 +154,62 @@ export function getAllArticles(): Article[] {
 }
 
 export function getArticleById(idOrSlug: string): Article | null {
+  if (!idOrSlug) return null;
   const articles = loadArticles();
-  return articles.find(a => a.id === idOrSlug || a.slug === idOrSlug) || null;
+  const query = String(idOrSlug).trim().toLowerCase();
+  return articles.find(a => 
+    a.id === idOrSlug || 
+    a.slug === idOrSlug ||
+    a.id.toLowerCase() === query ||
+    (a.slug && a.slug.toLowerCase() === query)
+  ) || null;
+}
+
+export function syncArticles(incoming: Article[]): { added: number; updated: number; total: number } {
+  if (!Array.isArray(incoming) || incoming.length === 0) {
+    const all = getAllArticles();
+    return { added: 0, updated: 0, total: all.length };
+  }
+
+  const articles = loadArticles();
+  const existingMap = new Map<string, number>();
+  articles.forEach((a, idx) => {
+    existingMap.set(a.id, idx);
+    if (a.slug) existingMap.set(a.slug, idx);
+  });
+
+  let added = 0;
+  let updated = 0;
+
+  for (const item of incoming) {
+    if (!item || !item.id || !item.title) continue;
+    const matchIdx = existingMap.get(item.id) ?? (item.slug ? existingMap.get(item.slug) : undefined);
+    if (matchIdx !== undefined) {
+      const curr = articles[matchIdx];
+      const incomingTime = new Date(item.updatedAt || item.createdAt || 0).getTime();
+      const currTime = new Date(curr.updatedAt || curr.createdAt || 0).getTime();
+      if (incomingTime >= currTime) {
+        articles[matchIdx] = {
+          ...curr,
+          ...item,
+          viewsCount: Math.max(curr.viewsCount || 0, item.viewsCount || 0),
+          pdfDownloadCount: Math.max(curr.pdfDownloadCount || 0, item.pdfDownloadCount || 0),
+        };
+        updated++;
+      }
+    } else {
+      articles.push(item);
+      existingMap.set(item.id, articles.length - 1);
+      if (item.slug) existingMap.set(item.slug, articles.length - 1);
+      added++;
+    }
+  }
+
+  if (added > 0 || updated > 0) {
+    saveArticles(articles);
+  }
+
+  return { added, updated, total: articles.length };
 }
 
 export function createArticle(data: {

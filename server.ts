@@ -34,7 +34,8 @@ import {
   createArticle,
   updateArticle,
   deleteArticle,
-  incrementDownloadCount
+  incrementDownloadCount,
+  syncArticles
 } from './articles-db';
 import {
   getAllPyqSessions,
@@ -278,11 +279,17 @@ const ADMIN_EMAILS = [
   "adityasahane076@gmail.com"
 ];
 
-// Helper: Validate absolute or safe relative HTTP URLs
+// Helper: Validate absolute or safe relative HTTP URLs, Data URLs, and upload paths
 function isValidUrlOrPath(url: string): boolean {
   if (!url || typeof url !== 'string') return false;
   const trimmed = url.trim();
+  if (trimmed.startsWith('data:image/')) {
+    return true;
+  }
   if (trimmed.startsWith('/uploads/') && !trimmed.includes('..')) {
+    return true;
+  }
+  if (trimmed.startsWith('/api/uploads/') && !trimmed.includes('..')) {
     return true;
   }
   try {
@@ -636,6 +643,37 @@ app.get('/api/articles/:id', (req, res) => {
   }
 });
 
+// Public: Serve uploaded banner images directly under /api prefix for Vercel SPA compatibility
+app.get('/api/uploads/:filename', (req, res) => {
+  try {
+    const safeName = path.basename(req.params.filename);
+    const filePath = path.join(UPLOADS_DIR, safeName);
+    if (fs.existsSync(filePath)) {
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      res.sendFile(filePath);
+    } else {
+      res.status(404).json({ success: false, error: 'File not found.' });
+    }
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: 'Error reading file.' });
+  }
+});
+
+// Two-way synchronization: Repopulates server in-memory & /tmp storage from client cache
+app.post('/api/articles/sync', (req, res) => {
+  try {
+    const { articles } = req.body;
+    if (!Array.isArray(articles)) {
+      return res.status(400).json({ success: false, error: 'Articles array required.' });
+    }
+    const result = syncArticles(articles);
+    res.json({ success: true, ...result });
+  } catch (error: any) {
+    console.error('Error syncing articles:', error);
+    res.status(500).json({ success: false, error: 'Failed to sync articles.' });
+  }
+});
+
 // Public: Increment PDF download count (Rate limited to prevent counter manipulation)
 app.post('/api/articles/:id/download', downloadLimiter, (req, res) => {
   try {
@@ -700,8 +738,8 @@ app.post('/api/articles/upload-banner', publishLimiter, authenticate as any, (re
       const filePath = path.join(UPLOADS_DIR, safeName);
       fs.writeFileSync(filePath, buffer, { flag: 'wx' });
 
-      const publicUrl = `/uploads/${safeName}`;
-      res.json({ success: true, url: publicUrl });
+      const publicUrl = `/api/uploads/${safeName}`;
+      res.json({ success: true, url: publicUrl, localUrl: `/uploads/${safeName}` });
     } catch (writeErr: any) {
       console.error('Error writing banner image:', writeErr);
       res.status(500).json({ success: false, error: 'Failed to save banner image to server storage.' });

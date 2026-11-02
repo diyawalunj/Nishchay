@@ -10,6 +10,14 @@ import {
 import type { Article } from './articles-db';
 import { auth, onAuthStateChanged, checkIfAdmin, type User as FirebaseUser } from './firebase';
 import { getLocalTodayDate } from './n-intel-whatsapp';
+import {
+  getLocalArticles,
+  saveLocalArticle,
+  deleteLocalArticle,
+  mergeArticlesWithLocal,
+  syncLocalArticlesWithServer,
+  compressImageToDataUrl
+} from './articles-storage';
 
 const CATEGORIES = [
   'All',
@@ -23,8 +31,8 @@ const CATEGORIES = [
 ];
 
 export default function Articles() {
-  const [articles, setArticles] = useState<Article[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [articles, setArticles] = useState<Article[]>(() => getLocalArticles());
+  const [loading, setLoading] = useState(() => getLocalArticles().length === 0);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
 
@@ -84,15 +92,24 @@ export default function Articles() {
   }, []);
 
   const fetchArticles = () => {
-    setLoading(true);
+    setLoading(articles.length === 0);
     fetch('/api/articles')
       .then(res => res.json())
       .then(data => {
         if (data.success && Array.isArray(data.articles)) {
-          setArticles(data.articles);
+          const merged = mergeArticlesWithLocal(data.articles);
+          setArticles(merged);
+          syncLocalArticlesWithServer().catch(() => {});
+        } else {
+          const fallback = getLocalArticles();
+          if (fallback.length > 0) setArticles(fallback);
         }
       })
-      .catch(err => console.error('Failed to load articles:', err))
+      .catch(err => {
+        console.warn('Network issue fetching articles, using resilient local cache:', err);
+        const fallback = getLocalArticles();
+        if (fallback.length > 0) setArticles(fallback);
+      })
       .finally(() => setLoading(false));
   };
 
@@ -163,18 +180,22 @@ export default function Articles() {
       return;
     }
 
-    if (file.size > 8 * 1024 * 1024) {
-      setFormError('Image size exceeds 8MB. Please choose a smaller image.');
+    if (file.size > 15 * 1024 * 1024) {
+      setFormError('Image size exceeds 15MB. Please choose a smaller image.');
       return;
     }
 
     setIsUploadingBanner(true);
     setFormError(null);
 
-    const reader = new FileReader();
-    reader.onload = async () => {
+    try {
+      // 1. Instantly compress client-side to a crisp 1280px WebP/JPEG Data URL
+      // This guarantees the image works 100% reliably even across serverless cold starts
+      const compressedDataUrl = await compressImageToDataUrl(file, 1280, 800, 0.82);
+      setBannerImageUrl(compressedDataUrl);
+
+      // 2. Also attempt server-side upload in background for dual persistence
       try {
-        const base64 = reader.result as string;
         let token = null;
         if (auth.currentUser) {
           token = await auth.currentUser.getIdToken();
@@ -185,22 +206,25 @@ export default function Articles() {
         const res = await fetch('/api/articles/upload-banner', {
           method: 'POST',
           headers,
-          body: JSON.stringify({ imageBase64: base64 })
+          body: JSON.stringify({ imageBase64: compressedDataUrl })
         });
 
         const data = await res.json();
-        if (!res.ok || !data.success) {
-          throw new Error(data.error || 'Failed to upload image file');
+        if (res.ok && data.success && data.url) {
+          // Both server path and data URL are valid
+          console.log('Banner image persisted to server:', data.url);
         }
-
-        setBannerImageUrl(data.url);
-      } catch (err: any) {
-        setFormError(`Image upload failed: ${err.message}`);
-      } finally {
-        setIsUploadingBanner(false);
+      } catch (srvErr) {
+        // Non-blocking: compressed data URL is already set and self-contained
+        console.debug('Server upload fallback notice (using compressed data URL):', srvErr);
       }
-    };
-    reader.readAsDataURL(file);
+    } catch (err: any) {
+      setFormError(`Image processing failed: ${err.message}`);
+    } finally {
+      setIsUploadingBanner(false);
+      // Reset input value so re-selecting the same file fires change event
+      if (e.target) e.target.value = '';
+    }
   };
 
   const handleSubmitArticle = async (e: React.FormEvent) => {
@@ -269,6 +293,10 @@ export default function Articles() {
         throw new Error(data.error || 'Failed to save article.');
       }
 
+      if (data.article) {
+        saveLocalArticle(data.article);
+      }
+
       setFormSuccess(editingArticle ? 'Article updated successfully!' : 'Article published successfully!');
       fetchArticles();
       setTimeout(() => {
@@ -302,7 +330,8 @@ export default function Articles() {
         throw new Error(data.error || 'Failed to delete article.');
       }
 
-      setArticles(prev => prev.filter(a => a.id !== deletingArticle.id));
+      deleteLocalArticle(deletingArticle.id);
+      setArticles(prev => prev.filter(a => a.id !== deletingArticle.id && a.slug !== deletingArticle.slug));
       setDeletingArticle(null);
     } catch (err: any) {
       alert(`Delete failed: ${err.message}`);
@@ -677,9 +706,9 @@ export default function Articles() {
 
                 <div className="flex flex-col sm:flex-row gap-3">
                   <input
-                    type="url"
+                    type="text"
                     required
-                    placeholder="Paste image URL (https://...)"
+                    placeholder="Paste image URL (https://...) or choose file below"
                     value={bannerImageUrl}
                     onChange={(e) => setBannerImageUrl(e.target.value)}
                     className="flex-1 px-4 py-2.5 bg-white border border-amber-200 rounded-xl focus:border-[#1B4332] outline-none text-xs font-bold text-gray-800 placeholder:text-gray-400"
@@ -814,8 +843,8 @@ export default function Articles() {
                       Author Avatar / Photo URL (Optional)
                     </label>
                     <input
-                      type="url"
-                      placeholder="https://..."
+                      type="text"
+                      placeholder="https://... or photo URL"
                       value={authorAvatarUrl}
                       onChange={(e) => setAuthorAvatarUrl(e.target.value)}
                       className="w-full px-3.5 py-2 bg-white border border-gray-200 rounded-xl text-xs font-bold text-gray-800"

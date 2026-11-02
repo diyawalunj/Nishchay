@@ -1100,8 +1100,53 @@ function getAllArticles() {
   return [...articles].sort((a, b) => new Date(b.publishDate || b.createdAt).getTime() - new Date(a.publishDate || a.createdAt).getTime());
 }
 function getArticleById(idOrSlug) {
+  if (!idOrSlug) return null;
   const articles = loadArticles();
-  return articles.find((a) => a.id === idOrSlug || a.slug === idOrSlug) || null;
+  const query = String(idOrSlug).trim().toLowerCase();
+  return articles.find(
+    (a) => a.id === idOrSlug || a.slug === idOrSlug || a.id.toLowerCase() === query || a.slug && a.slug.toLowerCase() === query
+  ) || null;
+}
+function syncArticles(incoming) {
+  if (!Array.isArray(incoming) || incoming.length === 0) {
+    const all = getAllArticles();
+    return { added: 0, updated: 0, total: all.length };
+  }
+  const articles = loadArticles();
+  const existingMap = /* @__PURE__ */ new Map();
+  articles.forEach((a, idx) => {
+    existingMap.set(a.id, idx);
+    if (a.slug) existingMap.set(a.slug, idx);
+  });
+  let added = 0;
+  let updated = 0;
+  for (const item of incoming) {
+    if (!item || !item.id || !item.title) continue;
+    const matchIdx = existingMap.get(item.id) ?? (item.slug ? existingMap.get(item.slug) : void 0);
+    if (matchIdx !== void 0) {
+      const curr = articles[matchIdx];
+      const incomingTime = new Date(item.updatedAt || item.createdAt || 0).getTime();
+      const currTime = new Date(curr.updatedAt || curr.createdAt || 0).getTime();
+      if (incomingTime >= currTime) {
+        articles[matchIdx] = {
+          ...curr,
+          ...item,
+          viewsCount: Math.max(curr.viewsCount || 0, item.viewsCount || 0),
+          pdfDownloadCount: Math.max(curr.pdfDownloadCount || 0, item.pdfDownloadCount || 0)
+        };
+        updated++;
+      }
+    } else {
+      articles.push(item);
+      existingMap.set(item.id, articles.length - 1);
+      if (item.slug) existingMap.set(item.slug, articles.length - 1);
+      added++;
+    }
+  }
+  if (added > 0 || updated > 0) {
+    saveArticles(articles);
+  }
+  return { added, updated, total: articles.length };
 }
 function createArticle(data) {
   const articles = loadArticles();
@@ -1778,7 +1823,13 @@ var ADMIN_EMAILS = [
 function isValidUrlOrPath(url) {
   if (!url || typeof url !== "string") return false;
   const trimmed = url.trim();
+  if (trimmed.startsWith("data:image/")) {
+    return true;
+  }
   if (trimmed.startsWith("/uploads/") && !trimmed.includes("..")) {
+    return true;
+  }
+  if (trimmed.startsWith("/api/uploads/") && !trimmed.includes("..")) {
     return true;
   }
   try {
@@ -2056,6 +2107,33 @@ app.get("/api/articles/:id", (req, res) => {
     res.status(500).json({ success: false, error: error.message });
   }
 });
+app.get("/api/uploads/:filename", (req, res) => {
+  try {
+    const safeName = path5.basename(req.params.filename);
+    const filePath = path5.join(UPLOADS_DIR, safeName);
+    if (fs5.existsSync(filePath)) {
+      res.setHeader("X-Content-Type-Options", "nosniff");
+      res.sendFile(filePath);
+    } else {
+      res.status(404).json({ success: false, error: "File not found." });
+    }
+  } catch (err) {
+    res.status(500).json({ success: false, error: "Error reading file." });
+  }
+});
+app.post("/api/articles/sync", (req, res) => {
+  try {
+    const { articles } = req.body;
+    if (!Array.isArray(articles)) {
+      return res.status(400).json({ success: false, error: "Articles array required." });
+    }
+    const result = syncArticles(articles);
+    res.json({ success: true, ...result });
+  } catch (error) {
+    console.error("Error syncing articles:", error);
+    res.status(500).json({ success: false, error: "Failed to sync articles." });
+  }
+});
 app.post("/api/articles/:id/download", downloadLimiter, (req, res) => {
   try {
     incrementDownloadCount(req.params.id);
@@ -2104,8 +2182,8 @@ app.post("/api/articles/upload-banner", publishLimiter, authenticate, (req, res)
       const safeName = `banner-${Date.now()}-${safeRandomToken}.${ext}`;
       const filePath = path5.join(UPLOADS_DIR, safeName);
       fs5.writeFileSync(filePath, buffer, { flag: "wx" });
-      const publicUrl = `/uploads/${safeName}`;
-      res.json({ success: true, url: publicUrl });
+      const publicUrl = `/api/uploads/${safeName}`;
+      res.json({ success: true, url: publicUrl, localUrl: `/uploads/${safeName}` });
     } catch (writeErr) {
       console.error("Error writing banner image:", writeErr);
       res.status(500).json({ success: false, error: "Failed to save banner image to server storage." });

@@ -8,31 +8,61 @@ import {
 } from 'lucide-react';
 import type { Article } from './articles-db';
 import { openWhatsAppShare } from './n-intel-whatsapp';
+import { getLocalArticles, saveLocalArticle, syncLocalArticlesWithServer } from './articles-storage';
 
 export default function ArticleDetail() {
   const { id } = useParams<{ id: string }>();
   const [searchParams] = useSearchParams();
-  const [article, setArticle] = useState<Article | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [article, setArticle] = useState<Article | null>(() => {
+    if (!id) return null;
+    const q = id.toLowerCase();
+    const local = getLocalArticles();
+    return local.find(a => a.id === id || a.slug === id || a.id.toLowerCase() === q || (a.slug && a.slug.toLowerCase() === q)) || null;
+  });
+  const [loading, setLoading] = useState(() => {
+    if (!id) return false;
+    const q = id.toLowerCase();
+    const cached = getLocalArticles().find(a => a.id === id || a.slug === id || a.id.toLowerCase() === q || (a.slug && a.slug.toLowerCase() === q));
+    return !cached;
+  });
   const [isDownloading, setIsDownloading] = useState(false);
 
   useEffect(() => {
     if (!id) return;
-    setLoading(true);
+    const q = id.toLowerCase();
+    const cached = getLocalArticles().find(a => 
+      a.id === id || a.slug === id || a.id.toLowerCase() === q || (a.slug && a.slug.toLowerCase() === q)
+    );
+    if (cached) {
+      setArticle(cached);
+      setLoading(false);
+    } else {
+      setLoading(true);
+    }
+
     fetch(`/api/articles/${encodeURIComponent(id)}`)
       .then(res => res.json())
       .then(data => {
         if (data.success && data.article) {
           setArticle(data.article);
+          saveLocalArticle(data.article);
           // If URL had ?download=1, auto trigger PDF export after loading
           if (searchParams.get('download') === '1') {
             setTimeout(() => {
               handleDownloadPdf(data.article.id);
             }, 600);
           }
+        } else if (cached) {
+          // Server lost data due to serverless cold restart — trigger background sync to restore it!
+          syncLocalArticlesWithServer().catch(() => {});
         }
       })
-      .catch(err => console.error('Failed to load article:', err))
+      .catch(err => {
+        console.warn('Network issue fetching article from server:', err);
+        if (cached) {
+          syncLocalArticlesWithServer().catch(() => {});
+        }
+      })
       .finally(() => setLoading(false));
   }, [id, searchParams]);
 
