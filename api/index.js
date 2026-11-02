@@ -785,6 +785,118 @@ function purgeAllDeletedStories(adminEmail) {
   addAuditLog("DELETE", adminEmail, `Emptied trash: permanently purged all ${deleted.length} deleted stories.`);
   return deleted.length;
 }
+function deleteStoriesByDate(date, adminEmail, permanent = false) {
+  const stories = loadStories();
+  let count = 0;
+  if (permanent) {
+    const retained = stories.filter((s) => {
+      if (s.date === date) {
+        count++;
+        return false;
+      }
+      return true;
+    });
+    saveStories(retained);
+    addAuditLog("DELETE", adminEmail, `Permanently purged entire briefing for ${date} (${count} stories removed).`);
+  } else {
+    for (let i = 0; i < stories.length; i++) {
+      if (stories[i].date === date && !stories[i].isDeleted) {
+        stories[i] = {
+          ...stories[i],
+          isDeleted: true,
+          deletedAt: (/* @__PURE__ */ new Date()).toISOString(),
+          deletedBy: adminEmail,
+          updatedAt: (/* @__PURE__ */ new Date()).toISOString()
+        };
+        count++;
+      }
+    }
+    saveStories(stories);
+    addAuditLog("DELETE", adminEmail, `Soft-deleted entire briefing for ${date} (${count} stories moved to trash).`);
+  }
+  return { count, date };
+}
+function deleteStoriesByCategory(category, adminEmail, date, permanent = false) {
+  const stories = loadStories();
+  let count = 0;
+  const targetCategory = category.trim().toLowerCase();
+  const matchesCategory = (s) => {
+    if (s.category.trim().toLowerCase() !== targetCategory) return false;
+    if (date && s.date !== date) return false;
+    return true;
+  };
+  if (permanent) {
+    const retained = stories.filter((s) => {
+      if (matchesCategory(s)) {
+        count++;
+        return false;
+      }
+      return true;
+    });
+    saveStories(retained);
+    addAuditLog(
+      "DELETE",
+      adminEmail,
+      `Permanently purged category "${category}"${date ? ` for date ${date}` : ""} (${count} stories removed).`
+    );
+  } else {
+    for (let i = 0; i < stories.length; i++) {
+      if (matchesCategory(stories[i]) && !stories[i].isDeleted) {
+        stories[i] = {
+          ...stories[i],
+          isDeleted: true,
+          deletedAt: (/* @__PURE__ */ new Date()).toISOString(),
+          deletedBy: adminEmail,
+          updatedAt: (/* @__PURE__ */ new Date()).toISOString()
+        };
+        count++;
+      }
+    }
+    saveStories(stories);
+    addAuditLog(
+      "DELETE",
+      adminEmail,
+      `Soft-deleted category "${category}"${date ? ` for date ${date}` : ""} (${count} stories moved to trash).`
+    );
+  }
+  return { count, category, date };
+}
+function deleteStoriesByIds(ids, adminEmail, permanent = false) {
+  if (!Array.isArray(ids) || ids.length === 0) {
+    return { count: 0, ids: [] };
+  }
+  const idMap = {};
+  for (const id of ids) idMap[id] = true;
+  const stories = loadStories();
+  let count = 0;
+  if (permanent) {
+    const retained = stories.filter((s) => {
+      if (idMap[s.id]) {
+        count++;
+        return false;
+      }
+      return true;
+    });
+    saveStories(retained);
+    addAuditLog("DELETE", adminEmail, `Permanently purged ${count} selected stories.`);
+  } else {
+    for (let i = 0; i < stories.length; i++) {
+      if (idMap[stories[i].id] && !stories[i].isDeleted) {
+        stories[i] = {
+          ...stories[i],
+          isDeleted: true,
+          deletedAt: (/* @__PURE__ */ new Date()).toISOString(),
+          deletedBy: adminEmail,
+          updatedAt: (/* @__PURE__ */ new Date()).toISOString()
+        };
+        count++;
+      }
+    }
+    saveStories(stories);
+    addAuditLog("DELETE", adminEmail, `Soft-deleted ${count} selected stories (moved to trash).`);
+  }
+  return { count, ids };
+}
 function getAuditLogs(limitCount = 100) {
   const logs = loadAudit();
   return logs.slice(0, limitCount);
@@ -2212,6 +2324,83 @@ app.delete("/api/n-intel/stories/:id", authenticate, (req, res) => {
     res.json({ success: true, message: "Story removed from public feed.", permanent: false });
   } catch (error) {
     console.error("Error deleting story:", error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+app.post("/api/n-intel/stories/bulk-delete", authenticate, (req, res) => {
+  if (!req.user?.isAdmin) {
+    return res.status(403).json({ success: false, error: "Access denied: Admin privileges required." });
+  }
+  try {
+    const { type, date, category, ids, permanent } = req.body;
+    const adminEmail = req.user.email || "Admin";
+    const isPermanent = Boolean(permanent);
+    if (type === "date" || date && !category && !ids) {
+      if (!date) {
+        return res.status(400).json({ success: false, error: "Target date is required for date-wise deletion." });
+      }
+      const result = deleteStoriesByDate(date, adminEmail, isPermanent);
+      return res.json({
+        success: true,
+        type: "date",
+        count: result.count,
+        date,
+        permanent: isPermanent,
+        message: `${result.count} stories for ${date} ${isPermanent ? "permanently purged" : "moved to trash"}.`
+      });
+    }
+    if (type === "category" || category) {
+      if (!category) {
+        return res.status(400).json({ success: false, error: "Target category is required for category-wise deletion." });
+      }
+      const result = deleteStoriesByCategory(category, adminEmail, date, isPermanent);
+      return res.json({
+        success: true,
+        type: "category",
+        count: result.count,
+        category,
+        date,
+        permanent: isPermanent,
+        message: `${result.count} stories in category "${category}"${date ? ` for date ${date}` : ""} ${isPermanent ? "permanently purged" : "moved to trash"}.`
+      });
+    }
+    if (type === "ids" || Array.isArray(ids)) {
+      if (!Array.isArray(ids) || ids.length === 0) {
+        return res.status(400).json({ success: false, error: "Story IDs array is required." });
+      }
+      const result = deleteStoriesByIds(ids, adminEmail, isPermanent);
+      return res.json({
+        success: true,
+        type: "ids",
+        count: result.count,
+        ids: result.ids,
+        permanent: isPermanent,
+        message: `${result.count} selected stories ${isPermanent ? "permanently purged" : "moved to trash"}.`
+      });
+    }
+    return res.status(400).json({ success: false, error: "Invalid deletion criteria. Provide date, category, or story IDs." });
+  } catch (error) {
+    console.error("Error during bulk deletion:", error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+app.delete("/api/n-intel/editions/:date", authenticate, (req, res) => {
+  if (!req.user?.isAdmin) {
+    return res.status(403).json({ success: false, error: "Access denied: Admin privileges required." });
+  }
+  try {
+    const isPermanent = req.query.permanent === "true";
+    const adminEmail = req.user.email || "Admin";
+    const result = deleteStoriesByDate(req.params.date, adminEmail, isPermanent);
+    res.json({
+      success: true,
+      count: result.count,
+      date: req.params.date,
+      permanent: isPermanent,
+      message: `Successfully deleted ${result.count} stories for date ${req.params.date}.`
+    });
+  } catch (error) {
+    console.error("Error deleting edition by date:", error);
     res.status(500).json({ success: false, error: error.message });
   }
 });

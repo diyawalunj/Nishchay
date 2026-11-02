@@ -6,7 +6,7 @@ import {
   Upload, Edit3, Trash2, Shield, Calendar, Search, AlertCircle,
   CheckCircle2, Clock, Lock, RefreshCw, Eye, ArrowLeft, History as HistoryIcon,
   Save, X, FileText, Check, RotateCcw, Download, Sparkles, ChevronDown, ChevronUp,
-  MessageCircle
+  MessageCircle, CheckSquare, Square, Filter, Layers
 } from 'lucide-react';
 import type { NIntelStory, NIntelAuditLog } from './types';
 import { auth, onAuthStateChanged, checkIfAdmin, type User } from './firebase';
@@ -23,7 +23,11 @@ import {
   mergeStoriesWithLocal,
   syncLocalWithServer,
   getLocalStories,
-  getLocalBatches
+  getLocalBatches,
+  deleteLocalStory,
+  deleteLocalStoriesByDate,
+  deleteLocalStoriesByCategory,
+  deleteLocalStoriesByIds
 } from './n-intel-storage';
 
 export default function NIntelAdmin() {
@@ -86,6 +90,23 @@ export default function NIntelAdmin() {
   const [isDeleting, setIsDeleting] = useState(false);
   const [actionNotice, setActionNotice] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
+  // Bulk & Group Deletion State (Date-wise, Category-wise, Multi-selected)
+  const [bulkDeleteTarget, setBulkDeleteTarget] = useState<{
+    type: 'date' | 'category' | 'ids';
+    title: string;
+    description: string;
+    date?: string;
+    category?: string;
+    count: number;
+    ids?: string[];
+  } | null>(null);
+  const [isBulkDeleting, setIsBulkDeleting] = useState(false);
+  const [deleteModePermanent, setDeleteModePermanent] = useState(false);
+  const [selectedStoryIds, setSelectedStoryIds] = useState<string[]>([]);
+  const [showBatchDeletePicker, setShowBatchDeletePicker] = useState(false);
+  const [batchPickerDate, setBatchPickerDate] = useState<string>('');
+  const [batchPickerCategory, setBatchPickerCategory] = useState<string>('All');
+
   // Management Filter: 'active' | 'deleted' (All tab removed per user request)
   const [statusFilter, setStatusFilter] = useState<'active' | 'deleted'>('active');
 
@@ -105,14 +126,14 @@ export default function NIntelAdmin() {
 
   // Prevent background scrolling while any modal is open
   useEffect(() => {
-    if (editingStory || deletingStory || showEmptyTrashModal) {
+    if (editingStory || deletingStory || showEmptyTrashModal || bulkDeleteTarget || showBatchDeletePicker) {
       const prevOverflow = document.body.style.overflow;
       document.body.style.overflow = 'hidden';
       return () => {
         document.body.style.overflow = prevOverflow;
       };
     }
-  }, [editingStory, deletingStory, showEmptyTrashModal]);
+  }, [editingStory, deletingStory, showEmptyTrashModal, bulkDeleteTarget, showBatchDeletePicker]);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
@@ -213,6 +234,75 @@ export default function NIntelAdmin() {
       }
     }
   }, [editStoryIdParam, stories]);
+
+  // Dynamic categories list from loaded stories
+  const availableCategories = useMemo(() => {
+    const set = new Set<string>();
+    for (const s of stories) {
+      if (s && s.category) set.add(s.category);
+    }
+    return Array.from(set).sort();
+  }, [stories]);
+
+  // Dynamic available dates and their story counts
+  const availableDates = useMemo(() => {
+    const map: Record<string, number> = {};
+    for (const s of stories) {
+      if (s && s.date && (statusFilter === 'deleted' ? s.isDeleted : !s.isDeleted)) {
+        map[s.date] = (map[s.date] || 0) + 1;
+      }
+    }
+    return Object.entries(map)
+      .map(([date, count]) => ({ date, count }))
+      .sort((a, b) => b.date.localeCompare(a.date));
+  }, [stories, statusFilter]);
+
+  // Filtered stories currently displayed
+  const visibleStories = useMemo(() => {
+    return stories.filter(s => {
+      // 1. Status Filter
+      if (statusFilter === 'deleted' ? !s.isDeleted : s.isDeleted) return false;
+      // 2. Date Filter
+      if (filterDate && s.date !== filterDate) return false;
+      // 3. Category Filter
+      if (filterCategory && filterCategory !== 'All' && s.category.toLowerCase() !== filterCategory.toLowerCase()) return false;
+      // 4. Search Query
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase().trim();
+        const matchH = s.headline?.toLowerCase().includes(q);
+        const matchC = s.content?.toLowerCase().includes(q);
+        const matchCat = s.category?.toLowerCase().includes(q);
+        if (!matchH && !matchC && !matchCat) return false;
+      }
+      return true;
+    });
+  }, [stories, statusFilter, filterDate, filterCategory, searchQuery]);
+
+  // Counts for current scopes
+  const currentDateCount = useMemo(() => {
+    if (!filterDate) return 0;
+    return stories.filter(s => s.date === filterDate && (statusFilter === 'deleted' ? s.isDeleted : !s.isDeleted)).length;
+  }, [stories, filterDate, statusFilter]);
+
+  const currentCategoryCount = useMemo(() => {
+    if (!filterCategory || filterCategory === 'All') return 0;
+    const cat = filterCategory.toLowerCase();
+    return stories.filter(s => s.category.toLowerCase() === cat && (!filterDate || s.date === filterDate) && (statusFilter === 'deleted' ? s.isDeleted : !s.isDeleted)).length;
+  }, [stories, filterCategory, filterDate, statusFilter]);
+
+  const handleToggleSelectAll = () => {
+    if (selectedStoryIds.length === visibleStories.length && visibleStories.length > 0) {
+      setSelectedStoryIds([]);
+    } else {
+      setSelectedStoryIds(visibleStories.map(s => s.id));
+    }
+  };
+
+  const handleToggleStorySelect = (id: string) => {
+    setSelectedStoryIds(prev =>
+      prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
+    );
+  };
 
   // Handle One-Step Direct Publish
   const handlePublish = async (e: React.FormEvent) => {
@@ -441,7 +531,7 @@ export default function NIntelAdmin() {
     }
   };
 
-  // Confirm Delete
+  // Confirm Delete Individual Story
   const handleConfirmDelete = async () => {
     if (!deletingStory) return;
 
@@ -452,7 +542,8 @@ export default function NIntelAdmin() {
       const headers: Record<string, string> = {};
       if (token) headers['Authorization'] = `Bearer ${token}`;
 
-      const url = `/api/n-intel/stories/${encodeURIComponent(deletingStory.id)}`;
+      const isPermanent = deleteModePermanent || deletingStory.isDeleted;
+      const url = `/api/n-intel/stories/${encodeURIComponent(deletingStory.id)}${isPermanent ? '?permanent=true' : ''}`;
 
       const res = await fetch(url, {
         method: 'DELETE',
@@ -464,14 +555,151 @@ export default function NIntelAdmin() {
         throw new Error(data.error || 'Failed to delete story');
       }
 
-      setStories(prev => prev.map(s => s.id === deletingStory.id ? { ...s, isDeleted: true } : s));
-      setActionNotice({ type: 'success', message: 'Story successfully removed from public feed.' });
+      deleteLocalStory(deletingStory.id, isPermanent);
+
+      if (isPermanent) {
+        setStories(prev => prev.filter(s => s.id !== deletingStory.id));
+        setActionNotice({ type: 'success', message: 'Story permanently erased from database.' });
+      } else {
+        setStories(prev => prev.map(s => s.id === deletingStory.id ? { ...s, isDeleted: true } : s));
+        setActionNotice({ type: 'success', message: 'Story removed from public feed (moved to Trash).' });
+      }
+      setSelectedStoryIds(prev => prev.filter(id => id !== deletingStory.id));
       setDeletingStory(null);
+      setDeleteModePermanent(false);
     } catch (err: any) {
       setActionNotice({ type: 'error', message: `Delete failed: ${err.message}` });
     } finally {
       setIsDeleting(false);
     }
+  };
+
+  // Confirm Bulk Delete (Date-wise, Category-wise, or Multi-selected IDs)
+  const handleConfirmBulkDelete = async () => {
+    if (!bulkDeleteTarget) return;
+
+    setIsBulkDeleting(true);
+    setActionNotice(null);
+    try {
+      const token = await getAuthToken();
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+
+      const res = await fetch('/api/n-intel/stories/bulk-delete', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          type: bulkDeleteTarget.type,
+          date: bulkDeleteTarget.date,
+          category: bulkDeleteTarget.category,
+          ids: bulkDeleteTarget.ids,
+          permanent: deleteModePermanent
+        })
+      });
+
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Failed to complete deletion');
+      }
+
+      // Update local storage
+      if (bulkDeleteTarget.type === 'date' && bulkDeleteTarget.date) {
+        deleteLocalStoriesByDate(bulkDeleteTarget.date, deleteModePermanent);
+      } else if (bulkDeleteTarget.type === 'category' && bulkDeleteTarget.category) {
+        deleteLocalStoriesByCategory(bulkDeleteTarget.category, bulkDeleteTarget.date, deleteModePermanent);
+      } else if (bulkDeleteTarget.type === 'ids' && bulkDeleteTarget.ids) {
+        deleteLocalStoriesByIds(bulkDeleteTarget.ids, deleteModePermanent);
+      }
+
+      // Update in-memory state
+      if (deleteModePermanent) {
+        if (bulkDeleteTarget.type === 'date' && bulkDeleteTarget.date) {
+          setStories(prev => prev.filter(s => s.date !== bulkDeleteTarget.date));
+        } else if (bulkDeleteTarget.type === 'category' && bulkDeleteTarget.category) {
+          const cat = bulkDeleteTarget.category.toLowerCase();
+          setStories(prev => prev.filter(s => {
+            if (s.category.toLowerCase() !== cat) return true;
+            if (bulkDeleteTarget.date && s.date !== bulkDeleteTarget.date) return true;
+            return false;
+          }));
+        } else if (bulkDeleteTarget.type === 'ids' && bulkDeleteTarget.ids) {
+          const idSet = new Set(bulkDeleteTarget.ids);
+          setStories(prev => prev.filter(s => !idSet.has(s.id)));
+        }
+      } else {
+        if (bulkDeleteTarget.type === 'date' && bulkDeleteTarget.date) {
+          setStories(prev => prev.map(s => s.date === bulkDeleteTarget.date ? { ...s, isDeleted: true } : s));
+        } else if (bulkDeleteTarget.type === 'category' && bulkDeleteTarget.category) {
+          const cat = bulkDeleteTarget.category.toLowerCase();
+          setStories(prev => prev.map(s => {
+            const match = s.category.toLowerCase() === cat && (!bulkDeleteTarget.date || s.date === bulkDeleteTarget.date);
+            return match ? { ...s, isDeleted: true } : s;
+          }));
+        } else if (bulkDeleteTarget.type === 'ids' && bulkDeleteTarget.ids) {
+          const idSet = new Set(bulkDeleteTarget.ids);
+          setStories(prev => prev.map(s => idSet.has(s.id) ? { ...s, isDeleted: true } : s));
+        }
+      }
+
+      setSelectedStoryIds([]);
+      setBulkDeleteTarget(null);
+      setDeleteModePermanent(false);
+      setActionNotice({
+        type: 'success',
+        message: data.message || `Successfully deleted ${data.count} stories.`
+      });
+    } catch (err: any) {
+      setActionNotice({ type: 'error', message: `Bulk delete failed: ${err.message}` });
+    } finally {
+      setIsBulkDeleting(false);
+    }
+  };
+
+  // Triggers for bulk deletion modals
+  const triggerDateDelete = (date: string, count?: number) => {
+    setDeleteModePermanent(false);
+    const resolvedCount = typeof count === 'number'
+      ? count
+      : stories.filter(s => s && s.date === date && (statusFilter === 'deleted' ? !!s.isDeleted : !s.isDeleted)).length;
+    setBulkDeleteTarget({
+      type: 'date',
+      title: `Delete Day's Briefing (${formatDisplayDate(date)})`,
+      description: `This will remove all ${resolvedCount} stories published for ${date}.`,
+      date,
+      count: resolvedCount
+    });
+  };
+
+  const triggerCategoryDelete = (category: string, date?: string, count?: number) => {
+    setDeleteModePermanent(false);
+    const resolvedCount = typeof count === 'number'
+      ? count
+      : stories.filter(s => {
+          if (statusFilter === 'deleted' ? !s.isDeleted : s.isDeleted) return false;
+          if (s.category?.toLowerCase() !== category.toLowerCase()) return false;
+          if (date && s.date !== date) return false;
+          return true;
+        }).length;
+    const dateQualifier = date ? ` for date ${date}` : '';
+    setBulkDeleteTarget({
+      type: 'category',
+      title: `Delete Category: "${category}"`,
+      description: `This will remove all ${resolvedCount} stories in category "${category}"${dateQualifier}.`,
+      category,
+      date: date || undefined,
+      count: resolvedCount
+    });
+  };
+
+  const triggerSelectedDelete = (ids: string[]) => {
+    setDeleteModePermanent(false);
+    setBulkDeleteTarget({
+      type: 'ids',
+      title: `Delete ${ids.length} Selected Stories`,
+      description: `This will remove the ${ids.length} news items you selected.`,
+      ids,
+      count: ids.length
+    });
   };
 
   // Restore Story
@@ -994,19 +1222,51 @@ export default function NIntelAdmin() {
               </div>
             </div>
 
-            {/* Filter Bar (Date & Refresh) */}
-            <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
-              <div className="flex items-center gap-3">
+            {/* Filter Bar (Date, Category, Search & Bulk Delete Tools) */}
+            <div className="flex flex-wrap items-center justify-between gap-4 mb-5">
+              <div className="flex flex-wrap items-center gap-3">
+                {/* Date Filter */}
                 <div className="flex items-center gap-2 px-3 py-1.5 bg-gray-50 border border-gray-200 rounded-xl">
-                  <Calendar size={16} className="text-gray-500" />
+                  <Calendar size={15} className="text-gray-500" />
                   <input
                     type="date"
                     value={filterDate}
                     onChange={(e) => setFilterDate(e.target.value)}
                     className="bg-transparent text-xs font-bold text-gray-800 focus:outline-none"
+                    title="Filter by date"
                   />
                   {filterDate && (
-                    <button onClick={() => setFilterDate('')} className="text-xs text-gray-400 hover:text-gray-600 font-bold">×</button>
+                    <button
+                      onClick={() => setFilterDate('')}
+                      className="text-xs text-gray-400 hover:text-gray-600 font-bold px-1"
+                      title="Clear date filter"
+                    >
+                      ×
+                    </button>
+                  )}
+                </div>
+
+                {/* Category Filter */}
+                <div className="flex items-center gap-2 px-3 py-1.5 bg-gray-50 border border-gray-200 rounded-xl">
+                  <Filter size={14} className="text-gray-500" />
+                  <select
+                    value={filterCategory}
+                    onChange={(e) => setFilterCategory(e.target.value)}
+                    className="bg-transparent text-xs font-bold text-gray-800 focus:outline-none cursor-pointer"
+                  >
+                    <option value="All">All Categories</option>
+                    {availableCategories.map(cat => (
+                      <option key={cat} value={cat}>{cat}</option>
+                    ))}
+                  </select>
+                  {filterCategory !== 'All' && (
+                    <button
+                      onClick={() => setFilterCategory('All')}
+                      className="text-xs text-gray-400 hover:text-gray-600 font-bold px-1"
+                      title="Reset category filter"
+                    >
+                      ×
+                    </button>
                   )}
                 </div>
 
@@ -1015,96 +1275,263 @@ export default function NIntelAdmin() {
                   className="p-2 border border-gray-200 rounded-xl hover:bg-gray-50 text-gray-600 transition-colors"
                   title="Refresh Stories"
                 >
-                  <RefreshCw size={16} className={loadingStories ? 'animate-spin' : ''} />
+                  <RefreshCw size={15} className={loadingStories ? 'animate-spin' : ''} />
+                </button>
+
+                {/* Quick Bulk Delete Tools Launcher */}
+                <button
+                  type="button"
+                  onClick={() => setShowBatchDeletePicker(true)}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl text-xs font-bold transition-all shadow-2xs cursor-pointer active:scale-95"
+                  title="Delete whole briefing or specific category in 1-click"
+                >
+                  <Layers size={14} />
+                  <span>Bulk Delete Tools</span>
                 </button>
               </div>
 
               <span className="text-xs text-gray-400 font-medium">
-                Showing {stories.filter(s => statusFilter === 'deleted' ? s.isDeleted : !s.isDeleted).length} stories
+                Showing {visibleStories.length} of {stories.filter(s => statusFilter === 'deleted' ? s.isDeleted : !s.isDeleted).length} stories
               </span>
             </div>
+
+            {/* ── HIGH-LEVEL BULK ACTION BANNERS ── */}
+            {/* 1. Date-Wise Deletion Banner */}
+            {filterDate && currentDateCount > 0 && (
+              <div className="flex flex-wrap items-center justify-between gap-3 p-3.5 bg-rose-50/90 border border-rose-200 rounded-2xl mb-4">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-xl bg-rose-100 text-rose-700 flex items-center justify-center shrink-0">
+                    <Calendar size={16} />
+                  </div>
+                  <div>
+                    <p className="text-xs font-bold text-rose-950">
+                      Day's Briefing: <span className="font-black">{formatDisplayDate(filterDate)}</span> ({filterDate})
+                    </p>
+                    <p className="text-[11px] text-rose-700 font-medium">
+                      Contains <span className="font-bold">{currentDateCount}</span> stories {statusFilter === 'deleted' ? 'in Trash' : 'in active feed'}.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => triggerDateDelete(filterDate, currentDateCount)}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-black uppercase tracking-wider transition-all shadow-sm active:scale-95 cursor-pointer"
+                >
+                  <Trash2 size={13} />
+                  <span>Delete Entire Day's Briefing ({currentDateCount} Stories)</span>
+                </button>
+              </div>
+            )}
+
+            {/* 2. Category-Wise Deletion Banner */}
+            {filterCategory !== 'All' && currentCategoryCount > 0 && (
+              <div className="flex flex-wrap items-center justify-between gap-3 p-3.5 bg-amber-50/90 border border-amber-200 rounded-2xl mb-4">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-xl bg-amber-100 text-amber-800 flex items-center justify-center shrink-0">
+                    <Filter size={16} />
+                  </div>
+                  <div>
+                    <p className="text-xs font-bold text-amber-950">
+                      Category Scope: <span className="font-black">{filterCategory}</span>{filterDate ? ` on ${filterDate}` : ' (All Dates)'}
+                    </p>
+                    <p className="text-[11px] text-amber-800 font-medium">
+                      Contains <span className="font-bold">{currentCategoryCount}</span> stories matching this category.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => triggerCategoryDelete(filterCategory, filterDate || undefined, currentCategoryCount)}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-black uppercase tracking-wider transition-all shadow-sm active:scale-95 cursor-pointer"
+                >
+                  <Trash2 size={13} />
+                  <span>Delete All in "{filterCategory}" ({currentCategoryCount} Stories)</span>
+                </button>
+              </div>
+            )}
+
+            {/* 3. Multi-Select Floating Banner */}
+            {selectedStoryIds.length > 0 && (
+              <div className="flex flex-wrap items-center justify-between gap-3 p-3.5 bg-indigo-50 border border-indigo-200 rounded-2xl mb-4 animate-in fade-in duration-200">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-xl bg-indigo-100 text-indigo-700 flex items-center justify-center shrink-0">
+                    <CheckSquare size={16} />
+                  </div>
+                  <div>
+                    <p className="text-xs font-bold text-indigo-950">
+                      <span className="font-black">{selectedStoryIds.length}</span> news stories selected
+                    </p>
+                    <p className="text-[11px] text-indigo-700 font-medium">
+                      Apply deletion to the chosen news updates.
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => triggerSelectedDelete(selectedStoryIds)}
+                    className="inline-flex items-center gap-1.5 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-black uppercase tracking-wider transition-all shadow-sm active:scale-95 cursor-pointer"
+                  >
+                    <Trash2 size={13} />
+                    <span>Delete Selected ({selectedStoryIds.length})</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedStoryIds([])}
+                    className="px-3 py-2 bg-white hover:bg-gray-100 border border-gray-200 text-gray-700 rounded-xl text-xs font-bold transition-colors cursor-pointer"
+                  >
+                    Deselect All
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Table / List Header with Select All Checkbox */}
+            {visibleStories.length > 0 && (
+              <div className="flex items-center justify-between py-2 px-3 bg-gray-50/90 rounded-xl mb-3 text-xs font-bold text-gray-500 border border-gray-100">
+                <button
+                  type="button"
+                  onClick={handleToggleSelectAll}
+                  className="flex items-center gap-2 text-gray-700 hover:text-gray-900 cursor-pointer select-none"
+                >
+                  {selectedStoryIds.length > 0 && selectedStoryIds.length === visibleStories.length ? (
+                    <CheckSquare size={16} className="text-[#1B4332]" />
+                  ) : (
+                    <Square size={16} className="text-gray-400" />
+                  )}
+                  <span>
+                    {selectedStoryIds.length === visibleStories.length && visibleStories.length > 0
+                      ? `Deselect All (${visibleStories.length})`
+                      : `Select All Visible (${visibleStories.length})`}
+                  </span>
+                </button>
+                <span className="text-[11px] text-gray-400">
+                  Select checkbox for batch deletion or click Delete on any story below
+                </span>
+              </div>
+            )}
 
             {/* Stories Table / List */}
             {loadingStories ? (
               <div className="py-16 text-center text-gray-400 text-xs font-bold animate-pulse">
                 Loading stories...
               </div>
-            ) : stories.filter(s => statusFilter === 'deleted' ? s.isDeleted : !s.isDeleted).length === 0 ? (
+            ) : visibleStories.length === 0 ? (
               <div className="py-16 text-center text-gray-400 text-xs font-medium">
                 {statusFilter === 'deleted'
-                  ? 'Trash is currently empty. No deleted stories.'
-                  : 'No active stories found.'}
+                  ? 'Trash is currently empty. No deleted stories matching filters.'
+                  : 'No active stories found matching your filter.'}
               </div>
             ) : (
               <div className="divide-y divide-gray-100">
-                {stories.filter(s => statusFilter === 'deleted' ? s.isDeleted : !s.isDeleted).map((story) => (
-                  <div
-                    key={story.id}
-                    className={`py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 transition-colors ${
-                      story.isDeleted ? 'opacity-60 bg-red-50/20' : 'hover:bg-gray-50/50'
-                    }`}
-                  >
-                    <div className="flex-1 pr-4">
-                      <div className="flex items-center gap-2 mb-1.5">
-                        <span className="px-2.5 py-0.5 bg-gray-100 text-gray-700 text-[10px] font-bold uppercase rounded">
-                          {story.category}
-                        </span>
-                        <span className="text-[11px] text-gray-400 font-mono">
-                          {story.date}
-                        </span>
-                        {story.isDefence && (
-                          <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 text-[9px] font-black uppercase rounded">
-                            Defence
-                          </span>
-                        )}
-                        {story.isDeleted && (
-                          <span className="px-2 py-0.5 bg-red-100 text-red-800 text-[9px] font-black uppercase rounded">
-                            Removed from feed
-                          </span>
-                        )}
+                {visibleStories.map((story) => {
+                  const isSelected = selectedStoryIds.includes(story.id);
+
+                  return (
+                    <div
+                      key={story.id}
+                      className={`py-4 px-2 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-4 transition-colors ${
+                        isSelected
+                          ? 'bg-indigo-50/40 border border-indigo-100'
+                          : story.isDeleted
+                          ? 'opacity-60 bg-red-50/20'
+                          : 'hover:bg-gray-50/50'
+                      }`}
+                    >
+                      <div className="flex items-start gap-3 flex-1 pr-4">
+                        {/* Multi-Select Checkbox */}
+                        <button
+                          type="button"
+                          onClick={() => handleToggleStorySelect(story.id)}
+                          className="mt-1 text-gray-400 hover:text-[#1B4332] transition-colors cursor-pointer shrink-0"
+                          title={isSelected ? 'Deselect story' : 'Select story for batch action'}
+                        >
+                          {isSelected ? (
+                            <CheckSquare size={18} className="text-[#1B4332]" />
+                          ) : (
+                            <Square size={18} className="text-gray-300 hover:text-gray-500" />
+                          )}
+                        </button>
+
+                        <div className="flex-1">
+                          <div className="flex flex-wrap items-center gap-2 mb-1.5">
+                            <span className="px-2.5 py-0.5 bg-gray-100 text-gray-700 text-[10px] font-bold uppercase rounded">
+                              {story.category}
+                            </span>
+                            <span className="text-[11px] text-gray-400 font-mono">
+                              {story.date}
+                            </span>
+                            {story.isDefence && (
+                              <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 text-[9px] font-black uppercase rounded">
+                                Defence
+                              </span>
+                            )}
+                            {story.isDeleted && (
+                              <span className="px-2 py-0.5 bg-red-100 text-red-800 text-[9px] font-black uppercase rounded">
+                                Removed from feed
+                              </span>
+                            )}
+                          </div>
+
+                          <h4 className="text-sm font-black text-gray-900 leading-snug">
+                            {story.headline}
+                          </h4>
+
+                          <p className="text-xs text-gray-500 line-clamp-2 mt-1">
+                            {story.content}
+                          </p>
+                        </div>
                       </div>
 
-                      <h4 className="text-sm font-black text-gray-900 leading-snug">
-                        {story.headline}
-                      </h4>
-
-                      <p className="text-xs text-gray-500 line-clamp-2 mt-1">
-                        {story.content}
-                      </p>
-                    </div>
-
-                    {/* Actions */}
-                    <div className="flex items-center gap-2 shrink-0">
-                      <button
-                        onClick={() => openEditModal(story)}
-                        className="inline-flex items-center gap-1 px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-xs font-bold transition-colors"
-                      >
-                        <Edit3 size={14} />
-                        <span>Edit</span>
-                      </button>
-
-                      {story.isDeleted ? (
+                      {/* Individual Actions */}
+                      <div className="flex items-center gap-2 shrink-0 sm:self-center self-end pl-8 sm:pl-0">
                         <button
-                          onClick={() => handleRestoreStory(story)}
-                          className="inline-flex items-center gap-1 px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-lg text-xs font-bold transition-colors"
-                          title="Restore to public feed"
+                          onClick={() => openEditModal(story)}
+                          className="inline-flex items-center gap-1 px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-xs font-bold transition-colors cursor-pointer"
                         >
-                          <RotateCcw size={14} />
-                          <span>Restore</span>
+                          <Edit3 size={14} />
+                          <span>Edit</span>
                         </button>
-                      ) : (
-                        <button
-                          onClick={() => setDeletingStory(story)}
-                          className="inline-flex items-center gap-1 px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-700 rounded-lg text-xs font-bold transition-colors"
-                          title="Remove from public feed (moves to Trash)"
-                        >
-                          <Trash2 size={14} />
-                          <span>Delete</span>
-                        </button>
-                      )}
+
+                        {story.isDeleted ? (
+                          <>
+                            <button
+                              onClick={() => handleRestoreStory(story)}
+                              className="inline-flex items-center gap-1 px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-lg text-xs font-bold transition-colors cursor-pointer"
+                              title="Restore to public feed"
+                            >
+                              <RotateCcw size={14} />
+                              <span>Restore</span>
+                            </button>
+                            <button
+                              onClick={() => {
+                                setDeleteModePermanent(true);
+                                setDeletingStory(story);
+                              }}
+                              className="inline-flex items-center gap-1 px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-bold transition-colors cursor-pointer"
+                              title="Permanently erase from database"
+                            >
+                              <Trash2 size={14} />
+                              <span>Purge</span>
+                            </button>
+                          </>
+                        ) : (
+                          <button
+                            onClick={() => {
+                              setDeleteModePermanent(false);
+                              setDeletingStory(story);
+                            }}
+                            className="inline-flex items-center gap-1 px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-700 rounded-lg text-xs font-bold transition-colors cursor-pointer"
+                            title="Remove from public feed (moves to Trash)"
+                          >
+                            <Trash2 size={14} />
+                            <span>Delete</span>
+                          </button>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
@@ -1341,27 +1768,34 @@ export default function NIntelAdmin() {
         document.body
       )}
 
-      {/* ── DELETE CONFIRMATION MODAL (Rendered via Portal directly to body) ── */}
+      {/* ── DELETE CONFIRMATION MODAL (Single Story) ── */}
       {mounted && deletingStory && createPortal(
         <div
           role="dialog"
           aria-modal="true"
-          onClick={() => setDeletingStory(null)}
+          onClick={() => {
+            setDeletingStory(null);
+            setDeleteModePermanent(false);
+          }}
           className="fixed inset-0 z-[999999] flex items-center justify-center p-4 sm:p-6 bg-black/60 backdrop-blur-sm overflow-y-auto"
         >
           <div
             onClick={(e) => e.stopPropagation()}
             className="bg-white rounded-3xl max-w-md w-full p-6 sm:p-8 shadow-2xl border border-gray-200 text-center relative my-auto max-h-[90vh] overflow-y-auto"
           >
-            <div className="w-14 h-14 rounded-2xl flex items-center justify-center mx-auto mb-4 bg-red-100 text-red-600">
+            <div className={`w-14 h-14 rounded-2xl flex items-center justify-center mx-auto mb-4 ${
+              deleteModePermanent ? 'bg-red-200 text-red-700' : 'bg-red-100 text-red-600'
+            }`}>
               <Trash2 size={28} />
             </div>
 
             <h3 className="text-lg font-black text-gray-900 mb-2">
-              Remove Story from Feed?
+              {deleteModePermanent ? 'Permanently Purge Story?' : 'Remove Story from Feed?'}
             </h3>
             <p className="text-xs text-gray-500 mb-4 font-medium leading-relaxed">
-              This will remove the story from the public website and search results. You can restore it later from Trash.
+              {deleteModePermanent
+                ? 'This will completely erase this story from the database and storage. This action CANNOT be undone.'
+                : 'This will remove the story from the live website and archive. You can restore it anytime from Trash.'}
             </p>
 
             <div className="p-3 bg-gray-50 rounded-xl text-left border border-gray-100 mb-5">
@@ -1374,6 +1808,28 @@ export default function NIntelAdmin() {
               </span>
             </div>
 
+            {/* Deletion Mode Selector */}
+            <div className="flex items-center justify-center gap-2 p-1.5 bg-gray-100 rounded-xl mb-5 text-xs font-bold">
+              <button
+                type="button"
+                onClick={() => setDeleteModePermanent(false)}
+                className={`flex-1 py-1.5 rounded-lg transition-colors cursor-pointer ${
+                  !deleteModePermanent ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-800'
+                }`}
+              >
+                Soft Delete (Trash)
+              </button>
+              <button
+                type="button"
+                onClick={() => setDeleteModePermanent(true)}
+                className={`flex-1 py-1.5 rounded-lg transition-colors cursor-pointer ${
+                  deleteModePermanent ? 'bg-red-600 text-white shadow-sm' : 'text-gray-500 hover:text-gray-800'
+                }`}
+              >
+                Permanent Purge
+              </button>
+            </div>
+
             {actionNotice?.type === 'error' && (
               <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-800 font-bold mb-4">
                 {actionNotice.message}
@@ -1383,9 +1839,12 @@ export default function NIntelAdmin() {
             <div className="flex items-center justify-center gap-3">
               <button
                 type="button"
-                onClick={() => setDeletingStory(null)}
+                onClick={() => {
+                  setDeletingStory(null);
+                  setDeleteModePermanent(false);
+                }}
                 disabled={isDeleting}
-                className="px-5 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-bold rounded-xl transition-colors"
+                className="px-5 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-bold rounded-xl transition-colors cursor-pointer"
               >
                 Cancel
               </button>
@@ -1393,9 +1852,300 @@ export default function NIntelAdmin() {
                 type="button"
                 onClick={handleConfirmDelete}
                 disabled={isDeleting}
-                className="inline-flex items-center gap-2 px-6 py-2.5 bg-red-600 hover:bg-red-700 text-white text-xs font-black tracking-widest uppercase rounded-xl transition-all shadow-lg shadow-red-600/20 active:scale-95"
+                className={`inline-flex items-center gap-2 px-6 py-2.5 text-white text-xs font-black tracking-widest uppercase rounded-xl transition-all shadow-lg active:scale-95 cursor-pointer ${
+                  deleteModePermanent
+                    ? 'bg-red-700 hover:bg-red-800 shadow-red-700/25'
+                    : 'bg-red-600 hover:bg-red-700 shadow-red-600/20'
+                }`}
               >
-                {isDeleting ? 'Removing...' : 'Remove Story'}
+                {isDeleting ? (
+                  <>
+                    <RefreshCw size={14} className="animate-spin" />
+                    <span>Processing...</span>
+                  </>
+                ) : deleteModePermanent ? (
+                  <>
+                    <Trash2 size={14} />
+                    <span>Purge Forever</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 size={14} />
+                    <span>Move to Trash</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* ── BULK / GROUP DELETE CONFIRMATION MODAL ── */}
+      {mounted && bulkDeleteTarget && createPortal(
+        <div
+          role="dialog"
+          aria-modal="true"
+          onClick={() => {
+            setBulkDeleteTarget(null);
+            setDeleteModePermanent(false);
+          }}
+          className="fixed inset-0 z-[999999] flex items-center justify-center p-4 sm:p-6 bg-black/60 backdrop-blur-sm overflow-y-auto"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="bg-white rounded-3xl max-w-lg w-full p-6 sm:p-8 shadow-2xl border border-gray-200 text-center relative my-auto max-h-[90vh] overflow-y-auto"
+          >
+            <div className={`w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4 ${
+              deleteModePermanent ? 'bg-red-200 text-red-700 ring-4 ring-red-100' : 'bg-red-100 text-red-600'
+            }`}>
+              <Layers size={32} />
+            </div>
+
+            <span className="px-3 py-1 bg-red-100 text-red-800 rounded-full text-[10px] font-black uppercase tracking-wider inline-block mb-3">
+              Bulk Deletion Operation
+            </span>
+
+            <h3 className="text-xl font-black text-gray-900 mb-2">
+              {bulkDeleteTarget.title}
+            </h3>
+
+            <p className="text-xs text-gray-600 mb-4 font-medium leading-relaxed max-w-md mx-auto">
+              {bulkDeleteTarget.description}
+            </p>
+
+            <div className="p-4 bg-gray-50 rounded-2xl text-left border border-gray-100 mb-5">
+              <div className="flex items-center justify-between text-xs font-bold text-gray-700 mb-1">
+                <span>Operation Scope:</span>
+                <span className="font-mono text-red-600 uppercase font-black">{bulkDeleteTarget.type}</span>
+              </div>
+              <div className="flex items-center justify-between text-xs font-bold text-gray-700 mb-1">
+                <span>Total Stories Affected:</span>
+                <span className="px-2 py-0.5 bg-red-100 text-red-700 rounded-md font-mono font-black">
+                  {bulkDeleteTarget.count} {bulkDeleteTarget.count === 1 ? 'story' : 'stories'}
+                </span>
+              </div>
+              {bulkDeleteTarget.date && (
+                <div className="flex items-center justify-between text-xs font-bold text-gray-700 mb-1">
+                  <span>Target Date:</span>
+                  <span className="font-mono text-gray-900">{bulkDeleteTarget.date}</span>
+                </div>
+              )}
+              {bulkDeleteTarget.category && (
+                <div className="flex items-center justify-between text-xs font-bold text-gray-700">
+                  <span>Target Category:</span>
+                  <span className="font-mono text-gray-900">{bulkDeleteTarget.category}</span>
+                </div>
+              )}
+            </div>
+
+            {/* Mode switch */}
+            <div className="p-1 bg-gray-100 rounded-xl mb-5 flex items-center text-xs font-bold">
+              <button
+                type="button"
+                onClick={() => setDeleteModePermanent(false)}
+                className={`flex-1 py-2 rounded-lg transition-all cursor-pointer ${
+                  !deleteModePermanent ? 'bg-white text-gray-900 shadow-sm font-black' : 'text-gray-500 hover:text-gray-800'
+                }`}
+              >
+                Move {bulkDeleteTarget.count} to Trash
+              </button>
+              <button
+                type="button"
+                onClick={() => setDeleteModePermanent(true)}
+                className={`flex-1 py-2 rounded-lg transition-all cursor-pointer ${
+                  deleteModePermanent ? 'bg-red-600 text-white shadow-sm font-black' : 'text-gray-500 hover:text-gray-800'
+                }`}
+              >
+                Permanently Purge All
+              </button>
+            </div>
+
+            {actionNotice?.type === 'error' && (
+              <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-800 font-bold mb-4">
+                {actionNotice.message}
+              </div>
+            )}
+
+            <div className="flex items-center justify-center gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setBulkDeleteTarget(null);
+                  setDeleteModePermanent(false);
+                }}
+                disabled={isBulkDeleting}
+                className="px-5 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-bold rounded-xl transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmBulkDelete}
+                disabled={isBulkDeleting || bulkDeleteTarget.count === 0}
+                className={`inline-flex items-center gap-2 px-6 py-2.5 text-white text-xs font-black tracking-widest uppercase rounded-xl transition-all shadow-lg active:scale-95 cursor-pointer ${
+                  deleteModePermanent
+                    ? 'bg-red-700 hover:bg-red-800 shadow-red-700/25'
+                    : 'bg-red-600 hover:bg-red-700 shadow-red-600/20'
+                }`}
+              >
+                {isBulkDeleting ? (
+                  <>
+                    <RefreshCw size={14} className="animate-spin" />
+                    <span>Deleting {bulkDeleteTarget.count} Stories...</span>
+                  </>
+                ) : deleteModePermanent ? (
+                  <>
+                    <Trash2 size={14} />
+                    <span>Purge {bulkDeleteTarget.count} Stories Forever</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 size={14} />
+                    <span>Move {bulkDeleteTarget.count} Stories to Trash</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* ── BATCH DELETE TOOLS PICKER MODAL (Quick Modal for Date & Category) ── */}
+      {mounted && showBatchDeletePicker && createPortal(
+        <div
+          role="dialog"
+          aria-modal="true"
+          onClick={() => setShowBatchDeletePicker(false)}
+          className="fixed inset-0 z-[999999] flex items-center justify-center p-4 sm:p-6 bg-black/60 backdrop-blur-sm overflow-y-auto"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="bg-white rounded-3xl max-w-xl w-full p-6 sm:p-8 shadow-2xl border border-gray-200 relative my-auto max-h-[90vh] overflow-y-auto text-left"
+          >
+            <div className="flex items-center justify-between pb-4 border-b border-gray-100 mb-6">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-red-50 text-red-600 flex items-center justify-center">
+                  <Layers size={20} />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-gray-900">Bulk Deletion Management</h3>
+                  <p className="text-xs text-gray-500 font-medium">Quick tools to delete full briefings or specific categories</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowBatchDeletePicker(false)}
+                className="p-1.5 hover:bg-gray-100 rounded-xl text-gray-400 hover:text-gray-600 transition-colors cursor-pointer"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="space-y-6">
+              {/* Option 1: Date-wise whole briefing */}
+              <div className="p-5 rounded-2xl border border-red-100 bg-red-50/40">
+                <div className="flex items-center gap-2 mb-2 text-red-900 font-black text-sm">
+                  <Calendar size={16} />
+                  <span>Option A: Delete an Entire Day's Briefing</span>
+                </div>
+                <p className="text-xs text-gray-600 mb-4">
+                  Select any publishing date to remove all stories published on that day in one single operation.
+                </p>
+
+                <div className="flex flex-col sm:flex-row gap-3">
+                  <select
+                    value={batchPickerDate}
+                    onChange={(e) => setBatchPickerDate(e.target.value)}
+                    className="flex-1 px-3 py-2 bg-white border border-gray-200 rounded-xl text-xs font-bold text-gray-800 outline-none focus:border-red-500"
+                  >
+                    <option value="">-- Choose a Date to Delete --</option>
+                    {availableDates.map(({ date, count }) => (
+                      <option key={date} value={date}>
+                        {date} ({count} {count === 1 ? 'story' : 'stories'})
+                      </option>
+                    ))}
+                  </select>
+
+                  <button
+                    type="button"
+                    disabled={!batchPickerDate}
+                    onClick={() => {
+                      if (!batchPickerDate) return;
+                      setShowBatchDeletePicker(false);
+                      triggerDateDelete(batchPickerDate);
+                    }}
+                    className="px-4 py-2 bg-red-600 hover:bg-red-700 disabled:opacity-40 text-white rounded-xl text-xs font-black uppercase tracking-wider transition-colors cursor-pointer shrink-0"
+                  >
+                    Delete Day's Edition
+                  </button>
+                </div>
+              </div>
+
+              {/* Option 2: Category-wise */}
+              <div className="p-5 rounded-2xl border border-amber-100 bg-amber-50/40">
+                <div className="flex items-center gap-2 mb-2 text-amber-900 font-black text-sm">
+                  <Filter size={16} />
+                  <span>Option B: Delete Stories by Category</span>
+                </div>
+                <p className="text-xs text-gray-600 mb-4">
+                  Select a category to delete all stories under it (optionally scoped to a specific date).
+                </p>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
+                  <div>
+                    <label className="text-[10px] font-black text-gray-500 uppercase tracking-wider block mb-1">
+                      Category
+                    </label>
+                    <select
+                      value={batchPickerCategory}
+                      onChange={(e) => setBatchPickerCategory(e.target.value)}
+                      className="w-full px-3 py-2 bg-white border border-gray-200 rounded-xl text-xs font-bold text-gray-800 outline-none focus:border-amber-500"
+                    >
+                      <option value="All">-- Select Category --</option>
+                      {availableCategories.map((c) => (
+                        <option key={c} value={c}>{c}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="text-[10px] font-black text-gray-500 uppercase tracking-wider block mb-1">
+                      Date Scope (Optional)
+                    </label>
+                    <input
+                      type="date"
+                      value={filterDate}
+                      onChange={(e) => setFilterDate(e.target.value)}
+                      className="w-full px-3 py-2 bg-white border border-gray-200 rounded-xl text-xs font-bold text-gray-800 outline-none focus:border-amber-500"
+                    />
+                  </div>
+                </div>
+
+                <div className="text-right">
+                  <button
+                    type="button"
+                    disabled={!batchPickerCategory || batchPickerCategory === 'All'}
+                    onClick={() => {
+                      if (!batchPickerCategory || batchPickerCategory === 'All') return;
+                      setShowBatchDeletePicker(false);
+                      triggerCategoryDelete(batchPickerCategory, filterDate || undefined);
+                    }}
+                    className="px-4 py-2 bg-amber-600 hover:bg-amber-700 disabled:opacity-40 text-white rounded-xl text-xs font-black uppercase tracking-wider transition-colors cursor-pointer"
+                  >
+                    Delete Category Stories
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-6 pt-4 border-t border-gray-100 text-right">
+              <button
+                type="button"
+                onClick={() => setShowBatchDeletePicker(false)}
+                className="px-5 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-bold rounded-xl transition-colors cursor-pointer"
+              >
+                Close
               </button>
             </div>
           </div>

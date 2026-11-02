@@ -176,6 +176,8 @@ export function mergeStoriesWithLocal(serverStories: NIntelStory[], date?: strin
   for (const s of localStories) {
     if (s && s.id) {
       if (date && s.date !== date) continue;
+      // Do not resurrect soft-deleted stories into the active feed
+      if (s.isDeleted) continue;
       // If server doesn't have it, or local has a newer version
       if (!storyMap.has(s.id)) {
         storyMap.set(s.id, s);
@@ -190,6 +192,92 @@ export function mergeStoriesWithLocal(serverStories: NIntelStory[], date?: strin
     if (timeA && timeB && timeA !== timeB) return timeB.localeCompare(timeA);
     return (b.itemNumber || 0) - (a.itemNumber || 0);
   });
+}
+
+/**
+ * Removes or marks deleted a single story in localStorage
+ */
+export function deleteLocalStory(id: string, permanent = false): void {
+  if (typeof window === 'undefined') return;
+  try {
+    const existing = getLocalStories();
+    if (permanent) {
+      const filtered = existing.filter(s => s.id !== id);
+      localStorage.setItem(LOCAL_STORIES_KEY, JSON.stringify(filtered));
+    } else {
+      const updated = existing.map(s => s.id === id ? { ...s, isDeleted: true, updatedAt: new Date().toISOString() } : s);
+      localStorage.setItem(LOCAL_STORIES_KEY, JSON.stringify(updated));
+    }
+  } catch (err) {
+    console.warn('Could not delete story in localStorage:', err);
+  }
+}
+
+/**
+ * Deletes all stories for a specific date in localStorage
+ */
+export function deleteLocalStoriesByDate(date: string, permanent = false): void {
+  if (typeof window === 'undefined') return;
+  try {
+    const existing = getLocalStories();
+    if (permanent) {
+      const filtered = existing.filter(s => s.date !== date);
+      localStorage.setItem(LOCAL_STORIES_KEY, JSON.stringify(filtered));
+    } else {
+      const updated = existing.map(s => s.date === date ? { ...s, isDeleted: true, updatedAt: new Date().toISOString() } : s);
+      localStorage.setItem(LOCAL_STORIES_KEY, JSON.stringify(updated));
+    }
+  } catch (err) {
+    console.warn('Could not delete stories by date in localStorage:', err);
+  }
+}
+
+/**
+ * Deletes all stories for a category (and optional date) in localStorage
+ */
+export function deleteLocalStoriesByCategory(category: string, date?: string, permanent = false): void {
+  if (typeof window === 'undefined') return;
+  try {
+    const existing = getLocalStories();
+    const targetCat = category.trim().toLowerCase();
+    const matches = (s: NIntelStory) => {
+      if (s.category.trim().toLowerCase() !== targetCat) return false;
+      if (date && s.date !== date) return false;
+      return true;
+    };
+
+    if (permanent) {
+      const filtered = existing.filter(s => !matches(s));
+      localStorage.setItem(LOCAL_STORIES_KEY, JSON.stringify(filtered));
+    } else {
+      const updated = existing.map(s => matches(s) ? { ...s, isDeleted: true, updatedAt: new Date().toISOString() } : s);
+      localStorage.setItem(LOCAL_STORIES_KEY, JSON.stringify(updated));
+    }
+  } catch (err) {
+    console.warn('Could not delete stories by category in localStorage:', err);
+  }
+}
+
+/**
+ * Deletes multiple selected stories by ID in localStorage
+ */
+export function deleteLocalStoriesByIds(ids: string[], permanent = false): void {
+  if (typeof window === 'undefined' || !Array.isArray(ids) || ids.length === 0) return;
+  try {
+    const existing = getLocalStories();
+    const idMap: Record<string, boolean> = {};
+    for (const id of ids) idMap[id] = true;
+
+    if (permanent) {
+      const filtered = existing.filter(s => !idMap[s.id]);
+      localStorage.setItem(LOCAL_STORIES_KEY, JSON.stringify(filtered));
+    } else {
+      const updated = existing.map(s => idMap[s.id] ? { ...s, isDeleted: true, updatedAt: new Date().toISOString() } : s);
+      localStorage.setItem(LOCAL_STORIES_KEY, JSON.stringify(updated));
+    }
+  } catch (err) {
+    console.warn('Could not delete stories by IDs in localStorage:', err);
+  }
 }
 
 /**

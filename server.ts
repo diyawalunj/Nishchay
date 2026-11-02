@@ -20,6 +20,9 @@ import {
   restoreStory,
   purgeStory,
   purgeAllDeletedStories,
+  deleteStoriesByDate,
+  deleteStoriesByCategory,
+  deleteStoriesByIds,
   getAuditLogs,
   getAvailableEditions,
   seedSampleDataIfEmpty,
@@ -956,6 +959,93 @@ app.delete('/api/n-intel/stories/:id', authenticate as any, (req: AuthRequest, r
     res.json({ success: true, message: 'Story removed from public feed.', permanent: false });
   } catch (error: any) {
     console.error('Error deleting story:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Admin Only: Bulk Delete (date-wise, category-wise, or multi-item IDs)
+app.post('/api/n-intel/stories/bulk-delete', authenticate as any, (req: AuthRequest, res: Response) => {
+  if (!req.user?.isAdmin) {
+    return res.status(403).json({ success: false, error: 'Access denied: Admin privileges required.' });
+  }
+
+  try {
+    const { type, date, category, ids, permanent } = req.body;
+    const adminEmail = req.user.email || 'Admin';
+    const isPermanent = Boolean(permanent);
+
+    if (type === 'date' || (date && !category && !ids)) {
+      if (!date) {
+        return res.status(400).json({ success: false, error: 'Target date is required for date-wise deletion.' });
+      }
+      const result = deleteStoriesByDate(date, adminEmail, isPermanent);
+      return res.json({
+        success: true,
+        type: 'date',
+        count: result.count,
+        date,
+        permanent: isPermanent,
+        message: `${result.count} stories for ${date} ${isPermanent ? 'permanently purged' : 'moved to trash'}.`
+      });
+    }
+
+    if (type === 'category' || category) {
+      if (!category) {
+        return res.status(400).json({ success: false, error: 'Target category is required for category-wise deletion.' });
+      }
+      const result = deleteStoriesByCategory(category, adminEmail, date, isPermanent);
+      return res.json({
+        success: true,
+        type: 'category',
+        count: result.count,
+        category,
+        date,
+        permanent: isPermanent,
+        message: `${result.count} stories in category "${category}"${date ? ` for date ${date}` : ''} ${isPermanent ? 'permanently purged' : 'moved to trash'}.`
+      });
+    }
+
+    if (type === 'ids' || Array.isArray(ids)) {
+      if (!Array.isArray(ids) || ids.length === 0) {
+        return res.status(400).json({ success: false, error: 'Story IDs array is required.' });
+      }
+      const result = deleteStoriesByIds(ids, adminEmail, isPermanent);
+      return res.json({
+        success: true,
+        type: 'ids',
+        count: result.count,
+        ids: result.ids,
+        permanent: isPermanent,
+        message: `${result.count} selected stories ${isPermanent ? 'permanently purged' : 'moved to trash'}.`
+      });
+    }
+
+    return res.status(400).json({ success: false, error: 'Invalid deletion criteria. Provide date, category, or story IDs.' });
+  } catch (error: any) {
+    console.error('Error during bulk deletion:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Admin Only: Date-wise deletion endpoint
+app.delete('/api/n-intel/editions/:date', authenticate as any, (req: AuthRequest, res: Response) => {
+  if (!req.user?.isAdmin) {
+    return res.status(403).json({ success: false, error: 'Access denied: Admin privileges required.' });
+  }
+
+  try {
+    const isPermanent = req.query.permanent === 'true';
+    const adminEmail = req.user.email || 'Admin';
+    const result = deleteStoriesByDate(req.params.date, adminEmail, isPermanent);
+    res.json({
+      success: true,
+      count: result.count,
+      date: req.params.date,
+      permanent: isPermanent,
+      message: `Successfully deleted ${result.count} stories for date ${req.params.date}.`
+    });
+  } catch (error: any) {
+    console.error('Error deleting edition by date:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 });

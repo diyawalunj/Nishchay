@@ -361,6 +361,142 @@ export function purgeAllDeletedStories(adminEmail: string): number {
   return deleted.length;
 }
 
+export function deleteStoriesByDate(
+  date: string,
+  adminEmail: string,
+  permanent = false
+): { count: number; date: string } {
+  const stories = loadStories();
+  let count = 0;
+
+  if (permanent) {
+    const retained = stories.filter(s => {
+      if (s.date === date) {
+        count++;
+        return false;
+      }
+      return true;
+    });
+    saveStories(retained);
+    addAuditLog('DELETE', adminEmail, `Permanently purged entire briefing for ${date} (${count} stories removed).`);
+  } else {
+    for (let i = 0; i < stories.length; i++) {
+      if (stories[i].date === date && !stories[i].isDeleted) {
+        stories[i] = {
+          ...stories[i],
+          isDeleted: true,
+          deletedAt: new Date().toISOString(),
+          deletedBy: adminEmail,
+          updatedAt: new Date().toISOString()
+        };
+        count++;
+      }
+    }
+    saveStories(stories);
+    addAuditLog('DELETE', adminEmail, `Soft-deleted entire briefing for ${date} (${count} stories moved to trash).`);
+  }
+
+  return { count, date };
+}
+
+export function deleteStoriesByCategory(
+  category: string,
+  adminEmail: string,
+  date?: string,
+  permanent = false
+): { count: number; category: string; date?: string } {
+  const stories = loadStories();
+  let count = 0;
+  const targetCategory = category.trim().toLowerCase();
+
+  const matchesCategory = (s: NIntelStory) => {
+    if (s.category.trim().toLowerCase() !== targetCategory) return false;
+    if (date && s.date !== date) return false;
+    return true;
+  };
+
+  if (permanent) {
+    const retained = stories.filter(s => {
+      if (matchesCategory(s)) {
+        count++;
+        return false;
+      }
+      return true;
+    });
+    saveStories(retained);
+    addAuditLog(
+      'DELETE',
+      adminEmail,
+      `Permanently purged category "${category}"${date ? ` for date ${date}` : ''} (${count} stories removed).`
+    );
+  } else {
+    for (let i = 0; i < stories.length; i++) {
+      if (matchesCategory(stories[i]) && !stories[i].isDeleted) {
+        stories[i] = {
+          ...stories[i],
+          isDeleted: true,
+          deletedAt: new Date().toISOString(),
+          deletedBy: adminEmail,
+          updatedAt: new Date().toISOString()
+        };
+        count++;
+      }
+    }
+    saveStories(stories);
+    addAuditLog(
+      'DELETE',
+      adminEmail,
+      `Soft-deleted category "${category}"${date ? ` for date ${date}` : ''} (${count} stories moved to trash).`
+    );
+  }
+
+  return { count, category, date };
+}
+
+export function deleteStoriesByIds(
+  ids: string[],
+  adminEmail: string,
+  permanent = false
+): { count: number; ids: string[] } {
+  if (!Array.isArray(ids) || ids.length === 0) {
+    return { count: 0, ids: [] };
+  }
+  const idMap: Record<string, boolean> = {};
+  for (const id of ids) idMap[id] = true;
+
+  const stories = loadStories();
+  let count = 0;
+
+  if (permanent) {
+    const retained = stories.filter(s => {
+      if (idMap[s.id]) {
+        count++;
+        return false;
+      }
+      return true;
+    });
+    saveStories(retained);
+    addAuditLog('DELETE', adminEmail, `Permanently purged ${count} selected stories.`);
+  } else {
+    for (let i = 0; i < stories.length; i++) {
+      if (idMap[stories[i].id] && !stories[i].isDeleted) {
+        stories[i] = {
+          ...stories[i],
+          isDeleted: true,
+          deletedAt: new Date().toISOString(),
+          deletedBy: adminEmail,
+          updatedAt: new Date().toISOString()
+        };
+        count++;
+      }
+    }
+    saveStories(stories);
+    addAuditLog('DELETE', adminEmail, `Soft-deleted ${count} selected stories (moved to trash).`);
+  }
+
+  return { count, ids };
+}
+
 export function getAuditLogs(limitCount = 100): NIntelAuditLog[] {
   const logs = loadAudit();
   return logs.slice(0, limitCount);
