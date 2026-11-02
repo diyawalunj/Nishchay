@@ -8,7 +8,7 @@ export function getBaseUrl(): string {
   if (typeof window !== 'undefined' && window.location?.origin) {
     return window.location.origin;
   }
-  return 'https://nishchay-defence.vercel.app';
+  return 'https://nishchay-gules.vercel.app';
 }
 
 /**
@@ -55,18 +55,17 @@ export function getStoryWhatsAppShareUrl(story: NIntelStory, customBaseUrl?: str
   }
 
   const message = [
-    '*N-INTEL | Team Nishchay*',
+    'N-INTEL | Team Nishchay',
+    `Date: ${dateFormatted}`,
     '',
-    `*${story.headline}*`,
+    story.headline,
     '',
     excerpt,
     '',
-    `Category: ${story.category}`,
-    `Date: ${dateFormatted}`,
+    `Read full update: ${canonicalUrl}`,
     '',
-    `Read the full story: ${canonicalUrl}`,
-    '',
-    '*Know More. Prepare Better.*'
+    '🔗 Join Other Nishchay Defence Handles using the link below',
+    'https://linktr.ee/nishchay.defence'
   ].join('\n');
 
   return `https://api.whatsapp.com/send?text=${encodeURIComponent(message)}`;
@@ -79,16 +78,17 @@ export function getDailyEditionWhatsAppShareUrl(dateStr: string, totalStories?: 
   const base = customBaseUrl || getBaseUrl();
   const canonicalUrl = `${base}/n-intel?date=${encodeURIComponent(dateStr)}`;
   const dateFormatted = formatDisplayDate(dateStr);
-  const countText = totalStories ? `${totalStories} top updates` : "today's top updates";
+  const countText = totalStories ? `${totalStories} top updates` : "55 top updates";
 
   const message = [
-    '*N-INTEL Daily Edition | Team Nishchay*',
-    `📅 *${dateFormatted}*`,
+    'N-INTEL Daily Edition | Team Nishchay',
+    `Date: ${dateFormatted}`,
     '',
     `Read ${countText} on Defence, National & International Affairs:`,
     canonicalUrl,
     '',
-    '*Know More. Prepare Better.*'
+    '🔗 Join Other Nishchay Defence Handles using the link below',
+    'https://linktr.ee/nishchay.defence'
   ].join('\n');
 
   return `https://api.whatsapp.com/send?text=${encodeURIComponent(message)}`;
