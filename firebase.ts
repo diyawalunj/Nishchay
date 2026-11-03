@@ -116,12 +116,14 @@ export const checkIfAdmin = (user: User | null) => {
 export const checkIfAdminAsync = async (user: User | null): Promise<boolean> => {
   if (!user) return false;
   try {
-    const token = await user.getIdTokenResult(true);
-    return token.claims.admin === true;
+    const token = await user.getIdTokenResult();
+    if (token && token.claims && token.claims.admin === true) {
+      return true;
+    }
   } catch (e) {
     console.warn('Could not verify admin claim from token, checking email fallback', e);
-    return checkIfAdmin(user);
   }
+  return checkIfAdmin(user);
 };
 
 // ── Retry Wrapper ──

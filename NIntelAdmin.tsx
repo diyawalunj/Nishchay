@@ -140,8 +140,8 @@ export default function NIntelAdmin() {
       setUser(currentUser);
       if (currentUser) {
         try {
-          const token = await currentUser.getIdTokenResult(true);
-          setIsAdmin(token.claims.admin === true);
+          const token = await currentUser.getIdTokenResult();
+          setIsAdmin(token?.claims?.admin === true || checkIfAdmin(currentUser));
         } catch {
           setIsAdmin(checkIfAdmin(currentUser));
         }
