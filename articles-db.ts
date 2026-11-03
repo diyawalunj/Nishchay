@@ -1,16 +1,13 @@
 /**
- * articles-db.ts — Persistent Cloud Database Storage for Articles.
+ * articles-db.ts — Local / In-Memory Storage for Articles.
  *
- * Backed by authenticated Google Cloud Storage (via cloud-db.ts).
- * Permanent, cross-device, single source of truth.
- * Survives container recycling, server restarts, and redeployments.
+ * NOTE: As requested, persistence storage (Google Cloud DB) is reserved ONLY
+ * for the Notes section. Articles use local JSON file & in-memory caching.
  */
 
-import {
-  fetchCollection,
-  saveRecord,
-  deleteRecord
-} from './cloud-db';
+import fs from 'fs';
+import path from 'path';
+import os from 'os';
 
 export interface Article {
   id: string;
@@ -34,8 +31,23 @@ export interface Article {
   authorEmail?: string;
 }
 
-const ARTICLES_TAB = 'articles';
-const ARTICLES_HEADERS = ['id', 'slug', 'title', 'category', 'publishDate', 'authorName', 'json', 'updatedAt'];
+const IS_VERCEL = Boolean(process.env.VERCEL);
+const DATA_DIR = IS_VERCEL ? path.join(os.tmpdir(), 'nishchay_data') : path.join(process.cwd(), 'data');
+const SEED_DATA_DIR = path.join(process.cwd(), 'data');
+const ARTICLES_FILE = path.join(DATA_DIR, 'articles.json');
+const SEED_ARTICLES_FILE = path.join(SEED_DATA_DIR, 'articles.json');
+
+function ensureDataDir() {
+  try {
+    if (!fs.existsSync(DATA_DIR)) {
+      fs.mkdirSync(DATA_DIR, { recursive: true });
+    }
+  } catch (err) {
+    console.warn('Could not ensure data directory:', err);
+  }
+}
+
+let articlesCache: Article[] | null = null;
 
 function slugify(text: string): string {
   return text
@@ -51,12 +63,92 @@ function calculateReadingTime(text: string): string {
   return `${minutes} min read`;
 }
 
+function loadArticles(): Article[] {
+  if (articlesCache) return articlesCache;
+  ensureDataDir();
+
+  let targetFile = ARTICLES_FILE;
+  if (!fs.existsSync(targetFile) && fs.existsSync(SEED_ARTICLES_FILE)) {
+    targetFile = SEED_ARTICLES_FILE;
+  }
+
+  if (!fs.existsSync(targetFile)) {
+    // Seed initial dataset with the sample editorial
+    const initialArticles: Article[] = [
+      {
+        id: 'article-tied-by-geography-divided-by-politics',
+        slug: 'tied-by-geography-divided-by-politics',
+        title: 'Tied by geography, divided by politics',
+        bannerImageUrl: 'https://images.unsplash.com/photo-1541872703-74c5e44368f9?auto=format&fit=crop&w=1200&q=80',
+        category: 'International Relations',
+        authorName: 'Mohammed Ayoob',
+        authorRole: 'University Distinguished Professor Emeritus of International Relations, Michigan State University, and author of "The Liberation War" (1972)',
+        authorAvatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=200&q=80',
+        publishDate: '2026-10-30',
+        readingTime: '7 min read',
+        pullQuote: 'India and Bangladesh must overcome mistrust and pursue pragmatic neighbourhood cooperation.',
+        tags: ['International Relations', 'India-Bangladesh', 'Foreign Policy', '1971 Liberation War', 'Defence Studies'],
+        sourceReference: 'Strategic Analysis & Editorial Study',
+        viewsCount: 142,
+        pdfDownloadCount: 29,
+        createdAt: new Date().toISOString(),
+        content: `With speculation rife that Bangladesh's recently elected Prime Minister Tarique Rahman (and also Bangladesh Nationalist Party [BNP] Chairman) will be visiting New Delhi in November or December, it is time to assess the state of India-Bangladesh relations and analyse the roots of the problems between the two countries.
+
+The seeds of their current tension lie in the ==liberation war of 1971== itself. From the very beginning, the attitude of Bangladesh's elites toward India has wavered between gratitude and resentment — gratitude for India's crucial role in the liberation of their country and resentment against the fact that India had to play the role of liberator — a role they should have performed themselves.
+
+### An ambivalence
+Nations cherish narratives in which they are the principal authors of their own liberation. Bangladesh is no exception. The contribution of the Mukti Bahini notwithstanding, the decisive military blow against Pakistan was delivered by India. What was initially the source of immense gratitude with the passage of time became a source of grave discomfort.
+
+Moreover, from the very beginning Dhaka was worried that India's policy towards Bangladesh would be mediated through a Hindu-majority West Bengal next door which has strong cultural and linguistic affinities with Bangladesh that could threaten the development of Bangladesh's independent identity. ^^The open borders in the immediate aftermath of the liberation war also revived memories of the socio-economic dominance of the Hindu bhadralok in pre-Partition Bengal.^^
+
+This was compounded by the fact that ==Bangladesh was virtually surrounded by India, sharing a border of more than 4,000 kilometres.== Its principal rivers flowed through or originated in India. Its economic and strategic room for manoeuvre appeared constrained by geography. Consequently, the fear of Indian hegemony was and is deeply ingrained in the psyche of Bangladesh's ruling circles.
+
+### A regime and identity
+During the Sheikh Hasina years (2009–24), relations between the two governments appeared relatively smooth, driven by shared opposition to religious extremism and mutual counterterrorism cooperation. However, popular sentiment in Bangladesh often viewed this closeness as Indian backing for an authoritarian regime that suppressed political opposition.
+
+With the downfall of the Awami League government, anti-India sentiment in Bangladesh has surfaced with renewed intensity. The interim leadership and emerging political configurations, particularly elements of the BNP and Jamaat-e-Islami, reflect a renewed desire to diversify foreign relations — reaching out more explicitly to Beijing and Washington.
+
+### The strategic imperative
+Despite political shifts, geography remains immutable. India and Bangladesh share critical shared-river basins, energy grids, and cross-border trade corridors essential for the economic vitality of both northeastern India and Bangladesh itself. Pragmatic diplomacy requires moving beyond historical grievances to build institutional mechanisms that outlive changing political regimes.`
+      }
+    ];
+
+    saveArticles(initialArticles);
+    return initialArticles;
+  }
+
+  try {
+    const raw = fs.readFileSync(targetFile, 'utf-8');
+    const parsed = JSON.parse(raw);
+    articlesCache = Array.isArray(parsed) ? parsed : [];
+    return articlesCache;
+  } catch (err) {
+    console.error('Error reading articles file:', err);
+    return [];
+  }
+}
+
+function saveArticles(articles: Article[]): void {
+  articlesCache = articles;
+  ensureDataDir();
+  const tempPath = `${ARTICLES_FILE}.${Date.now()}.${Math.random().toString(36).substring(2, 8)}.tmp`;
+  try {
+    fs.writeFileSync(tempPath, JSON.stringify(articles, null, 2), 'utf-8');
+    fs.renameSync(tempPath, ARTICLES_FILE);
+  } catch (err) {
+    if (fs.existsSync(tempPath)) {
+      try { fs.unlinkSync(tempPath); } catch {}
+    }
+    console.warn('Could not persist articles to disk:', err);
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
 
 export async function getAllArticles(): Promise<Article[]> {
-  const articles = await fetchCollection<Article>(ARTICLES_TAB, ARTICLES_HEADERS);
+  const articles = loadArticles();
   return [...articles].sort(
     (a, b) => new Date(b.publishDate || b.createdAt).getTime() - new Date(a.publishDate || a.createdAt).getTime()
   );
@@ -64,7 +156,7 @@ export async function getAllArticles(): Promise<Article[]> {
 
 export async function getArticleById(idOrSlug: string): Promise<Article | null> {
   if (!idOrSlug) return null;
-  const articles = await getAllArticles();
+  const articles = loadArticles();
   const query = String(idOrSlug).trim().toLowerCase();
   return (
     articles.find(
@@ -91,6 +183,7 @@ export async function createArticle(data: {
   sourceReference?: string;
   authorEmail?: string;
 }): Promise<Article> {
+  const articles = loadArticles();
   const slug = slugify(data.title) + '-' + Date.now().toString().slice(-4);
   const id = `article-${slug}`;
   const now = new Date();
@@ -114,8 +207,8 @@ export async function createArticle(data: {
     tags: Array.isArray(data.tags)
       ? data.tags
       : (typeof data.tags === 'string'
-          ? (data.tags as string).split(',').map(t => t.trim()).filter(Boolean)
-          : []),
+        ? (data.tags as string).split(',').map(t => t.trim()).filter(Boolean)
+        : []),
     sourceReference: data.sourceReference?.trim() || undefined,
     viewsCount: 1,
     pdfDownloadCount: 0,
@@ -123,20 +216,17 @@ export async function createArticle(data: {
     authorEmail: data.authorEmail
   };
 
-  await saveRecord(ARTICLES_TAB, ARTICLES_HEADERS, newArticle, a => ({
-    slug: a.slug,
-    title: a.title,
-    category: a.category,
-    publishDate: a.publishDate,
-    authorName: a.authorName
-  }));
-
+  articles.unshift(newArticle);
+  saveArticles(articles);
   return newArticle;
 }
 
 export async function updateArticle(id: string, updates: Partial<Article>): Promise<Article | null> {
-  const current = await getArticleById(id);
-  if (!current) return null;
+  const articles = loadArticles();
+  const index = articles.findIndex(a => a.id === id);
+  if (index === -1) return null;
+
+  const current = articles[index];
 
   const updated: Article = {
     ...current,
@@ -158,81 +248,90 @@ export async function updateArticle(id: string, updates: Partial<Article>): Prom
     updated.readingTime = calculateReadingTime(updates.content);
   }
 
-  await saveRecord(ARTICLES_TAB, ARTICLES_HEADERS, updated, a => ({
-    slug: a.slug,
-    title: a.title,
-    category: a.category,
-    publishDate: a.publishDate,
-    authorName: a.authorName
-  }));
-
+  articles[index] = updated;
+  saveArticles(articles);
   return updated;
 }
 
 export async function deleteArticle(id: string): Promise<boolean> {
-  const current = await getArticleById(id);
-  if (!current) return false;
-  return deleteRecord(ARTICLES_TAB, ARTICLES_HEADERS, current.id);
+  const articles = loadArticles();
+  const index = articles.findIndex(a => a.id === id);
+  if (index === -1) return false;
+  const articleToDelete = articles[index];
+
+  if (articleToDelete.bannerImageUrl && articleToDelete.bannerImageUrl.startsWith('/uploads/')) {
+    const filename = path.basename(articleToDelete.bannerImageUrl);
+    if (/^banner-\d+-[a-f0-9]+\.(png|jpg|webp)$/i.test(filename)) {
+      const filePath = path.join(process.cwd(), 'public', 'uploads', filename);
+      if (fs.existsSync(filePath)) {
+        try {
+          fs.unlinkSync(filePath);
+        } catch (err) {
+          console.warn('Could not remove orphaned banner on article deletion:', err);
+        }
+      }
+    }
+  }
+
+  const filtered = articles.filter(a => a.id !== id);
+  saveArticles(filtered);
+  return true;
 }
 
 export async function incrementDownloadCount(id: string): Promise<void> {
-  const art = await getArticleById(id);
+  const articles = loadArticles();
+  const art = articles.find(a => a.id === id || a.slug === id);
   if (art) {
     art.pdfDownloadCount = (art.pdfDownloadCount || 0) + 1;
-    await saveRecord(ARTICLES_TAB, ARTICLES_HEADERS, art, a => ({
-      slug: a.slug,
-      title: a.title,
-      category: a.category,
-      publishDate: a.publishDate,
-      authorName: a.authorName
-    }));
+    saveArticles(articles);
   }
 }
 
 export async function syncArticles(incoming: Article[]): Promise<{ added: number; updated: number; total: number }> {
   if (!Array.isArray(incoming) || incoming.length === 0) {
-    const all = await getAllArticles();
-    return { added: 0, updated: 0, total: all.length };
+    return { added: 0, updated: 0, total: loadArticles().length };
   }
 
-  const existing = await getAllArticles();
-  const existingMap = new Map<string, Article>();
-  for (const a of existing) {
-    existingMap.set(a.id, a);
-    if (a.slug) existingMap.set(a.slug, a);
-  }
+  const articles = loadArticles();
+  const existingMap = new Map<string, number>();
+  articles.forEach((a, i) => {
+    existingMap.set(a.id, i);
+    if (a.slug) existingMap.set(a.slug, i);
+  });
 
   let added = 0;
   let updated = 0;
 
   for (const item of incoming) {
     if (!item || !item.id || !item.title) continue;
-    const match = existingMap.get(item.id) || (item.slug ? existingMap.get(item.slug) : undefined);
-    if (!match) {
-      await saveRecord(ARTICLES_TAB, ARTICLES_HEADERS, item, a => ({
-        slug: a.slug,
-        title: a.title,
-        category: a.category,
-        publishDate: a.publishDate,
-        authorName: a.authorName
-      }));
-      added++;
-    } else {
+
+    const existingIndex = existingMap.get(item.id) ?? (item.slug ? existingMap.get(item.slug) : undefined);
+
+    if (existingIndex !== undefined) {
+      const current = articles[existingIndex];
       const incomingTime = new Date(item.updatedAt || item.createdAt || 0).getTime();
-      const currTime = new Date(match.updatedAt || match.createdAt || 0).getTime();
-      if (incomingTime > currTime) {
-        await saveRecord(ARTICLES_TAB, ARTICLES_HEADERS, { ...match, ...item }, a => ({
-          slug: a.slug,
-          title: a.title,
-          category: a.category,
-          publishDate: a.publishDate,
-          authorName: a.authorName
-        }));
+      const currentTime = new Date(current.updatedAt || current.createdAt || 0).getTime();
+
+      if (incomingTime > currentTime) {
+        articles[existingIndex] = {
+          ...current,
+          ...item,
+          viewsCount: Math.max(current.viewsCount || 0, item.viewsCount || 0),
+          pdfDownloadCount: Math.max(current.pdfDownloadCount || 0, item.pdfDownloadCount || 0),
+        };
         updated++;
       }
+    } else {
+      articles.push(item);
+      existingMap.set(item.id, articles.length - 1);
+      if (item.slug) existingMap.set(item.slug, articles.length - 1);
+      added++;
     }
   }
 
-  const all = await getAllArticles();
-  return { added, updated, total: all.length };
+  if (added > 0 || updated > 0) {
+    saveArticles(articles);
+  }
+
+  return { added, updated, total: articles.length };
 }

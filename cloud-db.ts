@@ -167,35 +167,52 @@ export async function fetchCollection<T extends { id: string }>(
   }
 }
 
+async function withRetry<T>(fn: () => Promise<T>, retries = 3, delayMs = 1200): Promise<T> {
+  try {
+    return await fn();
+  } catch (err: any) {
+    const msg = String(err?.message || '') + String(err?.status || '') + String(err?.code || '');
+    const isRateLimit = msg.includes('429') || msg.includes('Quota exceeded') || msg.includes('RESOURCE_EXHAUSTED');
+    if (isRateLimit && retries > 0) {
+      console.warn(`[CloudDB] Google Sheets 429 quota reached, auto-retrying in ${delayMs}ms...`);
+      await new Promise(res => setTimeout(res, delayMs));
+      return withRetry(fn, retries - 1, delayMs * 2);
+    }
+    throw err;
+  }
+}
+
 export async function saveRecord<T extends { id: string }>(
   tabName: string,
   headers: string[],
   record: T,
   rowFieldExtractors?: (item: T) => Record<string, any>
 ): Promise<void> {
-  const tab = await getOrCreateTab(tabName, headers);
-  const rows = await tab.getRows();
-  const existing = rows.find(r => r.get('id') === record.id);
+  return withRetry(async () => {
+    const tab = await getOrCreateTab(tabName, headers);
+    const rows = await tab.getRows();
+    const existing = rows.find(r => r.get('id') === record.id);
 
-  const extraFields = rowFieldExtractors ? rowFieldExtractors(record) : {};
-  const rowData = {
-    ...extraFields,
-    id: record.id,
-    json: JSON.stringify(record),
-    updatedAt: new Date().toISOString()
-  };
+    const extraFields = rowFieldExtractors ? rowFieldExtractors(record) : {};
+    const rowData = {
+      ...extraFields,
+      id: record.id,
+      json: JSON.stringify(record),
+      updatedAt: new Date().toISOString()
+    };
 
-  if (existing) {
-    for (const [k, v] of Object.entries(rowData)) {
-      existing.set(k, String(v ?? ''));
+    if (existing) {
+      for (const [k, v] of Object.entries(rowData)) {
+        existing.set(k, String(v ?? ''));
+      }
+      await existing.save();
+    } else {
+      await tab.addRow(rowData);
     }
-    await existing.save();
-  } else {
-    await tab.addRow(rowData);
-  }
 
-  // Update in-memory and disk cache
-  delete memoryCaches[tabName];
+    // Update in-memory and disk cache
+    delete memoryCaches[tabName];
+  });
 }
 
 export async function saveBatchRecords<T extends { id: string }>(
@@ -205,39 +222,41 @@ export async function saveBatchRecords<T extends { id: string }>(
   rowFieldExtractors?: (item: T) => Record<string, any>
 ): Promise<void> {
   if (records.length === 0) return;
-  const tab = await getOrCreateTab(tabName, headers);
-  const rows = await tab.getRows();
-  const rowMap = new Map<string, any>();
-  for (const r of rows) {
-    const id = r.get('id');
-    if (id) rowMap.set(id, r);
-  }
-
-  const toAdd: any[] = [];
-  for (const rec of records) {
-    const extraFields = rowFieldExtractors ? rowFieldExtractors(rec) : {};
-    const rowData = {
-      ...extraFields,
-      id: rec.id,
-      json: JSON.stringify(rec),
-      updatedAt: new Date().toISOString()
-    };
-    const existing = rowMap.get(rec.id);
-    if (existing) {
-      for (const [k, v] of Object.entries(rowData)) {
-        existing.set(k, String(v ?? ''));
-      }
-      await existing.save();
-    } else {
-      toAdd.push(rowData);
+  return withRetry(async () => {
+    const tab = await getOrCreateTab(tabName, headers);
+    const rows = await tab.getRows();
+    const rowMap = new Map<string, any>();
+    for (const r of rows) {
+      const id = r.get('id');
+      if (id) rowMap.set(id, r);
     }
-  }
 
-  if (toAdd.length > 0) {
-    await tab.addRows(toAdd);
-  }
+    const toAdd: any[] = [];
+    for (const rec of records) {
+      const extraFields = rowFieldExtractors ? rowFieldExtractors(rec) : {};
+      const rowData = {
+        ...extraFields,
+        id: rec.id,
+        json: JSON.stringify(rec),
+        updatedAt: new Date().toISOString()
+      };
+      const existing = rowMap.get(rec.id);
+      if (existing) {
+        for (const [k, v] of Object.entries(rowData)) {
+          existing.set(k, String(v ?? ''));
+        }
+        await existing.save();
+      } else {
+        toAdd.push(rowData);
+      }
+    }
 
-  delete memoryCaches[tabName];
+    if (toAdd.length > 0) {
+      await tab.addRows(toAdd);
+    }
+
+    delete memoryCaches[tabName];
+  });
 }
 
 export async function deleteRecord(
@@ -245,14 +264,16 @@ export async function deleteRecord(
   headers: string[],
   id: string
 ): Promise<boolean> {
-  const tab = await getOrCreateTab(tabName, headers);
-  const rows = await tab.getRows();
-  const target = rows.find(r => r.get('id') === id);
-  if (!target) return false;
+  return withRetry(async () => {
+    const tab = await getOrCreateTab(tabName, headers);
+    const rows = await tab.getRows();
+    const target = rows.find(r => r.get('id') === id);
+    if (!target) return false;
 
-  await target.delete();
-  delete memoryCaches[tabName];
-  return true;
+    await target.delete();
+    delete memoryCaches[tabName];
+    return true;
+  });
 }
 
 export async function deleteRecordsMatching(
@@ -260,21 +281,26 @@ export async function deleteRecordsMatching(
   headers: string[],
   predicate: (row: any) => boolean
 ): Promise<number> {
-  const tab = await getOrCreateTab(tabName, headers);
-  const rows = await tab.getRows();
-  let deletedCount = 0;
+  return withRetry(async () => {
+    const tab = await getOrCreateTab(tabName, headers);
+    const rows = await tab.getRows();
+    let deletedCount = 0;
 
-  for (const r of rows) {
-    if (predicate(r)) {
-      await r.delete();
-      deletedCount++;
+    for (const r of rows) {
+      if (predicate(r)) {
+        await r.delete();
+        deletedCount++;
+        if (deletedCount > 1) {
+          await new Promise(res => setTimeout(res, 120));
+        }
+      }
     }
-  }
 
-  if (deletedCount > 0) {
-    delete memoryCaches[tabName];
-  }
-  return deletedCount;
+    if (deletedCount > 0) {
+      delete memoryCaches[tabName];
+    }
+    return deletedCount;
+  });
 }
 
 export function invalidateCollectionCache(tabName: string): void {

@@ -1,8 +1,8 @@
 // server.ts
 import express from "express";
-import path3 from "path";
-import fs3 from "fs";
-import os2 from "os";
+import path5 from "path";
+import fs5 from "fs";
+import os4 from "os";
 import cors from "cors";
 import dotenv from "dotenv";
 import helmet from "helmet";
@@ -11,6 +11,11 @@ import crypto from "crypto";
 import { GoogleSpreadsheet as GoogleSpreadsheet2 } from "google-spreadsheet";
 import { JWT as JWT2 } from "google-auth-library";
 import admin from "firebase-admin";
+
+// n-intel-db.ts
+import fs from "fs";
+import path from "path";
+import os from "os";
 
 // n-intel-whatsapp.ts
 function getLocalTodayDate() {
@@ -494,18 +499,752 @@ function parseDailyNewsPost(rawText, pubDate) {
   };
 }
 
+// n-intel-db.ts
+var IS_VERCEL = Boolean(process.env.VERCEL);
+var DATA_DIR = IS_VERCEL ? path.join(os.tmpdir(), "nishchay_data") : path.join(process.cwd(), "data");
+var SEED_DATA_DIR = path.join(process.cwd(), "data");
+var STORIES_FILE = path.join(DATA_DIR, "n-intel-stories.json");
+var BATCHES_FILE = path.join(DATA_DIR, "n-intel-batches.json");
+var AUDIT_FILE = path.join(DATA_DIR, "n-intel-audit.json");
+var SEED_STORIES_FILE = path.join(SEED_DATA_DIR, "n-intel-stories.json");
+var SEED_BATCHES_FILE = path.join(SEED_DATA_DIR, "n-intel-batches.json");
+var SEED_AUDIT_FILE = path.join(SEED_DATA_DIR, "n-intel-audit.json");
+function ensureDataDir() {
+  try {
+    if (!fs.existsSync(DATA_DIR)) {
+      fs.mkdirSync(DATA_DIR, { recursive: true });
+    }
+    if (IS_VERCEL) {
+      if (!fs.existsSync(STORIES_FILE) && fs.existsSync(SEED_STORIES_FILE)) {
+        try {
+          fs.copyFileSync(SEED_STORIES_FILE, STORIES_FILE);
+        } catch {
+        }
+      }
+      if (!fs.existsSync(BATCHES_FILE) && fs.existsSync(SEED_BATCHES_FILE)) {
+        try {
+          fs.copyFileSync(SEED_BATCHES_FILE, BATCHES_FILE);
+        } catch {
+        }
+      }
+      if (!fs.existsSync(AUDIT_FILE) && fs.existsSync(SEED_AUDIT_FILE)) {
+        try {
+          fs.copyFileSync(SEED_AUDIT_FILE, AUDIT_FILE);
+        } catch {
+        }
+      }
+    }
+  } catch (err) {
+    console.warn("Could not ensure data directory:", err);
+  }
+}
+var storiesCache = null;
+var batchesCache = null;
+var auditCache = null;
+function loadStories() {
+  if (storiesCache) return storiesCache;
+  ensureDataDir();
+  let targetFile = STORIES_FILE;
+  if (!fs.existsSync(targetFile) && fs.existsSync(SEED_STORIES_FILE)) {
+    targetFile = SEED_STORIES_FILE;
+  }
+  if (!fs.existsSync(targetFile)) {
+    storiesCache = [];
+    return storiesCache;
+  }
+  try {
+    const raw = fs.readFileSync(targetFile, "utf-8");
+    storiesCache = JSON.parse(raw);
+    return storiesCache || [];
+  } catch (e) {
+    console.error("Error reading stories file:", e);
+    return [];
+  }
+}
+function atomicWriteJsonSync(filePath, data) {
+  ensureDataDir();
+  const tempPath = `${filePath}.${Date.now()}.${Math.random().toString(36).substring(2, 8)}.tmp`;
+  try {
+    fs.writeFileSync(tempPath, JSON.stringify(data, null, 2), "utf-8");
+    fs.renameSync(tempPath, filePath);
+  } catch (err) {
+    if (fs.existsSync(tempPath)) {
+      try {
+        fs.unlinkSync(tempPath);
+      } catch {
+      }
+    }
+    console.warn(`Could not persist ${filePath} to disk:`, err);
+  }
+}
+function saveStories(stories) {
+  storiesCache = stories;
+  atomicWriteJsonSync(STORIES_FILE, stories);
+}
+function loadBatches() {
+  if (batchesCache) return batchesCache;
+  ensureDataDir();
+  let targetFile = BATCHES_FILE;
+  if (!fs.existsSync(targetFile) && fs.existsSync(SEED_BATCHES_FILE)) {
+    targetFile = SEED_BATCHES_FILE;
+  }
+  if (!fs.existsSync(targetFile)) {
+    batchesCache = [];
+    return batchesCache;
+  }
+  try {
+    const raw = fs.readFileSync(targetFile, "utf-8");
+    batchesCache = JSON.parse(raw);
+    return batchesCache || [];
+  } catch (e) {
+    console.error("Error reading batches file:", e);
+    return [];
+  }
+}
+function saveBatches(batches) {
+  batchesCache = batches;
+  atomicWriteJsonSync(BATCHES_FILE, batches);
+}
+function loadAudit() {
+  if (auditCache) return auditCache;
+  ensureDataDir();
+  let targetFile = AUDIT_FILE;
+  if (!fs.existsSync(targetFile) && fs.existsSync(SEED_AUDIT_FILE)) {
+    targetFile = SEED_AUDIT_FILE;
+  }
+  if (!fs.existsSync(targetFile)) {
+    auditCache = [];
+    return auditCache;
+  }
+  try {
+    const raw = fs.readFileSync(targetFile, "utf-8");
+    auditCache = JSON.parse(raw);
+    return auditCache || [];
+  } catch (e) {
+    console.error("Error reading audit file:", e);
+    return [];
+  }
+}
+function saveAudit(logs) {
+  auditCache = logs;
+  atomicWriteJsonSync(AUDIT_FILE, logs);
+}
+function addAuditLog(action, adminEmail, details, storyId, batchId) {
+  const logs = loadAudit();
+  const entry = {
+    id: `audit-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+    action,
+    storyId,
+    batchId,
+    adminEmail,
+    timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+    details
+  };
+  logs.unshift(entry);
+  if (logs.length > 1e3) logs.length = 1e3;
+  saveAudit(logs);
+}
+async function getAllStories(options = {}) {
+  let stories = loadStories();
+  if (!options.includeDeleted) {
+    stories = stories.filter((s) => !s.isDeleted);
+  }
+  if (options.date) {
+    stories = stories.filter((s) => s.date === options.date);
+  }
+  if (options.month) {
+    stories = stories.filter((s) => s.date.startsWith(options.month));
+  }
+  if (options.category && options.category.toLowerCase() !== "all") {
+    const catLower = options.category.toLowerCase();
+    stories = stories.filter((s) => s.category.toLowerCase() === catLower || s.categoryKey === catLower);
+  }
+  if (options.search && options.search.trim()) {
+    const q = options.search.trim().toLowerCase();
+    stories = stories.filter(
+      (s) => s.headline.toLowerCase().includes(q) || s.content.toLowerCase().includes(q) || s.category.toLowerCase().includes(q) || s.tags && s.tags.some((t) => t.toLowerCase().includes(q)) || s.sourceName && s.sourceName.toLowerCase().includes(q)
+    );
+  }
+  stories = [...stories].sort((a, b) => {
+    if (a.date !== b.date) {
+      return b.date.localeCompare(a.date);
+    }
+    const timeA = a.createdAt || "";
+    const timeB = b.createdAt || "";
+    if (timeA && timeB && timeA !== timeB) {
+      return timeB.localeCompare(timeA);
+    }
+    return (b.itemNumber || 0) - (a.itemNumber || 0);
+  });
+  if (options.limit && options.limit > 0) {
+    return stories.slice(0, options.limit);
+  }
+  return stories;
+}
+async function getStoryById(id) {
+  const stories = loadStories();
+  return stories.find((s) => s.id === id) || null;
+}
+async function findDuplicateBatch(hash, date) {
+  const batches = loadBatches();
+  return batches.find((b) => b.rawContentHash === hash && b.date === date) || null;
+}
+async function saveBatchAndStories(batch, newStories, adminEmail) {
+  const existingStories = loadStories();
+  const existingBatches = loadBatches();
+  const storyMap = /* @__PURE__ */ new Map();
+  for (const s of [...newStories, ...existingStories]) {
+    if (!storyMap.has(s.id)) {
+      storyMap.set(s.id, s);
+    }
+  }
+  const updatedStories = Array.from(storyMap.values());
+  saveStories(updatedStories);
+  const updatedBatches = [batch, ...existingBatches];
+  saveBatches(updatedBatches);
+  addAuditLog(
+    "PUBLISH",
+    adminEmail,
+    `Published ${newStories.length} stories across ${batch.categories.length} categories for ${batch.date}`,
+    void 0,
+    batch.id
+  );
+  return { batch, count: newStories.length };
+}
+async function updateStory(id, updates, adminEmail) {
+  const stories = loadStories();
+  const index = stories.findIndex((s) => s.id === id);
+  if (index === -1) return null;
+  const current = stories[index];
+  let categoryKey = current.categoryKey;
+  if (typeof updates.category === "string" && updates.category.trim()) {
+    categoryKey = updates.category.toLowerCase().replace(/[^a-z0-9]+/g, "-");
+  }
+  const updated = {
+    ...current,
+    headline: typeof updates.headline === "string" ? updates.headline.trim() : current.headline,
+    content: typeof updates.content === "string" ? updates.content.trim() : current.content,
+    category: typeof updates.category === "string" ? updates.category.trim() : current.category,
+    categoryKey,
+    sourceName: updates.sourceName !== void 0 ? updates.sourceName : current.sourceName,
+    sourceUrl: updates.sourceUrl !== void 0 ? updates.sourceUrl : current.sourceUrl,
+    isDefence: typeof updates.isDefence === "boolean" ? updates.isDefence : current.isDefence,
+    updatedAt: (/* @__PURE__ */ new Date()).toISOString(),
+    lastEditedBy: adminEmail
+  };
+  stories[index] = updated;
+  saveStories(stories);
+  const changeKeys = Object.keys(updates).join(", ");
+  addAuditLog("EDIT", adminEmail, `Edited story [${id}]: updated (${changeKeys})`, id);
+  return updated;
+}
+async function deleteStory(id, adminEmail) {
+  const stories = loadStories();
+  const index = stories.findIndex((s) => s.id === id);
+  if (index === -1) return false;
+  stories[index] = {
+    ...stories[index],
+    isDeleted: true,
+    deletedAt: (/* @__PURE__ */ new Date()).toISOString(),
+    deletedBy: adminEmail,
+    updatedAt: (/* @__PURE__ */ new Date()).toISOString()
+  };
+  saveStories(stories);
+  addAuditLog("DELETE", adminEmail, `Soft-deleted story [${id}]: "${stories[index].headline}"`, id);
+  return true;
+}
+async function restoreStory(id, adminEmail) {
+  const stories = loadStories();
+  const index = stories.findIndex((s) => s.id === id);
+  if (index === -1) return false;
+  stories[index] = {
+    ...stories[index],
+    isDeleted: false,
+    deletedAt: void 0,
+    deletedBy: void 0,
+    updatedAt: (/* @__PURE__ */ new Date()).toISOString()
+  };
+  saveStories(stories);
+  addAuditLog("RESTORE", adminEmail, `Restored story [${id}]: "${stories[index].headline}"`, id);
+  return true;
+}
+async function purgeStory(id, adminEmail) {
+  const stories = loadStories();
+  const story = stories.find((s) => s.id === id);
+  if (!story) return false;
+  const filtered = stories.filter((s) => s.id !== id);
+  saveStories(filtered);
+  addAuditLog("DELETE", adminEmail, `Permanently purged story [${id}]: "${story.headline}"`, id);
+  return true;
+}
+async function purgeAllDeletedStories(adminEmail) {
+  const stories = loadStories();
+  const deleted = stories.filter((s) => s.isDeleted);
+  if (deleted.length === 0) return 0;
+  const retained = stories.filter((s) => !s.isDeleted);
+  saveStories(retained);
+  addAuditLog("DELETE", adminEmail, `Emptied trash: permanently purged all ${deleted.length} deleted stories.`);
+  return deleted.length;
+}
+async function deleteStoriesByDate(date, adminEmail, permanent = false) {
+  const stories = loadStories();
+  let count = 0;
+  if (permanent) {
+    const retained = stories.filter((s) => {
+      if (s.date === date) {
+        count++;
+        return false;
+      }
+      return true;
+    });
+    saveStories(retained);
+    addAuditLog("DELETE", adminEmail, `Permanently purged entire briefing for ${date} (${count} stories removed).`);
+  } else {
+    for (let i = 0; i < stories.length; i++) {
+      if (stories[i].date === date && !stories[i].isDeleted) {
+        stories[i] = {
+          ...stories[i],
+          isDeleted: true,
+          deletedAt: (/* @__PURE__ */ new Date()).toISOString(),
+          deletedBy: adminEmail,
+          updatedAt: (/* @__PURE__ */ new Date()).toISOString()
+        };
+        count++;
+      }
+    }
+    saveStories(stories);
+    addAuditLog("DELETE", adminEmail, `Soft-deleted entire briefing for ${date} (${count} stories moved to trash).`);
+  }
+  return { count, date };
+}
+async function deleteStoriesByCategory(category, adminEmail, date, permanent = false) {
+  const stories = loadStories();
+  let count = 0;
+  const targetCategory = category.trim().toLowerCase();
+  const matchesCategory = (s) => {
+    if (s.category.trim().toLowerCase() !== targetCategory) return false;
+    if (date && s.date !== date) return false;
+    return true;
+  };
+  if (permanent) {
+    const retained = stories.filter((s) => {
+      if (matchesCategory(s)) {
+        count++;
+        return false;
+      }
+      return true;
+    });
+    saveStories(retained);
+    addAuditLog(
+      "DELETE",
+      adminEmail,
+      `Permanently purged category "${category}"${date ? ` for date ${date}` : ""} (${count} stories removed).`
+    );
+  } else {
+    for (let i = 0; i < stories.length; i++) {
+      if (matchesCategory(stories[i]) && !stories[i].isDeleted) {
+        stories[i] = {
+          ...stories[i],
+          isDeleted: true,
+          deletedAt: (/* @__PURE__ */ new Date()).toISOString(),
+          deletedBy: adminEmail,
+          updatedAt: (/* @__PURE__ */ new Date()).toISOString()
+        };
+        count++;
+      }
+    }
+    saveStories(stories);
+    addAuditLog(
+      "DELETE",
+      adminEmail,
+      `Soft-deleted category "${category}"${date ? ` for date ${date}` : ""} (${count} stories moved to trash).`
+    );
+  }
+  return { count, category, date };
+}
+async function deleteStoriesByIds(ids, adminEmail, permanent = false) {
+  if (!Array.isArray(ids) || ids.length === 0) {
+    return { count: 0, ids: [] };
+  }
+  const idMap = {};
+  for (const id of ids) idMap[id] = true;
+  const stories = loadStories();
+  let count = 0;
+  if (permanent) {
+    const retained = stories.filter((s) => {
+      if (idMap[s.id]) {
+        count++;
+        return false;
+      }
+      return true;
+    });
+    saveStories(retained);
+    addAuditLog("DELETE", adminEmail, `Permanently purged ${count} selected stories.`);
+  } else {
+    for (let i = 0; i < stories.length; i++) {
+      if (idMap[stories[i].id] && !stories[i].isDeleted) {
+        stories[i] = {
+          ...stories[i],
+          isDeleted: true,
+          deletedAt: (/* @__PURE__ */ new Date()).toISOString(),
+          deletedBy: adminEmail,
+          updatedAt: (/* @__PURE__ */ new Date()).toISOString()
+        };
+        count++;
+      }
+    }
+    saveStories(stories);
+    addAuditLog("DELETE", adminEmail, `Soft-deleted ${count} selected stories (moved to trash).`);
+  }
+  return { count, ids };
+}
+async function getAuditLogs(limitCount = 100) {
+  const logs = loadAudit();
+  return logs.slice(0, limitCount);
+}
+async function getAvailableEditions() {
+  const stories = await getAllStories({ includeDeleted: false });
+  const map = {};
+  for (const s of stories) {
+    if (!map[s.date]) {
+      map[s.date] = {
+        date: s.date,
+        storyCount: 0,
+        categories: /* @__PURE__ */ new Set(),
+        categoryCounts: {},
+        defenceCount: 0,
+        headlines: []
+      };
+    }
+    map[s.date].storyCount++;
+    map[s.date].categories.add(s.category);
+    map[s.date].categoryCounts[s.category] = (map[s.date].categoryCounts[s.category] || 0) + 1;
+    if (s.isDefence || s.category.toLowerCase().includes("defence")) {
+      map[s.date].defenceCount++;
+    }
+    if (map[s.date].headlines.length < 3 && s.headline) {
+      map[s.date].headlines.push(s.headline);
+    }
+  }
+  return Object.values(map).map((e) => ({
+    date: e.date,
+    storyCount: e.storyCount,
+    categories: Array.from(e.categories),
+    highlights: e.headlines,
+    defenceCount: e.defenceCount,
+    categoryCounts: e.categoryCounts
+  })).sort((a, b) => b.date.localeCompare(a.date));
+}
+async function seedSampleDataIfEmpty(samplePostText) {
+  const existing = loadStories();
+  if (existing.length > 0) return;
+  console.log("\u{1F331} Seeding initial N-INTEL sample edition...");
+  const parseResult = parseDailyNewsPost(samplePostText, "2026-10-28");
+  if (parseResult.success && parseResult.stories.length > 0) {
+    const batch = {
+      id: `batch-20261028-seed`,
+      date: "2026-10-28",
+      rawContentHash: parseResult.hash,
+      publishedAt: (/* @__PURE__ */ new Date()).toISOString(),
+      publishedBy: "system@nishchay.defence",
+      storyCount: parseResult.totalStories,
+      categories: parseResult.categories
+    };
+    await saveBatchAndStories(batch, parseResult.stories, "system@nishchay.defence");
+    console.log(`\u2705 Seeded ${parseResult.totalStories} N-INTEL stories for 2026-10-28!`);
+  }
+}
+async function syncNIntelStories(incomingStories, incomingBatches) {
+  if (!Array.isArray(incomingStories) || incomingStories.length === 0) {
+    return { count: 0, total: loadStories().length };
+  }
+  const existingStories = loadStories();
+  const storyMap = /* @__PURE__ */ new Map();
+  for (const s of existingStories) {
+    if (s && s.id) storyMap.set(s.id, s);
+  }
+  for (const s of incomingStories) {
+    if (s && s.id) storyMap.set(s.id, s);
+  }
+  const updatedStories = Array.from(storyMap.values());
+  saveStories(updatedStories);
+  if (Array.isArray(incomingBatches) && incomingBatches.length > 0) {
+    const existingBatches = loadBatches();
+    const batchMap = /* @__PURE__ */ new Map();
+    for (const b of existingBatches) {
+      if (b && b.id) batchMap.set(b.id, b);
+    }
+    for (const b of incomingBatches) {
+      if (b && b.id) batchMap.set(b.id, b);
+    }
+    saveBatches(Array.from(batchMap.values()));
+  }
+  return { count: incomingStories.length, total: updatedStories.length };
+}
+
+// articles-db.ts
+import fs2 from "fs";
+import path2 from "path";
+import os2 from "os";
+var IS_VERCEL2 = Boolean(process.env.VERCEL);
+var DATA_DIR2 = IS_VERCEL2 ? path2.join(os2.tmpdir(), "nishchay_data") : path2.join(process.cwd(), "data");
+var SEED_DATA_DIR2 = path2.join(process.cwd(), "data");
+var ARTICLES_FILE = path2.join(DATA_DIR2, "articles.json");
+var SEED_ARTICLES_FILE = path2.join(SEED_DATA_DIR2, "articles.json");
+function ensureDataDir2() {
+  try {
+    if (!fs2.existsSync(DATA_DIR2)) {
+      fs2.mkdirSync(DATA_DIR2, { recursive: true });
+    }
+  } catch (err) {
+    console.warn("Could not ensure data directory:", err);
+  }
+}
+var articlesCache = null;
+function slugify(text) {
+  return text.toLowerCase().replace(/[^\w\s-]/g, "").trim().replace(/\s+/g, "-");
+}
+function calculateReadingTime(text) {
+  const words = (text || "").trim().split(/\s+/).length;
+  const minutes = Math.max(2, Math.ceil(words / 180));
+  return `${minutes} min read`;
+}
+function loadArticles() {
+  if (articlesCache) return articlesCache;
+  ensureDataDir2();
+  let targetFile = ARTICLES_FILE;
+  if (!fs2.existsSync(targetFile) && fs2.existsSync(SEED_ARTICLES_FILE)) {
+    targetFile = SEED_ARTICLES_FILE;
+  }
+  if (!fs2.existsSync(targetFile)) {
+    const initialArticles = [
+      {
+        id: "article-tied-by-geography-divided-by-politics",
+        slug: "tied-by-geography-divided-by-politics",
+        title: "Tied by geography, divided by politics",
+        bannerImageUrl: "https://images.unsplash.com/photo-1541872703-74c5e44368f9?auto=format&fit=crop&w=1200&q=80",
+        category: "International Relations",
+        authorName: "Mohammed Ayoob",
+        authorRole: 'University Distinguished Professor Emeritus of International Relations, Michigan State University, and author of "The Liberation War" (1972)',
+        authorAvatarUrl: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=200&q=80",
+        publishDate: "2026-10-30",
+        readingTime: "7 min read",
+        pullQuote: "India and Bangladesh must overcome mistrust and pursue pragmatic neighbourhood cooperation.",
+        tags: ["International Relations", "India-Bangladesh", "Foreign Policy", "1971 Liberation War", "Defence Studies"],
+        sourceReference: "Strategic Analysis & Editorial Study",
+        viewsCount: 142,
+        pdfDownloadCount: 29,
+        createdAt: (/* @__PURE__ */ new Date()).toISOString(),
+        content: `With speculation rife that Bangladesh's recently elected Prime Minister Tarique Rahman (and also Bangladesh Nationalist Party [BNP] Chairman) will be visiting New Delhi in November or December, it is time to assess the state of India-Bangladesh relations and analyse the roots of the problems between the two countries.
+
+The seeds of their current tension lie in the ==liberation war of 1971== itself. From the very beginning, the attitude of Bangladesh's elites toward India has wavered between gratitude and resentment \u2014 gratitude for India's crucial role in the liberation of their country and resentment against the fact that India had to play the role of liberator \u2014 a role they should have performed themselves.
+
+### An ambivalence
+Nations cherish narratives in which they are the principal authors of their own liberation. Bangladesh is no exception. The contribution of the Mukti Bahini notwithstanding, the decisive military blow against Pakistan was delivered by India. What was initially the source of immense gratitude with the passage of time became a source of grave discomfort.
+
+Moreover, from the very beginning Dhaka was worried that India's policy towards Bangladesh would be mediated through a Hindu-majority West Bengal next door which has strong cultural and linguistic affinities with Bangladesh that could threaten the development of Bangladesh's independent identity. ^^The open borders in the immediate aftermath of the liberation war also revived memories of the socio-economic dominance of the Hindu bhadralok in pre-Partition Bengal.^^
+
+This was compounded by the fact that ==Bangladesh was virtually surrounded by India, sharing a border of more than 4,000 kilometres.== Its principal rivers flowed through or originated in India. Its economic and strategic room for manoeuvre appeared constrained by geography. Consequently, the fear of Indian hegemony was and is deeply ingrained in the psyche of Bangladesh's ruling circles.
+
+### A regime and identity
+During the Sheikh Hasina years (2009\u201324), relations between the two governments appeared relatively smooth, driven by shared opposition to religious extremism and mutual counterterrorism cooperation. However, popular sentiment in Bangladesh often viewed this closeness as Indian backing for an authoritarian regime that suppressed political opposition.
+
+With the downfall of the Awami League government, anti-India sentiment in Bangladesh has surfaced with renewed intensity. The interim leadership and emerging political configurations, particularly elements of the BNP and Jamaat-e-Islami, reflect a renewed desire to diversify foreign relations \u2014 reaching out more explicitly to Beijing and Washington.
+
+### The strategic imperative
+Despite political shifts, geography remains immutable. India and Bangladesh share critical shared-river basins, energy grids, and cross-border trade corridors essential for the economic vitality of both northeastern India and Bangladesh itself. Pragmatic diplomacy requires moving beyond historical grievances to build institutional mechanisms that outlive changing political regimes.`
+      }
+    ];
+    saveArticles(initialArticles);
+    return initialArticles;
+  }
+  try {
+    const raw = fs2.readFileSync(targetFile, "utf-8");
+    const parsed = JSON.parse(raw);
+    articlesCache = Array.isArray(parsed) ? parsed : [];
+    return articlesCache;
+  } catch (err) {
+    console.error("Error reading articles file:", err);
+    return [];
+  }
+}
+function saveArticles(articles) {
+  articlesCache = articles;
+  ensureDataDir2();
+  const tempPath = `${ARTICLES_FILE}.${Date.now()}.${Math.random().toString(36).substring(2, 8)}.tmp`;
+  try {
+    fs2.writeFileSync(tempPath, JSON.stringify(articles, null, 2), "utf-8");
+    fs2.renameSync(tempPath, ARTICLES_FILE);
+  } catch (err) {
+    if (fs2.existsSync(tempPath)) {
+      try {
+        fs2.unlinkSync(tempPath);
+      } catch {
+      }
+    }
+    console.warn("Could not persist articles to disk:", err);
+  }
+}
+async function getAllArticles() {
+  const articles = loadArticles();
+  return [...articles].sort(
+    (a, b) => new Date(b.publishDate || b.createdAt).getTime() - new Date(a.publishDate || a.createdAt).getTime()
+  );
+}
+async function getArticleById(idOrSlug) {
+  if (!idOrSlug) return null;
+  const articles = loadArticles();
+  const query = String(idOrSlug).trim().toLowerCase();
+  return articles.find(
+    (a) => a.id === idOrSlug || a.slug === idOrSlug || a.id.toLowerCase() === query || a.slug && a.slug.toLowerCase() === query
+  ) || null;
+}
+async function createArticle(data) {
+  const articles = loadArticles();
+  const slug = slugify(data.title) + "-" + Date.now().toString().slice(-4);
+  const id = `article-${slug}`;
+  const now = /* @__PURE__ */ new Date();
+  const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+  const publishDate = data.publishDate?.trim() || todayStr;
+  const readingTime = calculateReadingTime(data.content);
+  const newArticle = {
+    id,
+    slug,
+    title: data.title.trim(),
+    bannerImageUrl: data.bannerImageUrl.trim(),
+    category: data.category?.trim() || "General",
+    authorName: data.authorName.trim(),
+    authorRole: data.authorRole?.trim() || "Editorial Contributor",
+    authorAvatarUrl: data.authorAvatarUrl?.trim() || void 0,
+    publishDate,
+    readingTime,
+    pullQuote: data.pullQuote?.trim() || void 0,
+    content: data.content.trim(),
+    tags: Array.isArray(data.tags) ? data.tags : typeof data.tags === "string" ? data.tags.split(",").map((t) => t.trim()).filter(Boolean) : [],
+    sourceReference: data.sourceReference?.trim() || void 0,
+    viewsCount: 1,
+    pdfDownloadCount: 0,
+    createdAt: (/* @__PURE__ */ new Date()).toISOString(),
+    authorEmail: data.authorEmail
+  };
+  articles.unshift(newArticle);
+  saveArticles(articles);
+  return newArticle;
+}
+async function updateArticle(id, updates) {
+  const articles = loadArticles();
+  const index = articles.findIndex((a) => a.id === id);
+  if (index === -1) return null;
+  const current = articles[index];
+  const updated = {
+    ...current,
+    title: typeof updates.title === "string" ? updates.title.trim() : current.title,
+    bannerImageUrl: typeof updates.bannerImageUrl === "string" ? updates.bannerImageUrl.trim() : current.bannerImageUrl,
+    category: typeof updates.category === "string" ? updates.category.trim() : current.category,
+    authorName: typeof updates.authorName === "string" ? updates.authorName.trim() : current.authorName,
+    authorRole: typeof updates.authorRole === "string" ? updates.authorRole.trim() : current.authorRole,
+    authorAvatarUrl: updates.authorAvatarUrl !== void 0 ? updates.authorAvatarUrl : current.authorAvatarUrl,
+    publishDate: typeof updates.publishDate === "string" ? updates.publishDate.trim() : current.publishDate,
+    pullQuote: updates.pullQuote !== void 0 ? updates.pullQuote : current.pullQuote,
+    content: typeof updates.content === "string" ? updates.content.trim() : current.content,
+    tags: Array.isArray(updates.tags) ? updates.tags : current.tags,
+    sourceReference: updates.sourceReference !== void 0 ? updates.sourceReference : current.sourceReference,
+    updatedAt: (/* @__PURE__ */ new Date()).toISOString()
+  };
+  if (updates.content && typeof updates.content === "string") {
+    updated.readingTime = calculateReadingTime(updates.content);
+  }
+  articles[index] = updated;
+  saveArticles(articles);
+  return updated;
+}
+async function deleteArticle(id) {
+  const articles = loadArticles();
+  const index = articles.findIndex((a) => a.id === id);
+  if (index === -1) return false;
+  const articleToDelete = articles[index];
+  if (articleToDelete.bannerImageUrl && articleToDelete.bannerImageUrl.startsWith("/uploads/")) {
+    const filename = path2.basename(articleToDelete.bannerImageUrl);
+    if (/^banner-\d+-[a-f0-9]+\.(png|jpg|webp)$/i.test(filename)) {
+      const filePath = path2.join(process.cwd(), "public", "uploads", filename);
+      if (fs2.existsSync(filePath)) {
+        try {
+          fs2.unlinkSync(filePath);
+        } catch (err) {
+          console.warn("Could not remove orphaned banner on article deletion:", err);
+        }
+      }
+    }
+  }
+  const filtered = articles.filter((a) => a.id !== id);
+  saveArticles(filtered);
+  return true;
+}
+async function incrementDownloadCount(id) {
+  const articles = loadArticles();
+  const art = articles.find((a) => a.id === id || a.slug === id);
+  if (art) {
+    art.pdfDownloadCount = (art.pdfDownloadCount || 0) + 1;
+    saveArticles(articles);
+  }
+}
+async function syncArticles(incoming) {
+  if (!Array.isArray(incoming) || incoming.length === 0) {
+    return { added: 0, updated: 0, total: loadArticles().length };
+  }
+  const articles = loadArticles();
+  const existingMap = /* @__PURE__ */ new Map();
+  articles.forEach((a, i) => {
+    existingMap.set(a.id, i);
+    if (a.slug) existingMap.set(a.slug, i);
+  });
+  let added = 0;
+  let updated = 0;
+  for (const item of incoming) {
+    if (!item || !item.id || !item.title) continue;
+    const existingIndex = existingMap.get(item.id) ?? (item.slug ? existingMap.get(item.slug) : void 0);
+    if (existingIndex !== void 0) {
+      const current = articles[existingIndex];
+      const incomingTime = new Date(item.updatedAt || item.createdAt || 0).getTime();
+      const currentTime = new Date(current.updatedAt || current.createdAt || 0).getTime();
+      if (incomingTime > currentTime) {
+        articles[existingIndex] = {
+          ...current,
+          ...item,
+          viewsCount: Math.max(current.viewsCount || 0, item.viewsCount || 0),
+          pdfDownloadCount: Math.max(current.pdfDownloadCount || 0, item.pdfDownloadCount || 0)
+        };
+        updated++;
+      }
+    } else {
+      articles.push(item);
+      existingMap.set(item.id, articles.length - 1);
+      if (item.slug) existingMap.set(item.slug, articles.length - 1);
+      added++;
+    }
+  }
+  if (added > 0 || updated > 0) {
+    saveArticles(articles);
+  }
+  return { added, updated, total: articles.length };
+}
+
+// pyq-db.ts
+import fs4 from "fs";
+import path4 from "path";
+
 // cloud-db.ts
 import { GoogleSpreadsheet } from "google-spreadsheet";
 import { JWT } from "google-auth-library";
-import fs from "fs";
-import path from "path";
-import os from "os";
-var IS_VERCEL = Boolean(process.env.VERCEL);
-var LOCAL_CACHE_DIR = IS_VERCEL ? path.join(os.tmpdir(), "nishchay_cloud_cache") : path.join(process.cwd(), "data");
+import fs3 from "fs";
+import path3 from "path";
+import os3 from "os";
+var IS_VERCEL3 = Boolean(process.env.VERCEL);
+var LOCAL_CACHE_DIR = IS_VERCEL3 ? path3.join(os3.tmpdir(), "nishchay_cloud_cache") : path3.join(process.cwd(), "data");
 function ensureCacheDir() {
   try {
-    if (!fs.existsSync(LOCAL_CACHE_DIR)) {
-      fs.mkdirSync(LOCAL_CACHE_DIR, { recursive: true });
+    if (!fs3.existsSync(LOCAL_CACHE_DIR)) {
+      fs3.mkdirSync(LOCAL_CACHE_DIR, { recursive: true });
     }
   } catch {
   }
@@ -567,10 +1306,10 @@ var memoryCaches = {};
 var CACHE_TTL_MS = 3e4;
 function readDiskBackup(collectionName) {
   ensureCacheDir();
-  const filePath = path.join(LOCAL_CACHE_DIR, `${collectionName}.json`);
-  if (!fs.existsSync(filePath)) return null;
+  const filePath = path3.join(LOCAL_CACHE_DIR, `${collectionName}.json`);
+  if (!fs3.existsSync(filePath)) return null;
   try {
-    const raw = fs.readFileSync(filePath, "utf8");
+    const raw = fs3.readFileSync(filePath, "utf8");
     const parsed = JSON.parse(raw);
     return Array.isArray(parsed) ? parsed : null;
   } catch {
@@ -579,14 +1318,14 @@ function readDiskBackup(collectionName) {
 }
 function writeDiskBackup(collectionName, items) {
   ensureCacheDir();
-  const filePath = path.join(LOCAL_CACHE_DIR, `${collectionName}.json`);
+  const filePath = path3.join(LOCAL_CACHE_DIR, `${collectionName}.json`);
   const tmpPath = `${filePath}.${Date.now()}.tmp`;
   try {
-    fs.writeFileSync(tmpPath, JSON.stringify(items), "utf8");
-    fs.renameSync(tmpPath, filePath);
+    fs3.writeFileSync(tmpPath, JSON.stringify(items), "utf8");
+    fs3.renameSync(tmpPath, filePath);
   } catch (err) {
     try {
-      if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath);
+      if (fs3.existsSync(tmpPath)) fs3.unlinkSync(tmpPath);
     } catch {
     }
   }
@@ -623,615 +1362,56 @@ async function fetchCollection(tabName, headers) {
     return [];
   }
 }
-async function saveRecord(tabName, headers, record, rowFieldExtractors) {
-  const tab = await getOrCreateTab(tabName, headers);
-  const rows = await tab.getRows();
-  const existing = rows.find((r) => r.get("id") === record.id);
-  const extraFields = rowFieldExtractors ? rowFieldExtractors(record) : {};
-  const rowData = {
-    ...extraFields,
-    id: record.id,
-    json: JSON.stringify(record),
-    updatedAt: (/* @__PURE__ */ new Date()).toISOString()
-  };
-  if (existing) {
-    for (const [k, v] of Object.entries(rowData)) {
-      existing.set(k, String(v ?? ""));
+async function withRetry(fn, retries = 3, delayMs = 1200) {
+  try {
+    return await fn();
+  } catch (err) {
+    const msg = String(err?.message || "") + String(err?.status || "") + String(err?.code || "");
+    const isRateLimit = msg.includes("429") || msg.includes("Quota exceeded") || msg.includes("RESOURCE_EXHAUSTED");
+    if (isRateLimit && retries > 0) {
+      console.warn(`[CloudDB] Google Sheets 429 quota reached, auto-retrying in ${delayMs}ms...`);
+      await new Promise((res) => setTimeout(res, delayMs));
+      return withRetry(fn, retries - 1, delayMs * 2);
     }
-    await existing.save();
-  } else {
-    await tab.addRow(rowData);
+    throw err;
   }
-  delete memoryCaches[tabName];
 }
-async function saveBatchRecords(tabName, headers, records, rowFieldExtractors) {
-  if (records.length === 0) return;
-  const tab = await getOrCreateTab(tabName, headers);
-  const rows = await tab.getRows();
-  const rowMap = /* @__PURE__ */ new Map();
-  for (const r of rows) {
-    const id = r.get("id");
-    if (id) rowMap.set(id, r);
-  }
-  const toAdd = [];
-  for (const rec of records) {
-    const extraFields = rowFieldExtractors ? rowFieldExtractors(rec) : {};
+async function saveRecord(tabName, headers, record, rowFieldExtractors) {
+  return withRetry(async () => {
+    const tab = await getOrCreateTab(tabName, headers);
+    const rows = await tab.getRows();
+    const existing = rows.find((r) => r.get("id") === record.id);
+    const extraFields = rowFieldExtractors ? rowFieldExtractors(record) : {};
     const rowData = {
       ...extraFields,
-      id: rec.id,
-      json: JSON.stringify(rec),
+      id: record.id,
+      json: JSON.stringify(record),
       updatedAt: (/* @__PURE__ */ new Date()).toISOString()
     };
-    const existing = rowMap.get(rec.id);
     if (existing) {
       for (const [k, v] of Object.entries(rowData)) {
         existing.set(k, String(v ?? ""));
       }
       await existing.save();
     } else {
-      toAdd.push(rowData);
+      await tab.addRow(rowData);
     }
-  }
-  if (toAdd.length > 0) {
-    await tab.addRows(toAdd);
-  }
-  delete memoryCaches[tabName];
+    delete memoryCaches[tabName];
+  });
 }
 async function deleteRecord(tabName, headers, id) {
-  const tab = await getOrCreateTab(tabName, headers);
-  const rows = await tab.getRows();
-  const target = rows.find((r) => r.get("id") === id);
-  if (!target) return false;
-  await target.delete();
-  delete memoryCaches[tabName];
-  return true;
-}
-async function deleteRecordsMatching(tabName, headers, predicate) {
-  const tab = await getOrCreateTab(tabName, headers);
-  const rows = await tab.getRows();
-  let deletedCount = 0;
-  for (const r of rows) {
-    if (predicate(r)) {
-      await r.delete();
-      deletedCount++;
-    }
-  }
-  if (deletedCount > 0) {
+  return withRetry(async () => {
+    const tab = await getOrCreateTab(tabName, headers);
+    const rows = await tab.getRows();
+    const target = rows.find((r) => r.get("id") === id);
+    if (!target) return false;
+    await target.delete();
     delete memoryCaches[tabName];
-  }
-  return deletedCount;
-}
-
-// n-intel-db.ts
-var STORIES_TAB = "nintel_stories";
-var STORIES_HEADERS = ["id", "date", "category", "isDeleted", "headline", "json", "updatedAt"];
-var BATCHES_TAB = "nintel_batches";
-var BATCHES_HEADERS = ["id", "date", "rawContentHash", "publishedAt", "json", "updatedAt"];
-var AUDIT_TAB = "nintel_audit";
-var AUDIT_HEADERS = ["id", "action", "storyId", "batchId", "adminEmail", "timestamp", "details", "json"];
-async function loadStories() {
-  return fetchCollection(STORIES_TAB, STORIES_HEADERS);
-}
-async function loadBatches() {
-  return fetchCollection(BATCHES_TAB, BATCHES_HEADERS);
-}
-async function loadAudit() {
-  return fetchCollection(AUDIT_TAB, AUDIT_HEADERS);
-}
-async function addAuditLog(action, adminEmail, details, storyId, batchId) {
-  const entry = {
-    id: `audit-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
-    action,
-    storyId,
-    batchId,
-    adminEmail,
-    timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-    details
-  };
-  await saveRecord(AUDIT_TAB, AUDIT_HEADERS, entry, (e) => ({
-    action: e.action,
-    storyId: e.storyId || "",
-    batchId: e.batchId || "",
-    adminEmail: e.adminEmail,
-    timestamp: e.timestamp,
-    details: e.details
-  }));
-}
-async function getAllStories(options = {}) {
-  let stories = await loadStories();
-  if (!options.includeDeleted) {
-    stories = stories.filter((s) => !s.isDeleted);
-  }
-  if (options.date) {
-    stories = stories.filter((s) => s.date === options.date);
-  }
-  if (options.month) {
-    stories = stories.filter((s) => s.date && s.date.startsWith(options.month));
-  }
-  if (options.category && options.category.toLowerCase() !== "all") {
-    const catLower = options.category.toLowerCase();
-    stories = stories.filter((s) => s.category && s.category.toLowerCase() === catLower || s.categoryKey === catLower);
-  }
-  if (options.search && options.search.trim()) {
-    const q = options.search.trim().toLowerCase();
-    stories = stories.filter(
-      (s) => s.headline && s.headline.toLowerCase().includes(q) || s.content && s.content.toLowerCase().includes(q) || s.category && s.category.toLowerCase().includes(q) || s.tags && s.tags.some((t) => t.toLowerCase().includes(q)) || s.sourceName && s.sourceName.toLowerCase().includes(q)
-    );
-  }
-  stories = [...stories].sort((a, b) => {
-    if (a.date !== b.date) return (b.date || "").localeCompare(a.date || "");
-    const timeA = a.createdAt || "";
-    const timeB = b.createdAt || "";
-    if (timeA && timeB && timeA !== timeB) return timeB.localeCompare(timeA);
-    return (b.itemNumber || 0) - (a.itemNumber || 0);
-  });
-  if (options.limit && options.limit > 0) {
-    return stories.slice(0, options.limit);
-  }
-  return stories;
-}
-async function getStoryById(id) {
-  const stories = await loadStories();
-  return stories.find((s) => s.id === id) || null;
-}
-async function findDuplicateBatch(hash, date) {
-  const batches = await loadBatches();
-  return batches.find((b) => b.rawContentHash === hash && b.date === date) || null;
-}
-async function saveBatchAndStories(batch, newStories, adminEmail) {
-  await saveRecord(BATCHES_TAB, BATCHES_HEADERS, batch, (b) => ({
-    date: b.date,
-    rawContentHash: b.rawContentHash,
-    publishedAt: b.publishedAt
-  }));
-  await saveBatchRecords(STORIES_TAB, STORIES_HEADERS, newStories, (s) => ({
-    date: s.date,
-    category: s.category,
-    isDeleted: s.isDeleted ? "true" : "false",
-    headline: s.headline.substring(0, 200)
-  }));
-  await addAuditLog(
-    "PUBLISH",
-    adminEmail,
-    `Published ${newStories.length} stories across ${batch.categories.length} categories for ${batch.date}`,
-    void 0,
-    batch.id
-  );
-}
-async function updateStory(id, updates, adminEmail) {
-  const stories = await loadStories();
-  const current = stories.find((s) => s.id === id);
-  if (!current) return null;
-  let categoryKey = current.categoryKey;
-  if (typeof updates.category === "string" && updates.category.trim()) {
-    categoryKey = updates.category.toLowerCase().replace(/[^a-z0-9]+/g, "-");
-  }
-  const updated = {
-    ...current,
-    headline: typeof updates.headline === "string" ? updates.headline.trim() : current.headline,
-    content: typeof updates.content === "string" ? updates.content.trim() : current.content,
-    category: typeof updates.category === "string" ? updates.category.trim() : current.category,
-    categoryKey,
-    sourceName: updates.sourceName !== void 0 ? updates.sourceName : current.sourceName,
-    sourceUrl: updates.sourceUrl !== void 0 ? updates.sourceUrl : current.sourceUrl,
-    isDefence: typeof updates.isDefence === "boolean" ? updates.isDefence : current.isDefence,
-    updatedAt: (/* @__PURE__ */ new Date()).toISOString(),
-    lastEditedBy: adminEmail
-  };
-  await saveRecord(STORIES_TAB, STORIES_HEADERS, updated, (s) => ({
-    date: s.date,
-    category: s.category,
-    isDeleted: s.isDeleted ? "true" : "false",
-    headline: s.headline.substring(0, 200)
-  }));
-  await addAuditLog("EDIT", adminEmail, `Edited story [${id}]: updated (${Object.keys(updates).join(", ")})`, id);
-  return updated;
-}
-async function deleteStory(id, adminEmail) {
-  const stories = await loadStories();
-  const current = stories.find((s) => s.id === id);
-  if (!current) return false;
-  const updated = {
-    ...current,
-    isDeleted: true,
-    deletedAt: (/* @__PURE__ */ new Date()).toISOString(),
-    deletedBy: adminEmail,
-    updatedAt: (/* @__PURE__ */ new Date()).toISOString()
-  };
-  await saveRecord(STORIES_TAB, STORIES_HEADERS, updated, (s) => ({
-    date: s.date,
-    category: s.category,
-    isDeleted: "true",
-    headline: s.headline.substring(0, 200)
-  }));
-  await addAuditLog("DELETE", adminEmail, `Soft-deleted story [${id}]: "${current.headline}"`, id);
-  return true;
-}
-async function restoreStory(id, adminEmail) {
-  const stories = await loadStories();
-  const current = stories.find((s) => s.id === id);
-  if (!current) return false;
-  const updated = {
-    ...current,
-    isDeleted: false,
-    deletedAt: void 0,
-    deletedBy: void 0,
-    updatedAt: (/* @__PURE__ */ new Date()).toISOString()
-  };
-  await saveRecord(STORIES_TAB, STORIES_HEADERS, updated, (s) => ({
-    date: s.date,
-    category: s.category,
-    isDeleted: "false",
-    headline: s.headline.substring(0, 200)
-  }));
-  await addAuditLog("RESTORE", adminEmail, `Restored story [${id}]: "${current.headline}"`, id);
-  return true;
-}
-async function purgeStory(id, adminEmail) {
-  const stories = await loadStories();
-  const story = stories.find((s) => s.id === id);
-  if (!story) return false;
-  await deleteRecord(STORIES_TAB, STORIES_HEADERS, id);
-  await addAuditLog("DELETE", adminEmail, `Permanently purged story [${id}]: "${story.headline}"`, id);
-  return true;
-}
-async function purgeAllDeletedStories(adminEmail) {
-  const purgedCount = await deleteRecordsMatching(STORIES_TAB, STORIES_HEADERS, (r) => {
-    return r.get("isDeleted") === "true";
-  });
-  if (purgedCount > 0) {
-    await addAuditLog("DELETE", adminEmail, `Emptied trash: permanently purged all ${purgedCount} deleted stories.`);
-  }
-  return purgedCount;
-}
-async function deleteStoriesByDate(date, adminEmail, permanent = false) {
-  if (permanent) {
-    const count = await deleteRecordsMatching(STORIES_TAB, STORIES_HEADERS, (r) => {
-      return r.get("date") === date;
-    });
-    await addAuditLog("DELETE", adminEmail, `Permanently purged entire briefing for ${date} (${count} stories removed).`);
-    return { count, date };
-  } else {
-    const stories = await loadStories();
-    let count = 0;
-    const toUpdate = [];
-    for (const s of stories) {
-      if (s.date === date && !s.isDeleted) {
-        toUpdate.push({
-          ...s,
-          isDeleted: true,
-          deletedAt: (/* @__PURE__ */ new Date()).toISOString(),
-          deletedBy: adminEmail,
-          updatedAt: (/* @__PURE__ */ new Date()).toISOString()
-        });
-        count++;
-      }
-    }
-    if (toUpdate.length > 0) {
-      await saveBatchRecords(STORIES_TAB, STORIES_HEADERS, toUpdate, (s) => ({
-        date: s.date,
-        category: s.category,
-        isDeleted: "true",
-        headline: s.headline.substring(0, 200)
-      }));
-    }
-    await addAuditLog("DELETE", adminEmail, `Soft-deleted entire briefing for ${date} (${count} stories moved to trash).`);
-    return { count, date };
-  }
-}
-async function deleteStoriesByCategory(category, adminEmail, date, permanent = false) {
-  const targetCategory = category.trim().toLowerCase();
-  const matchesCategory = (r) => {
-    const cat = (r.get("category") || "").trim().toLowerCase();
-    if (cat !== targetCategory) return false;
-    if (date && r.get("date") !== date) return false;
     return true;
-  };
-  if (permanent) {
-    const count = await deleteRecordsMatching(STORIES_TAB, STORIES_HEADERS, matchesCategory);
-    await addAuditLog("DELETE", adminEmail, `Permanently purged category "${category}"${date ? ` for date ${date}` : ""} (${count} stories removed).`);
-    return { count, category, date };
-  } else {
-    const stories = await loadStories();
-    let count = 0;
-    const toUpdate = [];
-    for (const s of stories) {
-      const cat = (s.category || "").trim().toLowerCase();
-      if (cat === targetCategory && (!date || s.date === date) && !s.isDeleted) {
-        toUpdate.push({
-          ...s,
-          isDeleted: true,
-          deletedAt: (/* @__PURE__ */ new Date()).toISOString(),
-          deletedBy: adminEmail,
-          updatedAt: (/* @__PURE__ */ new Date()).toISOString()
-        });
-        count++;
-      }
-    }
-    if (toUpdate.length > 0) {
-      await saveBatchRecords(STORIES_TAB, STORIES_HEADERS, toUpdate, (s) => ({
-        date: s.date,
-        category: s.category,
-        isDeleted: "true",
-        headline: s.headline.substring(0, 200)
-      }));
-    }
-    await addAuditLog("DELETE", adminEmail, `Soft-deleted category "${category}"${date ? ` for date ${date}` : ""} (${count} stories moved to trash).`);
-    return { count, category, date };
-  }
-}
-async function deleteStoriesByIds(ids, adminEmail, permanent = false) {
-  if (!Array.isArray(ids) || ids.length === 0) return { count: 0, ids: [] };
-  const idMap = {};
-  for (const id of ids) idMap[id] = true;
-  if (permanent) {
-    const count = await deleteRecordsMatching(STORIES_TAB, STORIES_HEADERS, (r) => Boolean(idMap[r.get("id")]));
-    await addAuditLog("DELETE", adminEmail, `Permanently purged ${count} selected stories.`);
-    return { count, ids };
-  } else {
-    const stories = await loadStories();
-    let count = 0;
-    const toUpdate = [];
-    for (const s of stories) {
-      if (idMap[s.id] && !s.isDeleted) {
-        toUpdate.push({
-          ...s,
-          isDeleted: true,
-          deletedAt: (/* @__PURE__ */ new Date()).toISOString(),
-          deletedBy: adminEmail,
-          updatedAt: (/* @__PURE__ */ new Date()).toISOString()
-        });
-        count++;
-      }
-    }
-    if (toUpdate.length > 0) {
-      await saveBatchRecords(STORIES_TAB, STORIES_HEADERS, toUpdate, (s) => ({
-        date: s.date,
-        category: s.category,
-        isDeleted: "true",
-        headline: s.headline.substring(0, 200)
-      }));
-    }
-    await addAuditLog("DELETE", adminEmail, `Soft-deleted ${count} selected stories.`);
-    return { count, ids };
-  }
-}
-async function getAuditLogs(limitCount = 100) {
-  const logs = await loadAudit();
-  return logs.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()).slice(0, limitCount);
-}
-async function getAvailableEditions() {
-  const stories = await getAllStories({ includeDeleted: false });
-  const map = {};
-  for (const s of stories) {
-    if (!s.date) continue;
-    if (!map[s.date]) {
-      map[s.date] = {
-        date: s.date,
-        storyCount: 0,
-        categories: /* @__PURE__ */ new Set(),
-        categoryCounts: {},
-        defenceCount: 0,
-        headlines: []
-      };
-    }
-    map[s.date].storyCount++;
-    if (s.category) {
-      map[s.date].categories.add(s.category);
-      map[s.date].categoryCounts[s.category] = (map[s.date].categoryCounts[s.category] || 0) + 1;
-      if (s.isDefence || s.category.toLowerCase().includes("defence")) {
-        map[s.date].defenceCount++;
-      }
-    }
-    if (map[s.date].headlines.length < 3 && s.headline) {
-      map[s.date].headlines.push(s.headline);
-    }
-  }
-  return Object.values(map).map((e) => ({
-    date: e.date,
-    storyCount: e.storyCount,
-    categories: Array.from(e.categories),
-    highlights: e.headlines,
-    defenceCount: e.defenceCount,
-    categoryCounts: e.categoryCounts
-  })).sort((a, b) => b.date.localeCompare(a.date));
-}
-async function seedSampleDataIfEmpty(samplePostText) {
-  const existing = await loadStories();
-  if (existing.length > 0) return;
-  console.log("\u{1F331} Seeding initial N-INTEL sample edition into Cloud Database...");
-  const parseResult = parseDailyNewsPost(samplePostText, "2026-10-28");
-  if (parseResult.success && parseResult.stories.length > 0) {
-    const batch = {
-      id: `batch-20261028-seed`,
-      date: "2026-10-28",
-      rawContentHash: parseResult.hash,
-      publishedAt: (/* @__PURE__ */ new Date()).toISOString(),
-      publishedBy: "system@nishchay.defence",
-      storyCount: parseResult.totalStories,
-      categories: parseResult.categories
-    };
-    await saveBatchAndStories(batch, parseResult.stories, "system@nishchay.defence");
-    console.log(`\u2705 Seeded ${parseResult.totalStories} N-INTEL stories into Cloud Database.`);
-  }
-}
-async function syncNIntelStories(incomingStories, incomingBatches) {
-  if (!Array.isArray(incomingStories) || incomingStories.length === 0) {
-    const all2 = await loadStories();
-    return { count: 0, total: all2.length };
-  }
-  const existing = await loadStories();
-  const existingMap = /* @__PURE__ */ new Map();
-  for (const s of existing) existingMap.set(s.id, true);
-  const toAdd = incomingStories.filter((s) => s && s.id && !existingMap.has(s.id));
-  if (toAdd.length > 0) {
-    await saveBatchRecords(STORIES_TAB, STORIES_HEADERS, toAdd, (s) => ({
-      date: s.date,
-      category: s.category,
-      isDeleted: s.isDeleted ? "true" : "false",
-      headline: s.headline.substring(0, 200)
-    }));
-  }
-  const all = await loadStories();
-  return { count: toAdd.length, total: all.length };
-}
-
-// articles-db.ts
-var ARTICLES_TAB = "articles";
-var ARTICLES_HEADERS = ["id", "slug", "title", "category", "publishDate", "authorName", "json", "updatedAt"];
-function slugify(text) {
-  return text.toLowerCase().replace(/[^\w\s-]/g, "").trim().replace(/\s+/g, "-");
-}
-function calculateReadingTime(text) {
-  const words = (text || "").trim().split(/\s+/).length;
-  const minutes = Math.max(2, Math.ceil(words / 180));
-  return `${minutes} min read`;
-}
-async function getAllArticles() {
-  const articles = await fetchCollection(ARTICLES_TAB, ARTICLES_HEADERS);
-  return [...articles].sort(
-    (a, b) => new Date(b.publishDate || b.createdAt).getTime() - new Date(a.publishDate || a.createdAt).getTime()
-  );
-}
-async function getArticleById(idOrSlug) {
-  if (!idOrSlug) return null;
-  const articles = await getAllArticles();
-  const query = String(idOrSlug).trim().toLowerCase();
-  return articles.find(
-    (a) => a.id === idOrSlug || a.slug === idOrSlug || a.id.toLowerCase() === query || a.slug && a.slug.toLowerCase() === query
-  ) || null;
-}
-async function createArticle(data) {
-  const slug = slugify(data.title) + "-" + Date.now().toString().slice(-4);
-  const id = `article-${slug}`;
-  const now = /* @__PURE__ */ new Date();
-  const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
-  const publishDate = data.publishDate?.trim() || todayStr;
-  const readingTime = calculateReadingTime(data.content);
-  const newArticle = {
-    id,
-    slug,
-    title: data.title.trim(),
-    bannerImageUrl: data.bannerImageUrl.trim(),
-    category: data.category?.trim() || "General",
-    authorName: data.authorName.trim(),
-    authorRole: data.authorRole?.trim() || "Editorial Contributor",
-    authorAvatarUrl: data.authorAvatarUrl?.trim() || void 0,
-    publishDate,
-    readingTime,
-    pullQuote: data.pullQuote?.trim() || void 0,
-    content: data.content.trim(),
-    tags: Array.isArray(data.tags) ? data.tags : typeof data.tags === "string" ? data.tags.split(",").map((t) => t.trim()).filter(Boolean) : [],
-    sourceReference: data.sourceReference?.trim() || void 0,
-    viewsCount: 1,
-    pdfDownloadCount: 0,
-    createdAt: (/* @__PURE__ */ new Date()).toISOString(),
-    authorEmail: data.authorEmail
-  };
-  await saveRecord(ARTICLES_TAB, ARTICLES_HEADERS, newArticle, (a) => ({
-    slug: a.slug,
-    title: a.title,
-    category: a.category,
-    publishDate: a.publishDate,
-    authorName: a.authorName
-  }));
-  return newArticle;
-}
-async function updateArticle(id, updates) {
-  const current = await getArticleById(id);
-  if (!current) return null;
-  const updated = {
-    ...current,
-    title: typeof updates.title === "string" ? updates.title.trim() : current.title,
-    bannerImageUrl: typeof updates.bannerImageUrl === "string" ? updates.bannerImageUrl.trim() : current.bannerImageUrl,
-    category: typeof updates.category === "string" ? updates.category.trim() : current.category,
-    authorName: typeof updates.authorName === "string" ? updates.authorName.trim() : current.authorName,
-    authorRole: typeof updates.authorRole === "string" ? updates.authorRole.trim() : current.authorRole,
-    authorAvatarUrl: updates.authorAvatarUrl !== void 0 ? updates.authorAvatarUrl : current.authorAvatarUrl,
-    publishDate: typeof updates.publishDate === "string" ? updates.publishDate.trim() : current.publishDate,
-    pullQuote: updates.pullQuote !== void 0 ? updates.pullQuote : current.pullQuote,
-    content: typeof updates.content === "string" ? updates.content.trim() : current.content,
-    tags: Array.isArray(updates.tags) ? updates.tags : current.tags,
-    sourceReference: updates.sourceReference !== void 0 ? updates.sourceReference : current.sourceReference,
-    updatedAt: (/* @__PURE__ */ new Date()).toISOString()
-  };
-  if (updates.content && typeof updates.content === "string") {
-    updated.readingTime = calculateReadingTime(updates.content);
-  }
-  await saveRecord(ARTICLES_TAB, ARTICLES_HEADERS, updated, (a) => ({
-    slug: a.slug,
-    title: a.title,
-    category: a.category,
-    publishDate: a.publishDate,
-    authorName: a.authorName
-  }));
-  return updated;
-}
-async function deleteArticle(id) {
-  const current = await getArticleById(id);
-  if (!current) return false;
-  return deleteRecord(ARTICLES_TAB, ARTICLES_HEADERS, current.id);
-}
-async function incrementDownloadCount(id) {
-  const art = await getArticleById(id);
-  if (art) {
-    art.pdfDownloadCount = (art.pdfDownloadCount || 0) + 1;
-    await saveRecord(ARTICLES_TAB, ARTICLES_HEADERS, art, (a) => ({
-      slug: a.slug,
-      title: a.title,
-      category: a.category,
-      publishDate: a.publishDate,
-      authorName: a.authorName
-    }));
-  }
-}
-async function syncArticles(incoming) {
-  if (!Array.isArray(incoming) || incoming.length === 0) {
-    const all2 = await getAllArticles();
-    return { added: 0, updated: 0, total: all2.length };
-  }
-  const existing = await getAllArticles();
-  const existingMap = /* @__PURE__ */ new Map();
-  for (const a of existing) {
-    existingMap.set(a.id, a);
-    if (a.slug) existingMap.set(a.slug, a);
-  }
-  let added = 0;
-  let updated = 0;
-  for (const item of incoming) {
-    if (!item || !item.id || !item.title) continue;
-    const match = existingMap.get(item.id) || (item.slug ? existingMap.get(item.slug) : void 0);
-    if (!match) {
-      await saveRecord(ARTICLES_TAB, ARTICLES_HEADERS, item, (a) => ({
-        slug: a.slug,
-        title: a.title,
-        category: a.category,
-        publishDate: a.publishDate,
-        authorName: a.authorName
-      }));
-      added++;
-    } else {
-      const incomingTime = new Date(item.updatedAt || item.createdAt || 0).getTime();
-      const currTime = new Date(match.updatedAt || match.createdAt || 0).getTime();
-      if (incomingTime > currTime) {
-        await saveRecord(ARTICLES_TAB, ARTICLES_HEADERS, { ...match, ...item }, (a) => ({
-          slug: a.slug,
-          title: a.title,
-          category: a.category,
-          publishDate: a.publishDate,
-          authorName: a.authorName
-        }));
-        updated++;
-      }
-    }
-  }
-  const all = await getAllArticles();
-  return { added, updated, total: all.length };
+  });
 }
 
 // pyq-db.ts
-import fs2 from "fs";
-import path2 from "path";
 var PYQ_TAB = "pyq_sessions";
 var PYQ_HEADERS = ["id", "exam", "session", "year", "title", "json", "updatedAt"];
 async function getAllPyqSessions() {
@@ -1244,12 +1424,12 @@ async function getAllPyqSessions() {
   if (Object.keys(dict).length === 0) {
     try {
       const candidatePaths = [
-        path2.join(process.cwd(), "data", "pyq-papers.json"),
-        path2.join(process.cwd(), "data", "pyq_sessions.json")
+        path4.join(process.cwd(), "data", "pyq-papers.json"),
+        path4.join(process.cwd(), "data", "pyq_sessions.json")
       ];
       for (const p of candidatePaths) {
-        if (fs2.existsSync(p)) {
-          const raw = fs2.readFileSync(p, "utf8");
+        if (fs4.existsSync(p)) {
+          const raw = fs4.readFileSync(p, "utf8");
           const parsed = JSON.parse(raw);
           if (parsed && typeof parsed === "object" && Object.keys(parsed).length > 0) {
             return parsed;
@@ -1705,11 +1885,11 @@ var publishLimiter = rateLimit({
   validate: false,
   message: { success: false, error: "Publishing rate limit exceeded." }
 });
-var IS_VERCEL2 = Boolean(process.env.VERCEL);
-var UPLOADS_DIR = IS_VERCEL2 ? path3.join(os2.tmpdir(), "nishchay_uploads") : path3.join(process.cwd(), "public", "uploads");
+var IS_VERCEL4 = Boolean(process.env.VERCEL);
+var UPLOADS_DIR = IS_VERCEL4 ? path5.join(os4.tmpdir(), "nishchay_uploads") : path5.join(process.cwd(), "public", "uploads");
 try {
-  if (!fs3.existsSync(UPLOADS_DIR)) {
-    fs3.mkdirSync(UPLOADS_DIR, { recursive: true });
+  if (!fs5.existsSync(UPLOADS_DIR)) {
+    fs5.mkdirSync(UPLOADS_DIR, { recursive: true });
   }
 } catch (fsErr) {
   console.warn("Could not initialize uploads directory:", fsErr);
@@ -2051,9 +2231,9 @@ app.get("/api/articles/:id", async (req, res) => {
 });
 app.get("/api/uploads/:filename", (req, res) => {
   try {
-    const safeName = path3.basename(req.params.filename);
-    const filePath = path3.join(UPLOADS_DIR, safeName);
-    if (fs3.existsSync(filePath)) {
+    const safeName = path5.basename(req.params.filename);
+    const filePath = path5.join(UPLOADS_DIR, safeName);
+    if (fs5.existsSync(filePath)) {
       res.setHeader("X-Content-Type-Options", "nosniff");
       res.sendFile(filePath);
     } else {
@@ -2117,13 +2297,13 @@ app.post("/api/articles/upload-banner", publishLimiter, authenticate, (req, res)
       });
     }
     try {
-      if (!fs3.existsSync(UPLOADS_DIR)) {
-        fs3.mkdirSync(UPLOADS_DIR, { recursive: true });
+      if (!fs5.existsSync(UPLOADS_DIR)) {
+        fs5.mkdirSync(UPLOADS_DIR, { recursive: true });
       }
       const safeRandomToken = crypto.randomBytes(16).toString("hex");
       const safeName = `banner-${Date.now()}-${safeRandomToken}.${ext}`;
-      const filePath = path3.join(UPLOADS_DIR, safeName);
-      fs3.writeFileSync(filePath, buffer, { flag: "wx" });
+      const filePath = path5.join(UPLOADS_DIR, safeName);
+      fs5.writeFileSync(filePath, buffer, { flag: "wx" });
       const publicUrl = `/api/uploads/${safeName}`;
       res.json({ success: true, url: publicUrl, localUrl: `/uploads/${safeName}` });
     } catch (writeErr) {
@@ -2659,11 +2839,11 @@ async function setupServer() {
     });
     app.use(vite.middlewares);
   } else if (!process.env.VERCEL) {
-    const distPath = path3.join(process.cwd(), "dist");
-    if (fs3.existsSync(distPath)) {
+    const distPath = path5.join(process.cwd(), "dist");
+    if (fs5.existsSync(distPath)) {
       app.use(express.static(distPath));
       app.get("*", (req, res) => {
-        res.sendFile(path3.join(distPath, "index.html"));
+        res.sendFile(path5.join(distPath, "index.html"));
       });
     }
   }

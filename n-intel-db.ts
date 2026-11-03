@@ -1,54 +1,155 @@
 /**
- * n-intel-db.ts — Persistent Cloud Database Storage for N-Intel daily briefings.
+ * n-intel-db.ts — Local / In-Memory Storage for N-Intel daily briefings.
  *
- * Backed by authenticated Google Cloud Storage (via cloud-db.ts).
- * Permanent, cross-device, single source of truth.
- * Survives container recycling, server restarts, and redeployments.
+ * NOTE: As requested, persistence storage (Google Cloud DB) is reserved ONLY
+ * for the Notes section. N-Intel briefings use local JSON file & in-memory caching.
+ * Completely immune to Google Sheets quota / rate-limiting (429) errors.
  */
 
+import fs from 'fs';
+import path from 'path';
+import os from 'os';
 import type { NIntelStory, NIntelBatch, NIntelAuditLog } from './types';
 import { parseDailyNewsPost } from './n-intel-parser';
-import {
-  fetchCollection,
-  saveRecord,
-  saveBatchRecords,
-  deleteRecord,
-  deleteRecordsMatching,
-  invalidateCollectionCache
-} from './cloud-db';
 
-const STORIES_TAB = 'nintel_stories';
-const STORIES_HEADERS = ['id', 'date', 'category', 'isDeleted', 'headline', 'json', 'updatedAt'];
+const IS_VERCEL = Boolean(process.env.VERCEL);
+const DATA_DIR = IS_VERCEL ? path.join(os.tmpdir(), 'nishchay_data') : path.join(process.cwd(), 'data');
+const SEED_DATA_DIR = path.join(process.cwd(), 'data');
+const STORIES_FILE = path.join(DATA_DIR, 'n-intel-stories.json');
+const BATCHES_FILE = path.join(DATA_DIR, 'n-intel-batches.json');
+const AUDIT_FILE = path.join(DATA_DIR, 'n-intel-audit.json');
 
-const BATCHES_TAB = 'nintel_batches';
-const BATCHES_HEADERS = ['id', 'date', 'rawContentHash', 'publishedAt', 'json', 'updatedAt'];
+const SEED_STORIES_FILE = path.join(SEED_DATA_DIR, 'n-intel-stories.json');
+const SEED_BATCHES_FILE = path.join(SEED_DATA_DIR, 'n-intel-batches.json');
+const SEED_AUDIT_FILE = path.join(SEED_DATA_DIR, 'n-intel-audit.json');
 
-const AUDIT_TAB = 'nintel_audit';
-const AUDIT_HEADERS = ['id', 'action', 'storyId', 'batchId', 'adminEmail', 'timestamp', 'details', 'json'];
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-async function loadStories(): Promise<NIntelStory[]> {
-  return fetchCollection<NIntelStory>(STORIES_TAB, STORIES_HEADERS);
+// Ensure data directory exists
+function ensureDataDir() {
+  try {
+    if (!fs.existsSync(DATA_DIR)) {
+      fs.mkdirSync(DATA_DIR, { recursive: true });
+    }
+    if (IS_VERCEL) {
+      if (!fs.existsSync(STORIES_FILE) && fs.existsSync(SEED_STORIES_FILE)) {
+        try { fs.copyFileSync(SEED_STORIES_FILE, STORIES_FILE); } catch {}
+      }
+      if (!fs.existsSync(BATCHES_FILE) && fs.existsSync(SEED_BATCHES_FILE)) {
+        try { fs.copyFileSync(SEED_BATCHES_FILE, BATCHES_FILE); } catch {}
+      }
+      if (!fs.existsSync(AUDIT_FILE) && fs.existsSync(SEED_AUDIT_FILE)) {
+        try { fs.copyFileSync(SEED_AUDIT_FILE, AUDIT_FILE); } catch {}
+      }
+    }
+  } catch (err) {
+    console.warn('Could not ensure data directory:', err);
+  }
 }
 
-async function loadBatches(): Promise<NIntelBatch[]> {
-  return fetchCollection<NIntelBatch>(BATCHES_TAB, BATCHES_HEADERS);
+// In-memory cache for ultra-fast reading
+let storiesCache: NIntelStory[] | null = null;
+let batchesCache: NIntelBatch[] | null = null;
+let auditCache: NIntelAuditLog[] | null = null;
+
+function loadStories(): NIntelStory[] {
+  if (storiesCache) return storiesCache;
+  ensureDataDir();
+
+  let targetFile = STORIES_FILE;
+  if (!fs.existsSync(targetFile) && fs.existsSync(SEED_STORIES_FILE)) {
+    targetFile = SEED_STORIES_FILE;
+  }
+
+  if (!fs.existsSync(targetFile)) {
+    storiesCache = [];
+    return storiesCache;
+  }
+  try {
+    const raw = fs.readFileSync(targetFile, 'utf-8');
+    storiesCache = JSON.parse(raw);
+    return storiesCache || [];
+  } catch (e) {
+    console.error('Error reading stories file:', e);
+    return [];
+  }
 }
 
-async function loadAudit(): Promise<NIntelAuditLog[]> {
-  return fetchCollection<NIntelAuditLog>(AUDIT_TAB, AUDIT_HEADERS);
+function atomicWriteJsonSync(filePath: string, data: any): void {
+  ensureDataDir();
+  const tempPath = `${filePath}.${Date.now()}.${Math.random().toString(36).substring(2, 8)}.tmp`;
+  try {
+    fs.writeFileSync(tempPath, JSON.stringify(data, null, 2), 'utf-8');
+    fs.renameSync(tempPath, filePath);
+  } catch (err) {
+    if (fs.existsSync(tempPath)) {
+      try { fs.unlinkSync(tempPath); } catch {}
+    }
+    console.warn(`Could not persist ${filePath} to disk:`, err);
+  }
 }
 
-async function addAuditLog(
-  action: 'PUBLISH' | 'EDIT' | 'DELETE' | 'RESTORE',
-  adminEmail: string,
-  details: string,
-  storyId?: string,
-  batchId?: string
-): Promise<void> {
+function saveStories(stories: NIntelStory[]): void {
+  storiesCache = stories;
+  atomicWriteJsonSync(STORIES_FILE, stories);
+}
+
+function loadBatches(): NIntelBatch[] {
+  if (batchesCache) return batchesCache;
+  ensureDataDir();
+
+  let targetFile = BATCHES_FILE;
+  if (!fs.existsSync(targetFile) && fs.existsSync(SEED_BATCHES_FILE)) {
+    targetFile = SEED_BATCHES_FILE;
+  }
+
+  if (!fs.existsSync(targetFile)) {
+    batchesCache = [];
+    return batchesCache;
+  }
+  try {
+    const raw = fs.readFileSync(targetFile, 'utf-8');
+    batchesCache = JSON.parse(raw);
+    return batchesCache || [];
+  } catch (e) {
+    console.error('Error reading batches file:', e);
+    return [];
+  }
+}
+
+function saveBatches(batches: NIntelBatch[]): void {
+  batchesCache = batches;
+  atomicWriteJsonSync(BATCHES_FILE, batches);
+}
+
+function loadAudit(): NIntelAuditLog[] {
+  if (auditCache) return auditCache;
+  ensureDataDir();
+
+  let targetFile = AUDIT_FILE;
+  if (!fs.existsSync(targetFile) && fs.existsSync(SEED_AUDIT_FILE)) {
+    targetFile = SEED_AUDIT_FILE;
+  }
+
+  if (!fs.existsSync(targetFile)) {
+    auditCache = [];
+    return auditCache;
+  }
+  try {
+    const raw = fs.readFileSync(targetFile, 'utf-8');
+    auditCache = JSON.parse(raw);
+    return auditCache || [];
+  } catch (e) {
+    console.error('Error reading audit file:', e);
+    return [];
+  }
+}
+
+function saveAudit(logs: NIntelAuditLog[]): void {
+  auditCache = logs;
+  atomicWriteJsonSync(AUDIT_FILE, logs);
+}
+
+function addAuditLog(action: 'PUBLISH' | 'EDIT' | 'DELETE' | 'RESTORE', adminEmail: string, details: string, storyId?: string, batchId?: string) {
+  const logs = loadAudit();
   const entry: NIntelAuditLog = {
     id: `audit-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
     action,
@@ -58,19 +159,13 @@ async function addAuditLog(
     timestamp: new Date().toISOString(),
     details
   };
-  await saveRecord(AUDIT_TAB, AUDIT_HEADERS, entry, e => ({
-    action: e.action,
-    storyId: e.storyId || '',
-    batchId: e.batchId || '',
-    adminEmail: e.adminEmail,
-    timestamp: e.timestamp,
-    details: e.details
-  }));
+  logs.unshift(entry);
+  // Keep last 1,000 audit records
+  if (logs.length > 1000) logs.length = 1000;
+  saveAudit(logs);
 }
 
-// ---------------------------------------------------------------------------
-// Public API
-// ---------------------------------------------------------------------------
+// ── Public Database APIs ──
 
 export interface StoryFilterOptions {
   includeDeleted?: boolean;
@@ -82,7 +177,7 @@ export interface StoryFilterOptions {
 }
 
 export async function getAllStories(options: StoryFilterOptions = {}): Promise<NIntelStory[]> {
-  let stories = await loadStories();
+  let stories = loadStories();
 
   if (!options.includeDeleted) {
     stories = stories.filter(s => !s.isDeleted);
@@ -93,20 +188,20 @@ export async function getAllStories(options: StoryFilterOptions = {}): Promise<N
   }
 
   if (options.month) {
-    stories = stories.filter(s => s.date && s.date.startsWith(options.month!));
+    stories = stories.filter(s => s.date.startsWith(options.month!));
   }
 
   if (options.category && options.category.toLowerCase() !== 'all') {
     const catLower = options.category.toLowerCase();
-    stories = stories.filter(s => (s.category && s.category.toLowerCase() === catLower) || s.categoryKey === catLower);
+    stories = stories.filter(s => s.category.toLowerCase() === catLower || s.categoryKey === catLower);
   }
 
   if (options.search && options.search.trim()) {
     const q = options.search.trim().toLowerCase();
     stories = stories.filter(s =>
-      (s.headline && s.headline.toLowerCase().includes(q)) ||
-      (s.content && s.content.toLowerCase().includes(q)) ||
-      (s.category && s.category.toLowerCase().includes(q)) ||
+      s.headline.toLowerCase().includes(q) ||
+      s.content.toLowerCase().includes(q) ||
+      s.category.toLowerCase().includes(q) ||
       (s.tags && s.tags.some(t => t.toLowerCase().includes(q))) ||
       (s.sourceName && s.sourceName.toLowerCase().includes(q))
     );
@@ -114,10 +209,17 @@ export async function getAllStories(options: StoryFilterOptions = {}): Promise<N
 
   // Always sort latest newly uploaded news at the top
   stories = [...stories].sort((a, b) => {
-    if (a.date !== b.date) return (b.date || '').localeCompare(a.date || '');
+    // 1. Primary: Date descending (newest day first)
+    if (a.date !== b.date) {
+      return b.date.localeCompare(a.date);
+    }
+    // 2. Secondary: Upload timestamp descending (newest uploaded item first)
     const timeA = a.createdAt || '';
     const timeB = b.createdAt || '';
-    if (timeA && timeB && timeA !== timeB) return timeB.localeCompare(timeA);
+    if (timeA && timeB && timeA !== timeB) {
+      return timeB.localeCompare(timeA);
+    }
+    // 3. Fallback: itemNumber descending
     return (b.itemNumber || 0) - (a.itemNumber || 0);
   });
 
@@ -129,7 +231,7 @@ export async function getAllStories(options: StoryFilterOptions = {}): Promise<N
 }
 
 export async function getStoryById(id: string): Promise<NIntelStory | null> {
-  const stories = await loadStories();
+  const stories = loadStories();
   return stories.find(s => s.id === id) || null;
 }
 
@@ -138,48 +240,46 @@ export async function getBatches(): Promise<NIntelBatch[]> {
 }
 
 export async function findDuplicateBatch(hash: string, date: string): Promise<NIntelBatch | null> {
-  const batches = await loadBatches();
+  const batches = loadBatches();
   return batches.find(b => b.rawContentHash === hash && b.date === date) || null;
 }
 
-export async function saveBatchAndStories(
-  batch: NIntelBatch,
-  newStories: NIntelStory[],
-  adminEmail: string
-): Promise<void> {
-  // Save batch metadata
-  await saveRecord(BATCHES_TAB, BATCHES_HEADERS, batch, b => ({
-    date: b.date,
-    rawContentHash: b.rawContentHash,
-    publishedAt: b.publishedAt
-  }));
+export async function saveBatchAndStories(batch: NIntelBatch, newStories: NIntelStory[], adminEmail: string): Promise<{ batch: NIntelBatch; count: number }> {
+  const existingStories = loadStories();
+  const existingBatches = loadBatches();
 
-  // Save stories
-  await saveBatchRecords(STORIES_TAB, STORIES_HEADERS, newStories, s => ({
-    date: s.date,
-    category: s.category,
-    isDeleted: s.isDeleted ? 'true' : 'false',
-    headline: s.headline.substring(0, 200)
-  }));
+  // Prepend new stories, deduplicating by ID
+  const storyMap = new Map<string, NIntelStory>();
+  for (const s of [...newStories, ...existingStories]) {
+    if (!storyMap.has(s.id)) {
+      storyMap.set(s.id, s);
+    }
+  }
+  const updatedStories = Array.from(storyMap.values());
+  saveStories(updatedStories);
 
-  await addAuditLog(
+  const updatedBatches = [batch, ...existingBatches];
+  saveBatches(updatedBatches);
+
+  addAuditLog(
     'PUBLISH',
     adminEmail,
     `Published ${newStories.length} stories across ${batch.categories.length} categories for ${batch.date}`,
     undefined,
     batch.id
   );
+
+  return { batch, count: newStories.length };
 }
 
-export async function updateStory(
-  id: string,
-  updates: Partial<NIntelStory>,
-  adminEmail: string
-): Promise<NIntelStory | null> {
-  const stories = await loadStories();
-  const current = stories.find(s => s.id === id);
-  if (!current) return null;
+export async function updateStory(id: string, updates: Partial<NIntelStory>, adminEmail: string): Promise<NIntelStory | null> {
+  const stories = loadStories();
+  const index = stories.findIndex(s => s.id === id);
+  if (index === -1) return null;
 
+  const current = stories[index];
+
+  // Category key sync
   let categoryKey = current.categoryKey;
   if (typeof updates.category === 'string' && updates.category.trim()) {
     categoryKey = updates.category.toLowerCase().replace(/[^a-z0-9]+/g, '-');
@@ -198,84 +298,77 @@ export async function updateStory(
     lastEditedBy: adminEmail
   };
 
-  await saveRecord(STORIES_TAB, STORIES_HEADERS, updated, s => ({
-    date: s.date,
-    category: s.category,
-    isDeleted: s.isDeleted ? 'true' : 'false',
-    headline: s.headline.substring(0, 200)
-  }));
+  stories[index] = updated;
+  saveStories(stories);
 
-  await addAuditLog('EDIT', adminEmail, `Edited story [${id}]: updated (${Object.keys(updates).join(', ')})`, id);
+  const changeKeys = Object.keys(updates).join(', ');
+  addAuditLog('EDIT', adminEmail, `Edited story [${id}]: updated (${changeKeys})`, id);
+
   return updated;
 }
 
 export async function deleteStory(id: string, adminEmail: string): Promise<boolean> {
-  const stories = await loadStories();
-  const current = stories.find(s => s.id === id);
-  if (!current) return false;
+  const stories = loadStories();
+  const index = stories.findIndex(s => s.id === id);
+  if (index === -1) return false;
 
-  const updated: NIntelStory = {
-    ...current,
+  stories[index] = {
+    ...stories[index],
     isDeleted: true,
     deletedAt: new Date().toISOString(),
     deletedBy: adminEmail,
     updatedAt: new Date().toISOString()
   };
 
-  await saveRecord(STORIES_TAB, STORIES_HEADERS, updated, s => ({
-    date: s.date,
-    category: s.category,
-    isDeleted: 'true',
-    headline: s.headline.substring(0, 200)
-  }));
+  saveStories(stories);
 
-  await addAuditLog('DELETE', adminEmail, `Soft-deleted story [${id}]: "${current.headline}"`, id);
+  addAuditLog('DELETE', adminEmail, `Soft-deleted story [${id}]: "${stories[index].headline}"`, id);
   return true;
 }
 
-export async function restoreStory(id: string, adminEmail: string): Promise<boolean> {
-  const stories = await loadStories();
-  const current = stories.find(s => s.id === id);
-  if (!current) return false;
+export const softDeleteStory = deleteStory;
 
-  const updated: NIntelStory = {
-    ...current,
+export async function restoreStory(id: string, adminEmail: string): Promise<boolean> {
+  const stories = loadStories();
+  const index = stories.findIndex(s => s.id === id);
+  if (index === -1) return false;
+
+  stories[index] = {
+    ...stories[index],
     isDeleted: false,
     deletedAt: undefined,
     deletedBy: undefined,
     updatedAt: new Date().toISOString()
   };
 
-  await saveRecord(STORIES_TAB, STORIES_HEADERS, updated, s => ({
-    date: s.date,
-    category: s.category,
-    isDeleted: 'false',
-    headline: s.headline.substring(0, 200)
-  }));
+  saveStories(stories);
 
-  await addAuditLog('RESTORE', adminEmail, `Restored story [${id}]: "${current.headline}"`, id);
+  addAuditLog('RESTORE', adminEmail, `Restored story [${id}]: "${stories[index].headline}"`, id);
   return true;
 }
 
 export async function purgeStory(id: string, adminEmail: string): Promise<boolean> {
-  const stories = await loadStories();
+  const stories = loadStories();
   const story = stories.find(s => s.id === id);
   if (!story) return false;
 
-  await deleteRecord(STORIES_TAB, STORIES_HEADERS, id);
-  await addAuditLog('DELETE', adminEmail, `Permanently purged story [${id}]: "${story.headline}"`, id);
+  const filtered = stories.filter(s => s.id !== id);
+  saveStories(filtered);
+
+  addAuditLog('DELETE', adminEmail, `Permanently purged story [${id}]: "${story.headline}"`, id);
   return true;
 }
 
 export async function purgeAllDeletedStories(adminEmail: string): Promise<number> {
-  const purgedCount = await deleteRecordsMatching(STORIES_TAB, STORIES_HEADERS, r => {
-    return r.get('isDeleted') === 'true';
-  });
+  const stories = loadStories();
+  const deleted = stories.filter(s => s.isDeleted);
+  if (deleted.length === 0) return 0;
 
-  if (purgedCount > 0) {
-    await addAuditLog('DELETE', adminEmail, `Emptied trash: permanently purged all ${purgedCount} deleted stories.`);
-  }
-  return purgedCount;
+  const retained = stories.filter(s => !s.isDeleted);
+  saveStories(retained);
+
+  addAuditLog('DELETE', adminEmail, `Emptied trash: permanently purged all ${deleted.length} deleted stories.`);
+  return deleted.length;
 }
 
 export async function deleteStoriesByDate(
@@ -283,39 +376,37 @@ export async function deleteStoriesByDate(
   adminEmail: string,
   permanent = false
 ): Promise<{ count: number; date: string }> {
+  const stories = loadStories();
+  let count = 0;
+
   if (permanent) {
-    const count = await deleteRecordsMatching(STORIES_TAB, STORIES_HEADERS, r => {
-      return r.get('date') === date;
+    const retained = stories.filter(s => {
+      if (s.date === date) {
+        count++;
+        return false;
+      }
+      return true;
     });
-    await addAuditLog('DELETE', adminEmail, `Permanently purged entire briefing for ${date} (${count} stories removed).`);
-    return { count, date };
+    saveStories(retained);
+    addAuditLog('DELETE', adminEmail, `Permanently purged entire briefing for ${date} (${count} stories removed).`);
   } else {
-    const stories = await loadStories();
-    let count = 0;
-    const toUpdate: NIntelStory[] = [];
-    for (const s of stories) {
-      if (s.date === date && !s.isDeleted) {
-        toUpdate.push({
-          ...s,
+    for (let i = 0; i < stories.length; i++) {
+      if (stories[i].date === date && !stories[i].isDeleted) {
+        stories[i] = {
+          ...stories[i],
           isDeleted: true,
           deletedAt: new Date().toISOString(),
           deletedBy: adminEmail,
           updatedAt: new Date().toISOString()
-        });
+        };
         count++;
       }
     }
-    if (toUpdate.length > 0) {
-      await saveBatchRecords(STORIES_TAB, STORIES_HEADERS, toUpdate, s => ({
-        date: s.date,
-        category: s.category,
-        isDeleted: 'true',
-        headline: s.headline.substring(0, 200)
-      }));
-    }
-    await addAuditLog('DELETE', adminEmail, `Soft-deleted entire briefing for ${date} (${count} stories moved to trash).`);
-    return { count, date };
+    saveStories(stories);
+    addAuditLog('DELETE', adminEmail, `Soft-deleted entire briefing for ${date} (${count} stories moved to trash).`);
   }
+
+  return { count, date };
 }
 
 export async function deleteStoriesByCategory(
@@ -324,46 +415,52 @@ export async function deleteStoriesByCategory(
   date?: string,
   permanent = false
 ): Promise<{ count: number; category: string; date?: string }> {
+  const stories = loadStories();
+  let count = 0;
   const targetCategory = category.trim().toLowerCase();
-  const matchesCategory = (r: any) => {
-    const cat = (r.get('category') || '').trim().toLowerCase();
-    if (cat !== targetCategory) return false;
-    if (date && r.get('date') !== date) return false;
+
+  const matchesCategory = (s: NIntelStory) => {
+    if (s.category.trim().toLowerCase() !== targetCategory) return false;
+    if (date && s.date !== date) return false;
     return true;
   };
 
   if (permanent) {
-    const count = await deleteRecordsMatching(STORIES_TAB, STORIES_HEADERS, matchesCategory);
-    await addAuditLog('DELETE', adminEmail, `Permanently purged category "${category}"${date ? ` for date ${date}` : ''} (${count} stories removed).`);
-    return { count, category, date };
+    const retained = stories.filter(s => {
+      if (matchesCategory(s)) {
+        count++;
+        return false;
+      }
+      return true;
+    });
+    saveStories(retained);
+    addAuditLog(
+      'DELETE',
+      adminEmail,
+      `Permanently purged category "${category}"${date ? ` for date ${date}` : ''} (${count} stories removed).`
+    );
   } else {
-    const stories = await loadStories();
-    let count = 0;
-    const toUpdate: NIntelStory[] = [];
-    for (const s of stories) {
-      const cat = (s.category || '').trim().toLowerCase();
-      if (cat === targetCategory && (!date || s.date === date) && !s.isDeleted) {
-        toUpdate.push({
-          ...s,
+    for (let i = 0; i < stories.length; i++) {
+      if (matchesCategory(stories[i]) && !stories[i].isDeleted) {
+        stories[i] = {
+          ...stories[i],
           isDeleted: true,
           deletedAt: new Date().toISOString(),
           deletedBy: adminEmail,
           updatedAt: new Date().toISOString()
-        });
+        };
         count++;
       }
     }
-    if (toUpdate.length > 0) {
-      await saveBatchRecords(STORIES_TAB, STORIES_HEADERS, toUpdate, s => ({
-        date: s.date,
-        category: s.category,
-        isDeleted: 'true',
-        headline: s.headline.substring(0, 200)
-      }));
-    }
-    await addAuditLog('DELETE', adminEmail, `Soft-deleted category "${category}"${date ? ` for date ${date}` : ''} (${count} stories moved to trash).`);
-    return { count, category, date };
+    saveStories(stories);
+    addAuditLog(
+      'DELETE',
+      adminEmail,
+      `Soft-deleted category "${category}"${date ? ` for date ${date}` : ''} (${count} stories moved to trash).`
+    );
   }
+
+  return { count, category, date };
 }
 
 export async function deleteStoriesByIds(
@@ -371,49 +468,48 @@ export async function deleteStoriesByIds(
   adminEmail: string,
   permanent = false
 ): Promise<{ count: number; ids: string[] }> {
-  if (!Array.isArray(ids) || ids.length === 0) return { count: 0, ids: [] };
-
+  if (!Array.isArray(ids) || ids.length === 0) {
+    return { count: 0, ids: [] };
+  }
   const idMap: Record<string, boolean> = {};
   for (const id of ids) idMap[id] = true;
 
+  const stories = loadStories();
+  let count = 0;
+
   if (permanent) {
-    const count = await deleteRecordsMatching(STORIES_TAB, STORIES_HEADERS, r => Boolean(idMap[r.get('id')]));
-    await addAuditLog('DELETE', adminEmail, `Permanently purged ${count} selected stories.`);
-    return { count, ids };
+    const retained = stories.filter(s => {
+      if (idMap[s.id]) {
+        count++;
+        return false;
+      }
+      return true;
+    });
+    saveStories(retained);
+    addAuditLog('DELETE', adminEmail, `Permanently purged ${count} selected stories.`);
   } else {
-    const stories = await loadStories();
-    let count = 0;
-    const toUpdate: NIntelStory[] = [];
-    for (const s of stories) {
-      if (idMap[s.id] && !s.isDeleted) {
-        toUpdate.push({
-          ...s,
+    for (let i = 0; i < stories.length; i++) {
+      if (idMap[stories[i].id] && !stories[i].isDeleted) {
+        stories[i] = {
+          ...stories[i],
           isDeleted: true,
           deletedAt: new Date().toISOString(),
           deletedBy: adminEmail,
           updatedAt: new Date().toISOString()
-        });
+        };
         count++;
       }
     }
-    if (toUpdate.length > 0) {
-      await saveBatchRecords(STORIES_TAB, STORIES_HEADERS, toUpdate, s => ({
-        date: s.date,
-        category: s.category,
-        isDeleted: 'true',
-        headline: s.headline.substring(0, 200)
-      }));
-    }
-    await addAuditLog('DELETE', adminEmail, `Soft-deleted ${count} selected stories.`);
-    return { count, ids };
+    saveStories(stories);
+    addAuditLog('DELETE', adminEmail, `Soft-deleted ${count} selected stories (moved to trash).`);
   }
+
+  return { count, ids };
 }
 
 export async function getAuditLogs(limitCount = 100): Promise<NIntelAuditLog[]> {
-  const logs = await loadAudit();
-  return logs
-    .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
-    .slice(0, limitCount);
+  const logs = loadAudit();
+  return logs.slice(0, limitCount);
 }
 
 export async function getAvailableEditions(): Promise<{
@@ -435,7 +531,6 @@ export async function getAvailableEditions(): Promise<{
   }> = {};
 
   for (const s of stories) {
-    if (!s.date) continue;
     if (!map[s.date]) {
       map[s.date] = {
         date: s.date,
@@ -447,12 +542,10 @@ export async function getAvailableEditions(): Promise<{
       };
     }
     map[s.date].storyCount++;
-    if (s.category) {
-      map[s.date].categories.add(s.category);
-      map[s.date].categoryCounts[s.category] = (map[s.date].categoryCounts[s.category] || 0) + 1;
-      if (s.isDefence || s.category.toLowerCase().includes('defence')) {
-        map[s.date].defenceCount++;
-      }
+    map[s.date].categories.add(s.category);
+    map[s.date].categoryCounts[s.category] = (map[s.date].categoryCounts[s.category] || 0) + 1;
+    if (s.isDefence || s.category.toLowerCase().includes('defence')) {
+      map[s.date].defenceCount++;
     }
     if (map[s.date].headlines.length < 3 && s.headline) {
       map[s.date].headlines.push(s.headline);
@@ -471,12 +564,12 @@ export async function getAvailableEditions(): Promise<{
     .sort((a, b) => b.date.localeCompare(a.date));
 }
 
-/** Seeds sample data only if the cloud store is completely empty. */
+// Pre-seed with the sample data provided by the user if the store is empty
 export async function seedSampleDataIfEmpty(samplePostText: string): Promise<void> {
-  const existing = await loadStories();
+  const existing = loadStories();
   if (existing.length > 0) return;
 
-  console.log('🌱 Seeding initial N-INTEL sample edition into Cloud Database...');
+  console.log('🌱 Seeding initial N-INTEL sample edition...');
   const parseResult = parseDailyNewsPost(samplePostText, '2026-10-28');
   if (parseResult.success && parseResult.stories.length > 0) {
     const batch: NIntelBatch = {
@@ -489,34 +582,43 @@ export async function seedSampleDataIfEmpty(samplePostText: string): Promise<voi
       categories: parseResult.categories
     };
     await saveBatchAndStories(batch, parseResult.stories, 'system@nishchay.defence');
-    console.log(`✅ Seeded ${parseResult.totalStories} N-INTEL stories into Cloud Database.`);
+    console.log(`✅ Seeded ${parseResult.totalStories} N-INTEL stories for 2026-10-28!`);
   }
 }
 
-/** Sync endpoint: merges incoming client stories into Cloud Database (used for hydration). */
-export async function syncNIntelStories(
-  incomingStories: NIntelStory[],
-  incomingBatches?: NIntelBatch[]
-): Promise<{ count: number; total: number }> {
+/**
+ * Merges and synchronizes client-side stories and batches into the server database.
+ * Used for multi-layer persistence and cold-start serverless container hydration.
+ */
+export async function syncNIntelStories(incomingStories: NIntelStory[], incomingBatches?: NIntelBatch[]): Promise<{ count: number; total: number }> {
   if (!Array.isArray(incomingStories) || incomingStories.length === 0) {
-    const all = await loadStories();
-    return { count: 0, total: all.length };
+    return { count: 0, total: loadStories().length };
   }
 
-  const existing = await loadStories();
-  const existingMap = new Map<string, boolean>();
-  for (const s of existing) existingMap.set(s.id, true);
+  const existingStories = loadStories();
+  const storyMap = new Map<string, NIntelStory>();
 
-  const toAdd = incomingStories.filter(s => s && s.id && !existingMap.has(s.id));
-  if (toAdd.length > 0) {
-    await saveBatchRecords(STORIES_TAB, STORIES_HEADERS, toAdd, s => ({
-      date: s.date,
-      category: s.category,
-      isDeleted: s.isDeleted ? 'true' : 'false',
-      headline: s.headline.substring(0, 200)
-    }));
+  for (const s of existingStories) {
+    if (s && s.id) storyMap.set(s.id, s);
+  }
+  for (const s of incomingStories) {
+    if (s && s.id) storyMap.set(s.id, s);
   }
 
-  const all = await loadStories();
-  return { count: toAdd.length, total: all.length };
+  const updatedStories = Array.from(storyMap.values());
+  saveStories(updatedStories);
+
+  if (Array.isArray(incomingBatches) && incomingBatches.length > 0) {
+    const existingBatches = loadBatches();
+    const batchMap = new Map<string, NIntelBatch>();
+    for (const b of existingBatches) {
+      if (b && b.id) batchMap.set(b.id, b);
+    }
+    for (const b of incomingBatches) {
+      if (b && b.id) batchMap.set(b.id, b);
+    }
+    saveBatches(Array.from(batchMap.values()));
+  }
+
+  return { count: incomingStories.length, total: updatedStories.length };
 }
