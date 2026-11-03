@@ -73,6 +73,8 @@ service cloud.firestore {
                       isAdmin();
     }
 
+    // Legacy collections; Notes and PYQ are currently stored in Google Sheets.
+    // Keep these rules only for compatibility with older clients/data.
     match /subject_notes/{noteId} {
       allow read: if true;
       allow write: if isAdmin();

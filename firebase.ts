@@ -1,20 +1,18 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged, User } from 'firebase/auth';
 import { getFirestore, initializeFirestore, persistentLocalCache, collection, addDoc, serverTimestamp, getDoc, setDoc, doc, query, orderBy, getDocs, where, onSnapshot, limit, updateDoc, deleteDoc, writeBatch } from 'firebase/firestore';
+import { ADMIN_EMAILS } from './admin-emails';
 
-// Import the Firebase configuration
-import firebaseConfigJson from './firebase-applet-config.json';
-
-// Use environment variables if available (for Vercel/Production), otherwise fallback to JSON
+// Firebase client settings are supplied through Vite environment variables.
 const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || firebaseConfigJson.apiKey,
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || firebaseConfigJson.authDomain,
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || firebaseConfigJson.projectId,
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || firebaseConfigJson.storageBucket,
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || firebaseConfigJson.messagingSenderId,
-  appId: import.meta.env.VITE_FIREBASE_APP_ID || firebaseConfigJson.appId,
-  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID || firebaseConfigJson.measurementId,
-  firestoreDatabaseId: import.meta.env.VITE_FIREBASE_DATABASE_ID || firebaseConfigJson.firestoreDatabaseId
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID,
+  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID,
+  firestoreDatabaseId: import.meta.env.VITE_FIREBASE_DATABASE_ID
 };
 
 // Firebase is now configured with the user's real API key
@@ -30,7 +28,6 @@ export const db = (() => {
     }, firebaseConfig.firestoreDatabaseId || '(default)');
   } catch (e) {
     // Fallback if persistence fails (e.g., multiple tabs)
-    // @ts-ignore
     return getFirestore(app, firebaseConfig.firestoreDatabaseId || '(default)');
   }
 })();
@@ -93,18 +90,9 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
 // ── Admin Check ──
 // Private list — only used for initial role assignment during sign-up.
 // The actual authorization enforcement is performed by Firestore Security Rules and Firebase Custom Claims.
-const ADMIN_EMAILS = [
-  "diyawalunj@gmail.com",
-  "vedantranjeetjadhav@gmail.com",
-  "abhijeetgaikwad1904@gmail.com",
-  "muthalrishikesh2006@gmail.com",
-  "adityasahane076@gmail.com",
-  "nishchay.defence@gmail.com"
-];
-
 /** Synchronous fallback — checks email list. Use for fast routing decisions only. */
 export const checkIfAdmin = (user: User | null) => {
-  if (!user || !user.email) return false;
+  if (!user || !user.email || !user.emailVerified) return false;
   const email = user.email.trim().toLowerCase();
   return ADMIN_EMAILS.some(e => e.toLowerCase() === email);
 };

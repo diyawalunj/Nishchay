@@ -750,7 +750,7 @@ export default function NIntel() {
     }
   }, [activeDate, fetchStoriesForDate]);
 
-  // Initial fetch and automatic cross-device sync (revalidate on focus & 25s polling)
+  // Initial fetch and automatic cross-device sync (revalidate on tab visibility & 60s polling)
   useEffect(() => {
     fetchEditions(true);
 
@@ -766,14 +766,12 @@ export default function NIntel() {
         fetchEditions(false);
         if (activeDate) fetchStoriesForDate(activeDate, false);
       }
-    }, 25000);
+    }, 60000);
 
-    window.addEventListener('focus', handleFocus);
     document.addEventListener('visibilitychange', handleFocus);
 
     return () => {
       clearInterval(interval);
-      window.removeEventListener('focus', handleFocus);
       document.removeEventListener('visibilitychange', handleFocus);
     };
   }, [fetchEditions, fetchStoriesForDate, activeDate]);

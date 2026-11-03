@@ -217,35 +217,10 @@ export default function Articles() {
     setFormError(null);
 
     try {
-      // 1. Instantly compress client-side to a crisp 1280px WebP/JPEG Data URL
-      // This guarantees the image works 100% reliably even across serverless cold starts
+      // Store a compact self-contained image so it survives serverless restarts without paid object storage.
       const compressedDataUrl = await compressImageToDataUrl(file, 1280, 800, 0.82);
       setBannerImageUrl(compressedDataUrl);
 
-      // 2. Also attempt server-side upload in background for dual persistence
-      try {
-        let token = null;
-        if (auth.currentUser) {
-          token = await auth.currentUser.getIdToken();
-        }
-        const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-        if (token) headers['Authorization'] = `Bearer ${token}`;
-
-        const res = await fetch('/api/articles/upload-banner', {
-          method: 'POST',
-          headers,
-          body: JSON.stringify({ imageBase64: compressedDataUrl })
-        });
-
-        const data = await res.json();
-        if (res.ok && data.success && data.url) {
-          // Both server path and data URL are valid
-          console.log('Banner image persisted to server:', data.url);
-        }
-      } catch (srvErr) {
-        // Non-blocking: compressed data URL is already set and self-contained
-        console.debug('Server upload fallback notice (using compressed data URL):', srvErr);
-      }
     } catch (err: any) {
       setFormError(`Image processing failed: ${err.message}`);
     } finally {
@@ -720,7 +695,7 @@ export default function Articles() {
                   </span>
                 </div>
                 <p className="text-[11px] font-medium text-amber-800 mb-3">
-                  Every article must have a high-impact horizontal banner image displayed at the top of the feed and in the PDF export.
+                  Use a public image URL or choose a file to compress and store with the article. Very detailed images may need a smaller image or URL.
                 </p>
 
                 <div className="flex flex-col sm:flex-row gap-3">
@@ -748,7 +723,7 @@ export default function Articles() {
                     className="px-4 py-2.5 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-black tracking-wider uppercase flex items-center justify-center gap-2 transition-all cursor-pointer disabled:opacity-50"
                   >
                     <Upload size={13} />
-                    <span>{isUploadingBanner ? 'Uploading...' : 'Upload File'}</span>
+                    <span>{isUploadingBanner ? 'Compressing...' : 'Choose File'}</span>
                   </button>
                 </div>
 

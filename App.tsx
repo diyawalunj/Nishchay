@@ -5,6 +5,7 @@ import { ChevronUp } from 'lucide-react';
 import Header from './Header';
 import Footer from './Footer';
 import Home from './Home';
+import NotFound from './NotFound';
 
 // Lazy-loaded route components — each page is code-split into its own chunk
 // Home is imported normally above to prevent layout flickering on initial load
@@ -87,7 +88,7 @@ function AnimatedRoutes() {
           <Route path="/articles" element={<Articles />} />
           <Route path="/articles/:id" element={<ArticleDetail />} />
           {/* Fallback for other routes */}
-          <Route path="*" element={<Home />} />
+          <Route path="*" element={<NotFound />} />
         </Routes>
       </motion.div>
     </AnimatePresence>

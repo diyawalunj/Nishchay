@@ -53,11 +53,24 @@ import {
 } from './notes-db';
 import { parseDailyNewsPost, getLocalTodayDate } from './n-intel-parser';
 import { SAMPLE_NINTEL_POST } from './n-intel-sample-data';
+import { ADMIN_EMAILS } from './admin-emails';
 
 dotenv.config();
 
 const app = express();
 const PORT = 3000;
+
+function validateEnvironment() {
+  const required = ['GOOGLE_SERVICE_ACCOUNT_EMAIL', 'GOOGLE_PRIVATE_KEY', 'VITE_FIREBASE_PROJECT_ID'];
+  const missing = required.filter(name => !process.env[name]?.trim());
+  if (missing.length) {
+    console.error(`[CONFIG ERROR] Missing required environment variables: ${missing.join(', ')}`);
+    if (process.env.NODE_ENV === 'production' && !process.env.VERCEL) {
+      process.exit(1);
+    }
+  }
+}
+validateEnvironment();
 
 // Trust Vercel / reverse-proxy headers for IP resolution and rate limiters
 app.set('trust proxy', 1);
@@ -155,15 +168,16 @@ app.use(
 // Raw binary body parser for PDFs to prevent Base64 expansion on Serverless runtimes
 app.use(express.raw({ type: 'application/pdf', limit: '10mb' }));
 // Request body size limit
-app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+// A 5 MB image becomes about 6.7 MB when base64 encoded; allow modest JSON overhead.
+app.use(express.json({ limit: '8mb' }));
+app.use(express.urlencoded({ extended: true, limit: '1mb' }));
 
 // Middleware to catch 413 Payload Too Large / JSON parse errors from body-parser and return clean JSON
 app.use((err: any, req: Request, res: Response, next: NextFunction) => {
   if (err && (err.type === 'entity.too.large' || err.status === 413)) {
     return res.status(413).json({
       success: false,
-      error: 'The uploaded file payload is too large for direct processing. Please choose a file under 35 MB or use the "Paste PDF / Drive Link" tab.'
+      error: 'The request payload is too large. Banner images must be 5 MB or smaller; use a PDF or Drive link for larger documents.'
     });
   }
   if (err && err instanceof SyntaxError && 'body' in err) {
@@ -242,9 +256,10 @@ app.use(
 try {
   if (!admin.apps.length) {
     const projectId = process.env.VITE_FIREBASE_PROJECT_ID || 'nishchay-defence';
-    const serviceEmail = process.env.FIREBASE_SERVICE_ACCOUNT_EMAIL;
-    const serviceKey = process.env.FIREBASE_PRIVATE_KEY
-      ? process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n').replace(/^"(.*)"$/, '$1').trim()
+    const serviceEmail = process.env.FIREBASE_SERVICE_ACCOUNT_EMAIL || process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
+    const rawServiceKey = process.env.FIREBASE_PRIVATE_KEY || process.env.GOOGLE_PRIVATE_KEY;
+    const serviceKey = rawServiceKey
+      ? rawServiceKey.replace(/\\n/g, '\n').replace(/^"(.*)"$/, '$1').trim()
       : undefined;
 
     if (serviceEmail && serviceKey && serviceKey.includes('BEGIN PRIVATE KEY')) {
@@ -267,15 +282,6 @@ try {
 }
 
 // Admin Emails (Authoritative list for server-side verification)
-const ADMIN_EMAILS = [
-  "diyawalunj@gmail.com",
-  "vedantranjeetjadhav@gmail.com",
-  "abhijeetgaikwad1904@gmail.com",
-  "muthalrishikesh2006@gmail.com",
-  "adityasahane076@gmail.com",
-  "nishchay.defence@gmail.com"
-];
-
 // Helper: Validate absolute or safe relative HTTP URLs, Data URLs, and upload paths
 function isValidUrlOrPath(url: string): boolean {
   if (!url || typeof url !== 'string') return false;
@@ -295,6 +301,12 @@ function isValidUrlOrPath(url: string): boolean {
   } catch {
     return false;
   }
+}
+
+function isValidBannerImage(value: unknown): value is string {
+  if (typeof value !== 'string' || !value.trim()) return false;
+  if (value.startsWith('data:image/')) return value.length <= 300_000;
+  return isValidUrlOrPath(value);
 }
 
 // Helper: Sanitize inputs for Google Sheets / CSV formula injection defense
@@ -346,7 +358,7 @@ const authenticate = async (req: AuthRequest, res: Response, next: NextFunction)
     }
 
     const hasAdminClaim = decodedToken.admin === true;
-    const isEmailAdmin = ADMIN_EMAILS.some(e => e.toLowerCase() === email);
+    const isEmailAdmin = decodedToken.email_verified === true && ADMIN_EMAILS.some(e => e.toLowerCase() === email);
 
     if (!hasAdminClaim && !isEmailAdmin) {
       console.warn(`[SECURITY WARN] Forbidden admin access attempt by ${email} from IP: ${clientIp}`);
@@ -454,7 +466,14 @@ async function getSheet(sheetId: string, tabName: string, defaultHeaders: string
   return sheet;
 }
 
-async function saveToGoogleSheet(data: any) {
+let contactSheetWriteQueue: Promise<unknown> = Promise.resolve();
+function saveToGoogleSheet(data: any): Promise<void> {
+  const result = contactSheetWriteQueue.then(() => saveToGoogleSheetNow(data));
+  contactSheetWriteQueue = result.catch(() => undefined);
+  return result;
+}
+
+async function saveToGoogleSheetNow(data: any): Promise<void> {
   const sheetId = process.env.GOOGLE_SHEET_ID_CONTACT || '1gGWQxXAuKCpt99m6efSBwaDUqLFJn_7f-WnESPOnmQY';
   if (!sheetId) {
     console.error('❌ [contact] Missing Sheet ID in environment variables');
@@ -478,7 +497,7 @@ async function saveToGoogleSheet(data: any) {
       { key: 'Message', value: data.message || data.msg || data.body || data.question || '(No Message)', aliases: ['message', 'question', 'msg', 'body', 'messages', 'queries', 'query'] }
     ];
 
-    console.log('ℹ️ [contact] Mapping data:', JSON.stringify(data));
+    console.log('ℹ️ [contact] Mapping validated submission to the contact sheet.');
 
     mappings.forEach(m => {
       const sanitizedVal = sanitizeSheetCell(m.value);
@@ -574,15 +593,25 @@ app.post('/api/contact', contactLimiter, async (req, res) => {
 ========================= */
 
 // Public: Get all stories (supports filtering by date, category, search, month)
-app.get('/api/n-intel/stories', async (req, res) => {
+app.get('/api/n-intel/stories', (req, res, next) => {
+  // Deleted stories are private moderation data; require an admin token to request them.
+  if (req.query.includeDeleted === 'true') {
+    return authenticate(req as AuthRequest, res, next);
+  }
+  next();
+}, async (req: AuthRequest, res) => {
   try {
-    const { date, month, category, search, includeDeleted } = req.query;
+    const { date, month, category, search } = req.query;
+    const includeDeleted = req.query.includeDeleted === 'true';
+    if (includeDeleted && !req.user?.isAdmin) {
+      return res.status(403).json({ success: false, error: 'Administrator privileges required.' });
+    }
     const stories = await getAllStories({
       date: date as string,
       month: month as string,
       category: category as string,
       search: search as string,
-      includeDeleted: includeDeleted === 'true'
+      includeDeleted
     });
     res.json({ success: true, stories });
   } catch (error: any) {
@@ -668,11 +697,17 @@ app.get('/api/uploads/:filename', (req, res) => {
 });
 
 // Two-way synchronization: Repopulates server in-memory & /tmp storage from client cache
-app.post('/api/articles/sync', async (req, res) => {
+app.post('/api/articles/sync', authenticate as any, async (req: AuthRequest, res: Response) => {
+  if (!req.user?.isAdmin) {
+    return res.status(403).json({ success: false, error: 'Access denied: Administrator privileges required.' });
+  }
   try {
     const { articles } = req.body;
     if (!Array.isArray(articles)) {
       return res.status(400).json({ success: false, error: 'Articles array required.' });
+    }
+    if (articles.some((article: any) => typeof article?.bannerImageUrl === 'string' && article.bannerImageUrl.startsWith('data:image/') && article.bannerImageUrl.length > 300_000)) {
+      return res.status(400).json({ success: false, error: 'Compressed banner image exceeds the free Firestore document limit.' });
     }
     const result = await syncArticles(articles);
     res.json({ success: true, ...result });
@@ -693,7 +728,7 @@ app.post('/api/articles/:id/download', downloadLimiter, async (req, res) => {
 });
 
 // Admin Only: Upload Banner Image with Signature/Magic-Byte Validation
-app.post('/api/articles/upload-banner', publishLimiter, authenticate as any, (req: AuthRequest, res) => {
+app.post('/api/articles/upload-banner', publishLimiter, authenticate as any, async (req: AuthRequest, res) => {
   if (!req.user?.isAdmin) {
     return res.status(403).json({ success: false, error: 'Access denied: Admin privileges required.' });
   }
@@ -743,6 +778,12 @@ app.post('/api/articles/upload-banner', publishLimiter, authenticate as any, (re
       }
       const safeRandomToken = crypto.randomBytes(16).toString('hex');
       const safeName = `banner-${Date.now()}-${safeRandomToken}.${ext}`;
+      if (IS_VERCEL) {
+        if (imageBase64.length > 350_000) {
+          return res.status(413).json({ success: false, error: 'Compressed banner is too large to store on the free Firestore plan. Reduce its dimensions or use a public image URL.' });
+        }
+        return res.json({ success: true, url: imageBase64, localUrl: imageBase64 });
+      }
       const filePath = path.join(UPLOADS_DIR, safeName);
       fs.writeFileSync(filePath, buffer, { flag: 'wx' });
 
@@ -782,7 +823,7 @@ app.post('/api/articles', authenticate as any, async (req: AuthRequest, res) => 
     if (!title || typeof title !== 'string' || !title.trim() || title.length > 300) {
       return res.status(400).json({ success: false, error: 'Article headline is required (max 300 characters).' });
     }
-    if (!bannerImageUrl || !isValidUrlOrPath(bannerImageUrl)) {
+    if (!isValidBannerImage(bannerImageUrl)) {
       return res.status(400).json({ success: false, error: 'A valid banner image URL or uploaded file is required.' });
     }
     if (authorAvatarUrl && !isValidUrlOrPath(authorAvatarUrl)) {
@@ -825,7 +866,7 @@ app.put('/api/articles/:id', authenticate as any, async (req: AuthRequest, res) 
 
   try {
     const { bannerImageUrl, authorAvatarUrl, title, authorName, content } = req.body;
-    if (bannerImageUrl !== undefined && !isValidUrlOrPath(bannerImageUrl)) {
+    if (bannerImageUrl !== undefined && !isValidBannerImage(bannerImageUrl)) {
       return res.status(400).json({ success: false, error: 'Invalid banner image URL provided.' });
     }
     if (authorAvatarUrl !== undefined && authorAvatarUrl && !isValidUrlOrPath(authorAvatarUrl)) {
@@ -1285,6 +1326,9 @@ app.post('/api/notes/link', authenticate as any, async (req: AuthRequest, res: R
     if (!subjectId || !subjectTitle || !title || !url) {
       return res.status(400).json({ success: false, error: 'Missing required parameters.' });
     }
+    if (!isValidUrlOrPath(url)) {
+      return res.status(400).json({ success: false, error: 'Invalid note URL.' });
+    }
 
     const note = await saveNote({
       subjectId,
@@ -1316,7 +1360,8 @@ app.post('/api/notes/delete', authenticate as any, async (req: AuthRequest, res:
     }
 
     const success = await deleteNote(id);
-    res.json({ success });
+    if (!success) return res.status(404).json({ success: false, error: 'Note not found.' });
+    res.json({ success: true });
   } catch (err: any) {
     console.error('Error deleting subject note:', err);
     res.status(500).json({ success: false, error: 'Failed to delete note.' });
@@ -1373,7 +1418,6 @@ async function setupServer() {
   console.log('GOOGLE_SERVICE_ACCOUNT_EMAIL:', GOOGLE_SERVICE_ACCOUNT_EMAIL ? '✅ Present' : '❌ Missing');
   console.log('GOOGLE_PRIVATE_KEY:', GOOGLE_PRIVATE_KEY ? '✅ Present' : '❌ Missing');
   console.log('GOOGLE_SHEET_ID_CONTACT:', (GOOGLE_SHEET_ID_CONTACT || '1gGWQxXAuKCpt99m6efSBwaDUqLFJn_7f-WnESPOnmQY') ? '✅ Present' : '❌ Missing');
-  console.log('GOOGLE_DRIVE_FOLDER_ID:', process.env.GOOGLE_DRIVE_FOLDER_ID ? '✅ Present (Google Drive Uploads Active)' : '⚠️ Not Set (Using Local Storage fallback)');
   console.log('---------------------------------');
 
   // Seed sample N-INTEL edition if empty (local dev only)

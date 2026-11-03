@@ -1,9 +1,7 @@
 /**
  * notes-db.ts — Persistent Cloud Database Storage for Subject Notes.
  *
- * Backed by authenticated Google Cloud Storage (via cloud-db.ts).
- * Permanent, cross-device, single source of truth.
- * Survives container recycling, server restarts, and redeployments.
+ * Backed by Firestore on Vercel and Google Sheets for local development.
  */
 
 import {
@@ -11,6 +9,7 @@ import {
   saveRecord,
   deleteRecord
 } from './cloud-db';
+import { readContentCollection, writeContentCollection } from './firestore-content';
 
 export interface SubjectNote {
   id: string;
@@ -27,9 +26,12 @@ export interface SubjectNote {
 
 const NOTES_TAB = 'subject_notes';
 const NOTES_HEADERS = ['id', 'subjectId', 'subjectTitle', 'title', 'url', 'json', 'uploadedAt'];
+const USE_FIRESTORE = process.env.USE_FIRESTORE_CONTENT !== 'false';
 
 export async function getAllNotes(): Promise<SubjectNote[]> {
-  const notes = await fetchCollection<SubjectNote>(NOTES_TAB, NOTES_HEADERS);
+  const notes = USE_FIRESTORE
+    ? await readContentCollection<SubjectNote>(NOTES_TAB)
+    : await fetchCollection<SubjectNote>(NOTES_TAB, NOTES_HEADERS);
   return [...notes].sort(
     (a, b) => new Date(b.uploadedAt || 0).getTime() - new Date(a.uploadedAt || 0).getTime()
   );
@@ -69,7 +71,10 @@ export async function saveNote(data: {
     uploadedAt: new Date().toISOString()
   };
 
-  await saveRecord(NOTES_TAB, NOTES_HEADERS, newNote, n => ({
+  if (USE_FIRESTORE) {
+    const notes = await getAllNotes();
+    await writeContentCollection(NOTES_TAB, [...notes, newNote]);
+  } else await saveRecord(NOTES_TAB, NOTES_HEADERS, newNote, n => ({
     subjectId: n.subjectId,
     subjectTitle: n.subjectTitle,
     title: n.title,
@@ -81,6 +86,12 @@ export async function saveNote(data: {
 }
 
 export async function deleteNote(id: string): Promise<boolean> {
+  if (USE_FIRESTORE) {
+    const notes = await getAllNotes();
+    if (!notes.some(note => note.id === id)) return false;
+    await writeContentCollection(NOTES_TAB, notes.filter(note => note.id !== id), [id]);
+    return true;
+  }
   return deleteRecord(NOTES_TAB, NOTES_HEADERS, id);
 }
 
@@ -95,7 +106,11 @@ export async function syncNotes(incomingNotes: SubjectNote[]): Promise<SubjectNo
 
   for (const note of incomingNotes) {
     if (note && note.id && !existingMap.has(note.id)) {
-      await saveRecord(NOTES_TAB, NOTES_HEADERS, note, n => ({
+      if (USE_FIRESTORE) {
+        existing.push(note);
+        existingMap.set(note.id, true);
+      }
+      else await saveRecord(NOTES_TAB, NOTES_HEADERS, note, n => ({
         subjectId: n.subjectId,
         subjectTitle: n.subjectTitle,
         title: n.title,
@@ -105,5 +120,6 @@ export async function syncNotes(incomingNotes: SubjectNote[]): Promise<SubjectNo
     }
   }
 
+  if (USE_FIRESTORE) await writeContentCollection(NOTES_TAB, existing);
   return getAllNotes();
 }

@@ -131,7 +131,8 @@ function writeDiskBackup<T>(collectionName: string, items: T[]): void {
 
 export async function fetchCollection<T extends { id: string }>(
   tabName: string,
-  headers: string[]
+  headers: string[],
+  options: { strict?: boolean } = {}
 ): Promise<T[]> {
   const now = Date.now();
   const cached = memoryCaches[tabName];
@@ -157,6 +158,7 @@ export async function fetchCollection<T extends { id: string }>(
     writeDiskBackup(tabName, items);
     return items;
   } catch (err) {
+    if (options.strict) throw err;
     console.warn(`[CloudDB] Could not load ${tabName} from Cloud Sheet, falling back to disk backup:`, err);
     const backup = readDiskBackup<T>(tabName);
     if (backup) {
@@ -182,13 +184,21 @@ async function withRetry<T>(fn: () => Promise<T>, retries = 3, delayMs = 1200): 
   }
 }
 
+// Serialize sheet writes within this server process to avoid concurrent quota spikes.
+let writeQueue: Promise<unknown> = Promise.resolve();
+function queueWrite<T>(fn: () => Promise<T>): Promise<T> {
+  const result = writeQueue.then(fn);
+  writeQueue = result.catch(() => undefined);
+  return result;
+}
+
 export async function saveRecord<T extends { id: string }>(
   tabName: string,
   headers: string[],
   record: T,
   rowFieldExtractors?: (item: T) => Record<string, any>
 ): Promise<void> {
-  return withRetry(async () => {
+  return queueWrite(() => withRetry(async () => {
     const tab = await getOrCreateTab(tabName, headers);
     const rows = await tab.getRows();
     const existing = rows.find(r => r.get('id') === record.id);
@@ -212,7 +222,7 @@ export async function saveRecord<T extends { id: string }>(
 
     // Update in-memory and disk cache
     delete memoryCaches[tabName];
-  });
+  }));
 }
 
 export async function saveBatchRecords<T extends { id: string }>(
@@ -222,7 +232,7 @@ export async function saveBatchRecords<T extends { id: string }>(
   rowFieldExtractors?: (item: T) => Record<string, any>
 ): Promise<void> {
   if (records.length === 0) return;
-  return withRetry(async () => {
+  return queueWrite(() => withRetry(async () => {
     const tab = await getOrCreateTab(tabName, headers);
     const rows = await tab.getRows();
     const rowMap = new Map<string, any>();
@@ -256,7 +266,7 @@ export async function saveBatchRecords<T extends { id: string }>(
     }
 
     delete memoryCaches[tabName];
-  });
+  }));
 }
 
 export async function deleteRecord(
@@ -264,7 +274,7 @@ export async function deleteRecord(
   headers: string[],
   id: string
 ): Promise<boolean> {
-  return withRetry(async () => {
+  return queueWrite(() => withRetry(async () => {
     const tab = await getOrCreateTab(tabName, headers);
     const rows = await tab.getRows();
     const target = rows.find(r => r.get('id') === id);
@@ -273,7 +283,7 @@ export async function deleteRecord(
     await target.delete();
     delete memoryCaches[tabName];
     return true;
-  });
+  }));
 }
 
 export async function deleteRecordsMatching(
@@ -281,7 +291,7 @@ export async function deleteRecordsMatching(
   headers: string[],
   predicate: (row: any) => boolean
 ): Promise<number> {
-  return withRetry(async () => {
+  return queueWrite(() => withRetry(async () => {
     const tab = await getOrCreateTab(tabName, headers);
     const rows = await tab.getRows();
     let deletedCount = 0;
@@ -300,7 +310,7 @@ export async function deleteRecordsMatching(
       delete memoryCaches[tabName];
     }
     return deletedCount;
-  });
+  }));
 }
 
 export function invalidateCollectionCache(tabName: string): void {

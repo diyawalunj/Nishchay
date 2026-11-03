@@ -159,6 +159,7 @@ export const compressImageToDataUrl = (
   maxHeight = 900,
   quality = 0.82
 ): Promise<string> => {
+  const maxDataUrlLength = 300_000;
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onerror = () => reject(new Error('Failed to read file'));
@@ -179,26 +180,26 @@ export const compressImageToDataUrl = (
         }
 
         const canvas = document.createElement('canvas');
-        canvas.width = width;
-        canvas.height = height;
-
         const ctx = canvas.getContext('2d');
-        if (!ctx) {
-          return resolve(reader.result as string);
-        }
+        if (!ctx) return reject(new Error('Image compression is unavailable in this browser'));
 
-        ctx.drawImage(img, 0, 0, width, height);
+        let currentQuality = quality;
+        for (let attempt = 0; attempt < 12; attempt++) {
+          canvas.width = width;
+          canvas.height = height;
+          ctx.clearRect(0, 0, width, height);
+          ctx.drawImage(img, 0, 0, width, height);
+          let dataUrl = canvas.toDataURL('image/webp', currentQuality);
+          if (!dataUrl.startsWith('data:image/webp')) dataUrl = canvas.toDataURL('image/jpeg', currentQuality);
+          if (dataUrl.length <= maxDataUrlLength) return resolve(dataUrl);
 
-        // Try webp first, fallback to jpeg
-        try {
-          const webpUrl = canvas.toDataURL('image/webp', quality);
-          if (webpUrl.startsWith('data:image/webp')) {
-            return resolve(webpUrl);
+          if (currentQuality > 0.42) currentQuality = Math.max(0.4, currentQuality - 0.08);
+          else {
+            width = Math.max(160, Math.round(width * 0.82));
+            height = Math.max(100, Math.round(height * 0.82));
           }
-        } catch {}
-
-        const jpegUrl = canvas.toDataURL('image/jpeg', quality);
-        resolve(jpegUrl);
+        }
+        reject(new Error('Image is too detailed to fit Firestore’s free document size limit. Try a smaller image or paste a public image URL.'));
       };
       img.src = e.target?.result as string;
     };

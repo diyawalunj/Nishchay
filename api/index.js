@@ -1,7 +1,7 @@
 // server.ts
 import express from "express";
-import path5 from "path";
-import fs5 from "fs";
+import path4 from "path";
+import fs4 from "fs";
 import os4 from "os";
 import cors from "cors";
 import dotenv from "dotenv";
@@ -10,7 +10,7 @@ import { rateLimit } from "express-rate-limit";
 import crypto from "crypto";
 import { GoogleSpreadsheet as GoogleSpreadsheet2 } from "google-spreadsheet";
 import { JWT as JWT2 } from "google-auth-library";
-import admin from "firebase-admin";
+import admin2 from "firebase-admin";
 
 // n-intel-db.ts
 import fs from "fs";
@@ -499,8 +499,54 @@ function parseDailyNewsPost(rawText, pubDate) {
   };
 }
 
+// firestore-content.ts
+import admin from "firebase-admin";
+var CACHE_TTL_MS = 6e4;
+var cache = /* @__PURE__ */ new Map();
+function cloneRecords(records) {
+  return records.map((record) => ({ ...record }));
+}
+function canonical(record) {
+  return JSON.stringify(Object.fromEntries(Object.entries(record).sort(([a], [b]) => a.localeCompare(b))));
+}
+function firestore() {
+  if (!admin.apps.length) {
+    throw new Error("Firebase Admin is not initialized; configure a Firestore service account before using persistent content storage.");
+  }
+  return admin.firestore();
+}
+function docId(id) {
+  return encodeURIComponent(id);
+}
+async function readContentCollection(name) {
+  const cached = cache.get(name);
+  if (cached && cached.expiresAt > Date.now()) return cached.records;
+  const snapshot = await firestore().collection(name).get();
+  const records = snapshot.docs.map((doc) => ({ ...doc.data(), id: String(doc.data().id || decodeURIComponent(doc.id)) }));
+  cache.set(name, { records: cloneRecords(records), expiresAt: Date.now() + CACHE_TTL_MS });
+  return cloneRecords(records);
+}
+async function writeContentCollection(name, records, deletedIds = []) {
+  const collection = firestore().collection(name);
+  let baseline = cache.get(name)?.records;
+  if (!baseline) baseline = await readContentCollection(name);
+  const existing = new Map(baseline.map((record) => [docId(record.id), record]));
+  const writer = firestore().bulkWriter();
+  for (const record of records) {
+    const ref = collection.doc(docId(record.id));
+    const old = existing.get(ref.id);
+    if (!old || canonical(old) !== canonical(record)) {
+      writer.set(ref, record);
+    }
+  }
+  for (const id of new Set(deletedIds)) writer.delete(collection.doc(docId(id)));
+  await writer.close();
+  cache.set(name, { records: cloneRecords(records), expiresAt: Date.now() + CACHE_TTL_MS });
+}
+
 // n-intel-db.ts
 var IS_VERCEL = Boolean(process.env.VERCEL);
+var USE_FIRESTORE = process.env.USE_FIRESTORE_CONTENT !== "false";
 var DATA_DIR = IS_VERCEL ? path.join(os.tmpdir(), "nishchay_data") : path.join(process.cwd(), "data");
 var SEED_DATA_DIR = path.join(process.cwd(), "data");
 var STORIES_FILE = path.join(DATA_DIR, "n-intel-stories.json");
@@ -541,7 +587,8 @@ function ensureDataDir() {
 var storiesCache = null;
 var batchesCache = null;
 var auditCache = null;
-function loadStories() {
+async function loadStories() {
+  if (USE_FIRESTORE) return readContentCollection("nintel_stories");
   if (storiesCache) return storiesCache;
   ensureDataDir();
   let targetFile = STORIES_FILE;
@@ -577,11 +624,17 @@ function atomicWriteJsonSync(filePath, data) {
     console.warn(`Could not persist ${filePath} to disk:`, err);
   }
 }
-function saveStories(stories) {
+async function saveStories(stories, deletedIds = []) {
+  if (USE_FIRESTORE) {
+    await writeContentCollection("nintel_stories", stories, deletedIds);
+    storiesCache = null;
+    return;
+  }
   storiesCache = stories;
   atomicWriteJsonSync(STORIES_FILE, stories);
 }
-function loadBatches() {
+async function loadBatches() {
+  if (USE_FIRESTORE) return readContentCollection("nintel_batches");
   if (batchesCache) return batchesCache;
   ensureDataDir();
   let targetFile = BATCHES_FILE;
@@ -601,11 +654,17 @@ function loadBatches() {
     return [];
   }
 }
-function saveBatches(batches) {
+async function saveBatches(batches) {
+  if (USE_FIRESTORE) {
+    await writeContentCollection("nintel_batches", batches);
+    batchesCache = null;
+    return;
+  }
   batchesCache = batches;
   atomicWriteJsonSync(BATCHES_FILE, batches);
 }
-function loadAudit() {
+async function loadAudit() {
+  if (USE_FIRESTORE) return readContentCollection("nintel_audit");
   if (auditCache) return auditCache;
   ensureDataDir();
   let targetFile = AUDIT_FILE;
@@ -625,12 +684,17 @@ function loadAudit() {
     return [];
   }
 }
-function saveAudit(logs) {
+async function saveAudit(logs, deletedIds = []) {
+  if (USE_FIRESTORE) {
+    await writeContentCollection("nintel_audit", logs, deletedIds);
+    auditCache = null;
+    return;
+  }
   auditCache = logs;
   atomicWriteJsonSync(AUDIT_FILE, logs);
 }
-function addAuditLog(action, adminEmail, details, storyId, batchId) {
-  const logs = loadAudit();
+async function addAuditLog(action, adminEmail, details, storyId, batchId) {
+  const logs = await loadAudit();
   const entry = {
     id: `audit-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
     action,
@@ -641,11 +705,12 @@ function addAuditLog(action, adminEmail, details, storyId, batchId) {
     details
   };
   logs.unshift(entry);
+  const discarded = logs.slice(1e3).map((log) => log.id);
   if (logs.length > 1e3) logs.length = 1e3;
-  saveAudit(logs);
+  await saveAudit(logs, discarded);
 }
 async function getAllStories(options = {}) {
-  let stories = loadStories();
+  let stories = await loadStories();
   if (!options.includeDeleted) {
     stories = stories.filter((s) => !s.isDeleted);
   }
@@ -682,16 +747,16 @@ async function getAllStories(options = {}) {
   return stories;
 }
 async function getStoryById(id) {
-  const stories = loadStories();
+  const stories = await loadStories();
   return stories.find((s) => s.id === id) || null;
 }
 async function findDuplicateBatch(hash, date) {
-  const batches = loadBatches();
+  const batches = await loadBatches();
   return batches.find((b) => b.rawContentHash === hash && b.date === date) || null;
 }
 async function saveBatchAndStories(batch, newStories, adminEmail) {
-  const existingStories = loadStories();
-  const existingBatches = loadBatches();
+  const existingStories = await loadStories();
+  const existingBatches = await loadBatches();
   const storyMap = /* @__PURE__ */ new Map();
   for (const s of [...newStories, ...existingStories]) {
     if (!storyMap.has(s.id)) {
@@ -699,10 +764,10 @@ async function saveBatchAndStories(batch, newStories, adminEmail) {
     }
   }
   const updatedStories = Array.from(storyMap.values());
-  saveStories(updatedStories);
+  await saveStories(updatedStories);
   const updatedBatches = [batch, ...existingBatches];
-  saveBatches(updatedBatches);
-  addAuditLog(
+  await saveBatches(updatedBatches);
+  await addAuditLog(
     "PUBLISH",
     adminEmail,
     `Published ${newStories.length} stories across ${batch.categories.length} categories for ${batch.date}`,
@@ -712,7 +777,7 @@ async function saveBatchAndStories(batch, newStories, adminEmail) {
   return { batch, count: newStories.length };
 }
 async function updateStory(id, updates, adminEmail) {
-  const stories = loadStories();
+  const stories = await loadStories();
   const index = stories.findIndex((s) => s.id === id);
   if (index === -1) return null;
   const current = stories[index];
@@ -733,13 +798,13 @@ async function updateStory(id, updates, adminEmail) {
     lastEditedBy: adminEmail
   };
   stories[index] = updated;
-  saveStories(stories);
+  await saveStories(stories);
   const changeKeys = Object.keys(updates).join(", ");
-  addAuditLog("EDIT", adminEmail, `Edited story [${id}]: updated (${changeKeys})`, id);
+  await addAuditLog("EDIT", adminEmail, `Edited story [${id}]: updated (${changeKeys})`, id);
   return updated;
 }
 async function deleteStory(id, adminEmail) {
-  const stories = loadStories();
+  const stories = await loadStories();
   const index = stories.findIndex((s) => s.id === id);
   if (index === -1) return false;
   stories[index] = {
@@ -749,12 +814,12 @@ async function deleteStory(id, adminEmail) {
     deletedBy: adminEmail,
     updatedAt: (/* @__PURE__ */ new Date()).toISOString()
   };
-  saveStories(stories);
-  addAuditLog("DELETE", adminEmail, `Soft-deleted story [${id}]: "${stories[index].headline}"`, id);
+  await saveStories(stories);
+  await addAuditLog("DELETE", adminEmail, `Soft-deleted story [${id}]: "${stories[index].headline}"`, id);
   return true;
 }
 async function restoreStory(id, adminEmail) {
-  const stories = loadStories();
+  const stories = await loadStories();
   const index = stories.findIndex((s) => s.id === id);
   if (index === -1) return false;
   stories[index] = {
@@ -764,30 +829,30 @@ async function restoreStory(id, adminEmail) {
     deletedBy: void 0,
     updatedAt: (/* @__PURE__ */ new Date()).toISOString()
   };
-  saveStories(stories);
-  addAuditLog("RESTORE", adminEmail, `Restored story [${id}]: "${stories[index].headline}"`, id);
+  await saveStories(stories);
+  await addAuditLog("RESTORE", adminEmail, `Restored story [${id}]: "${stories[index].headline}"`, id);
   return true;
 }
 async function purgeStory(id, adminEmail) {
-  const stories = loadStories();
+  const stories = await loadStories();
   const story = stories.find((s) => s.id === id);
   if (!story) return false;
   const filtered = stories.filter((s) => s.id !== id);
-  saveStories(filtered);
-  addAuditLog("DELETE", adminEmail, `Permanently purged story [${id}]: "${story.headline}"`, id);
+  await saveStories(filtered, [id]);
+  await addAuditLog("DELETE", adminEmail, `Permanently purged story [${id}]: "${story.headline}"`, id);
   return true;
 }
 async function purgeAllDeletedStories(adminEmail) {
-  const stories = loadStories();
+  const stories = await loadStories();
   const deleted = stories.filter((s) => s.isDeleted);
   if (deleted.length === 0) return 0;
   const retained = stories.filter((s) => !s.isDeleted);
-  saveStories(retained);
-  addAuditLog("DELETE", adminEmail, `Emptied trash: permanently purged all ${deleted.length} deleted stories.`);
+  await saveStories(retained, deleted.map((story) => story.id));
+  await addAuditLog("DELETE", adminEmail, `Emptied trash: permanently purged all ${deleted.length} deleted stories.`);
   return deleted.length;
 }
 async function deleteStoriesByDate(date, adminEmail, permanent = false) {
-  const stories = loadStories();
+  const stories = await loadStories();
   let count = 0;
   if (permanent) {
     const retained = stories.filter((s) => {
@@ -797,8 +862,8 @@ async function deleteStoriesByDate(date, adminEmail, permanent = false) {
       }
       return true;
     });
-    saveStories(retained);
-    addAuditLog("DELETE", adminEmail, `Permanently purged entire briefing for ${date} (${count} stories removed).`);
+    await saveStories(retained, stories.filter((s) => s.date === date).map((s) => s.id));
+    await addAuditLog("DELETE", adminEmail, `Permanently purged entire briefing for ${date} (${count} stories removed).`);
   } else {
     for (let i = 0; i < stories.length; i++) {
       if (stories[i].date === date && !stories[i].isDeleted) {
@@ -812,13 +877,13 @@ async function deleteStoriesByDate(date, adminEmail, permanent = false) {
         count++;
       }
     }
-    saveStories(stories);
-    addAuditLog("DELETE", adminEmail, `Soft-deleted entire briefing for ${date} (${count} stories moved to trash).`);
+    await saveStories(stories);
+    await addAuditLog("DELETE", adminEmail, `Soft-deleted entire briefing for ${date} (${count} stories moved to trash).`);
   }
   return { count, date };
 }
 async function deleteStoriesByCategory(category, adminEmail, date, permanent = false) {
-  const stories = loadStories();
+  const stories = await loadStories();
   let count = 0;
   const targetCategory = category.trim().toLowerCase();
   const matchesCategory = (s) => {
@@ -834,8 +899,8 @@ async function deleteStoriesByCategory(category, adminEmail, date, permanent = f
       }
       return true;
     });
-    saveStories(retained);
-    addAuditLog(
+    await saveStories(retained, stories.filter(matchesCategory).map((s) => s.id));
+    await addAuditLog(
       "DELETE",
       adminEmail,
       `Permanently purged category "${category}"${date ? ` for date ${date}` : ""} (${count} stories removed).`
@@ -853,8 +918,8 @@ async function deleteStoriesByCategory(category, adminEmail, date, permanent = f
         count++;
       }
     }
-    saveStories(stories);
-    addAuditLog(
+    await saveStories(stories);
+    await addAuditLog(
       "DELETE",
       adminEmail,
       `Soft-deleted category "${category}"${date ? ` for date ${date}` : ""} (${count} stories moved to trash).`
@@ -868,7 +933,7 @@ async function deleteStoriesByIds(ids, adminEmail, permanent = false) {
   }
   const idMap = {};
   for (const id of ids) idMap[id] = true;
-  const stories = loadStories();
+  const stories = await loadStories();
   let count = 0;
   if (permanent) {
     const retained = stories.filter((s) => {
@@ -878,8 +943,8 @@ async function deleteStoriesByIds(ids, adminEmail, permanent = false) {
       }
       return true;
     });
-    saveStories(retained);
-    addAuditLog("DELETE", adminEmail, `Permanently purged ${count} selected stories.`);
+    await saveStories(retained, stories.filter((s) => idMap[s.id]).map((s) => s.id));
+    await addAuditLog("DELETE", adminEmail, `Permanently purged ${count} selected stories.`);
   } else {
     for (let i = 0; i < stories.length; i++) {
       if (idMap[stories[i].id] && !stories[i].isDeleted) {
@@ -893,13 +958,13 @@ async function deleteStoriesByIds(ids, adminEmail, permanent = false) {
         count++;
       }
     }
-    saveStories(stories);
-    addAuditLog("DELETE", adminEmail, `Soft-deleted ${count} selected stories (moved to trash).`);
+    await saveStories(stories);
+    await addAuditLog("DELETE", adminEmail, `Soft-deleted ${count} selected stories (moved to trash).`);
   }
   return { count, ids };
 }
 async function getAuditLogs(limitCount = 100) {
-  const logs = loadAudit();
+  const logs = await loadAudit();
   return logs.slice(0, limitCount);
 }
 async function getAvailableEditions() {
@@ -936,7 +1001,7 @@ async function getAvailableEditions() {
   })).sort((a, b) => b.date.localeCompare(a.date));
 }
 async function seedSampleDataIfEmpty(samplePostText) {
-  const existing = loadStories();
+  const existing = await loadStories();
   if (existing.length > 0) return;
   console.log("\u{1F331} Seeding initial N-INTEL sample edition...");
   const parseResult = parseDailyNewsPost(samplePostText, "2026-10-28");
@@ -956,9 +1021,9 @@ async function seedSampleDataIfEmpty(samplePostText) {
 }
 async function syncNIntelStories(incomingStories, incomingBatches) {
   if (!Array.isArray(incomingStories) || incomingStories.length === 0) {
-    return { count: 0, total: loadStories().length };
+    return { count: 0, total: (await loadStories()).length };
   }
-  const existingStories = loadStories();
+  const existingStories = await loadStories();
   const storyMap = /* @__PURE__ */ new Map();
   for (const s of existingStories) {
     if (s && s.id) storyMap.set(s.id, s);
@@ -967,9 +1032,9 @@ async function syncNIntelStories(incomingStories, incomingBatches) {
     if (s && s.id) storyMap.set(s.id, s);
   }
   const updatedStories = Array.from(storyMap.values());
-  saveStories(updatedStories);
+  await saveStories(updatedStories);
   if (Array.isArray(incomingBatches) && incomingBatches.length > 0) {
-    const existingBatches = loadBatches();
+    const existingBatches = await loadBatches();
     const batchMap = /* @__PURE__ */ new Map();
     for (const b of existingBatches) {
       if (b && b.id) batchMap.set(b.id, b);
@@ -977,7 +1042,7 @@ async function syncNIntelStories(incomingStories, incomingBatches) {
     for (const b of incomingBatches) {
       if (b && b.id) batchMap.set(b.id, b);
     }
-    saveBatches(Array.from(batchMap.values()));
+    await saveBatches(Array.from(batchMap.values()));
   }
   return { count: incomingStories.length, total: updatedStories.length };
 }
@@ -987,6 +1052,7 @@ import fs2 from "fs";
 import path2 from "path";
 import os2 from "os";
 var IS_VERCEL2 = Boolean(process.env.VERCEL);
+var USE_FIRESTORE2 = process.env.USE_FIRESTORE_CONTENT !== "false";
 var DATA_DIR2 = IS_VERCEL2 ? path2.join(os2.tmpdir(), "nishchay_data") : path2.join(process.cwd(), "data");
 var SEED_DATA_DIR2 = path2.join(process.cwd(), "data");
 var ARTICLES_FILE = path2.join(DATA_DIR2, "articles.json");
@@ -1009,7 +1075,8 @@ function calculateReadingTime(text) {
   const minutes = Math.max(2, Math.ceil(words / 180));
   return `${minutes} min read`;
 }
-function loadArticles() {
+async function loadArticles() {
+  if (USE_FIRESTORE2) return readContentCollection("articles");
   if (articlesCache) return articlesCache;
   ensureDataDir2();
   let targetFile = ARTICLES_FILE;
@@ -1055,7 +1122,7 @@ With the downfall of the Awami League government, anti-India sentiment in Bangla
 Despite political shifts, geography remains immutable. India and Bangladesh share critical shared-river basins, energy grids, and cross-border trade corridors essential for the economic vitality of both northeastern India and Bangladesh itself. Pragmatic diplomacy requires moving beyond historical grievances to build institutional mechanisms that outlive changing political regimes.`
       }
     ];
-    saveArticles(initialArticles);
+    await saveArticles(initialArticles);
     return initialArticles;
   }
   try {
@@ -1068,7 +1135,12 @@ Despite political shifts, geography remains immutable. India and Bangladesh shar
     return [];
   }
 }
-function saveArticles(articles) {
+async function saveArticles(articles, deletedIds = []) {
+  if (USE_FIRESTORE2) {
+    await writeContentCollection("articles", articles, deletedIds);
+    articlesCache = null;
+    return;
+  }
   articlesCache = articles;
   ensureDataDir2();
   const tempPath = `${ARTICLES_FILE}.${Date.now()}.${Math.random().toString(36).substring(2, 8)}.tmp`;
@@ -1086,21 +1158,21 @@ function saveArticles(articles) {
   }
 }
 async function getAllArticles() {
-  const articles = loadArticles();
+  const articles = await loadArticles();
   return [...articles].sort(
     (a, b) => new Date(b.publishDate || b.createdAt).getTime() - new Date(a.publishDate || a.createdAt).getTime()
   );
 }
 async function getArticleById(idOrSlug) {
   if (!idOrSlug) return null;
-  const articles = loadArticles();
+  const articles = await loadArticles();
   const query = String(idOrSlug).trim().toLowerCase();
   return articles.find(
     (a) => a.id === idOrSlug || a.slug === idOrSlug || a.id.toLowerCase() === query || a.slug && a.slug.toLowerCase() === query
   ) || null;
 }
 async function createArticle(data) {
-  const articles = loadArticles();
+  const articles = await loadArticles();
   const slug = slugify(data.title) + "-" + Date.now().toString().slice(-4);
   const id = `article-${slug}`;
   const now = /* @__PURE__ */ new Date();
@@ -1128,11 +1200,11 @@ async function createArticle(data) {
     authorEmail: data.authorEmail
   };
   articles.unshift(newArticle);
-  saveArticles(articles);
+  await saveArticles(articles);
   return newArticle;
 }
 async function updateArticle(id, updates) {
-  const articles = loadArticles();
+  const articles = await loadArticles();
   const index = articles.findIndex((a) => a.id === id);
   if (index === -1) return null;
   const current = articles[index];
@@ -1155,15 +1227,15 @@ async function updateArticle(id, updates) {
     updated.readingTime = calculateReadingTime(updates.content);
   }
   articles[index] = updated;
-  saveArticles(articles);
+  await saveArticles(articles);
   return updated;
 }
 async function deleteArticle(id) {
-  const articles = loadArticles();
+  const articles = await loadArticles();
   const index = articles.findIndex((a) => a.id === id);
   if (index === -1) return false;
   const articleToDelete = articles[index];
-  if (articleToDelete.bannerImageUrl && articleToDelete.bannerImageUrl.startsWith("/uploads/")) {
+  if (!USE_FIRESTORE2 && articleToDelete.bannerImageUrl && articleToDelete.bannerImageUrl.startsWith("/uploads/")) {
     const filename = path2.basename(articleToDelete.bannerImageUrl);
     if (/^banner-\d+-[a-f0-9]+\.(png|jpg|webp)$/i.test(filename)) {
       const filePath = path2.join(process.cwd(), "public", "uploads", filename);
@@ -1177,22 +1249,22 @@ async function deleteArticle(id) {
     }
   }
   const filtered = articles.filter((a) => a.id !== id);
-  saveArticles(filtered);
+  await saveArticles(filtered, [id]);
   return true;
 }
 async function incrementDownloadCount(id) {
-  const articles = loadArticles();
+  const articles = await loadArticles();
   const art = articles.find((a) => a.id === id || a.slug === id);
   if (art) {
     art.pdfDownloadCount = (art.pdfDownloadCount || 0) + 1;
-    saveArticles(articles);
+    await saveArticles(articles);
   }
 }
 async function syncArticles(incoming) {
   if (!Array.isArray(incoming) || incoming.length === 0) {
-    return { added: 0, updated: 0, total: loadArticles().length };
+    return { added: 0, updated: 0, total: (await loadArticles()).length };
   }
-  const articles = loadArticles();
+  const articles = await loadArticles();
   const existingMap = /* @__PURE__ */ new Map();
   articles.forEach((a, i) => {
     existingMap.set(a.id, i);
@@ -1224,14 +1296,10 @@ async function syncArticles(incoming) {
     }
   }
   if (added > 0 || updated > 0) {
-    saveArticles(articles);
+    await saveArticles(articles);
   }
   return { added, updated, total: articles.length };
 }
-
-// pyq-db.ts
-import fs4 from "fs";
-import path4 from "path";
 
 // cloud-db.ts
 import { GoogleSpreadsheet } from "google-spreadsheet";
@@ -1303,7 +1371,7 @@ async function getOrCreateTab(tabTitle, headerValues) {
   return tab;
 }
 var memoryCaches = {};
-var CACHE_TTL_MS = 3e4;
+var CACHE_TTL_MS2 = 3e4;
 function readDiskBackup(collectionName) {
   ensureCacheDir();
   const filePath = path3.join(LOCAL_CACHE_DIR, `${collectionName}.json`);
@@ -1330,7 +1398,7 @@ function writeDiskBackup(collectionName, items) {
     }
   }
 }
-async function fetchCollection(tabName, headers) {
+async function fetchCollection(tabName, headers, options = {}) {
   const now = Date.now();
   const cached = memoryCaches[tabName];
   if (cached && now < cached.expiresAt) {
@@ -1349,10 +1417,11 @@ async function fetchCollection(tabName, headers) {
         }
       }
     }
-    memoryCaches[tabName] = { items, expiresAt: now + CACHE_TTL_MS };
+    memoryCaches[tabName] = { items, expiresAt: now + CACHE_TTL_MS2 };
     writeDiskBackup(tabName, items);
     return items;
   } catch (err) {
+    if (options.strict) throw err;
     console.warn(`[CloudDB] Could not load ${tabName} from Cloud Sheet, falling back to disk backup:`, err);
     const backup = readDiskBackup(tabName);
     if (backup) {
@@ -1376,8 +1445,14 @@ async function withRetry(fn, retries = 3, delayMs = 1200) {
     throw err;
   }
 }
+var writeQueue = Promise.resolve();
+function queueWrite(fn) {
+  const result = writeQueue.then(fn);
+  writeQueue = result.catch(() => void 0);
+  return result;
+}
 async function saveRecord(tabName, headers, record, rowFieldExtractors) {
-  return withRetry(async () => {
+  return queueWrite(() => withRetry(async () => {
     const tab = await getOrCreateTab(tabName, headers);
     const rows = await tab.getRows();
     const existing = rows.find((r) => r.get("id") === record.id);
@@ -1397,10 +1472,10 @@ async function saveRecord(tabName, headers, record, rowFieldExtractors) {
       await tab.addRow(rowData);
     }
     delete memoryCaches[tabName];
-  });
+  }));
 }
 async function deleteRecord(tabName, headers, id) {
-  return withRetry(async () => {
+  return queueWrite(() => withRetry(async () => {
     const tab = await getOrCreateTab(tabName, headers);
     const rows = await tab.getRows();
     const target = rows.find((r) => r.get("id") === id);
@@ -1408,36 +1483,19 @@ async function deleteRecord(tabName, headers, id) {
     await target.delete();
     delete memoryCaches[tabName];
     return true;
-  });
+  }));
 }
 
 // pyq-db.ts
 var PYQ_TAB = "pyq_sessions";
 var PYQ_HEADERS = ["id", "exam", "session", "year", "title", "json", "updatedAt"];
+var USE_FIRESTORE3 = process.env.USE_FIRESTORE_CONTENT !== "false";
 async function getAllPyqSessions() {
-  const sessions = await fetchCollection(PYQ_TAB, PYQ_HEADERS);
+  const sessions = USE_FIRESTORE3 ? await readContentCollection(PYQ_TAB) : await fetchCollection(PYQ_TAB, PYQ_HEADERS);
   const dict = {};
   for (const s of sessions) {
     const key = s.sessionId || s.id;
     dict[key] = { ...s, id: key, sessionId: key };
-  }
-  if (Object.keys(dict).length === 0) {
-    try {
-      const candidatePaths = [
-        path4.join(process.cwd(), "data", "pyq-papers.json"),
-        path4.join(process.cwd(), "data", "pyq_sessions.json")
-      ];
-      for (const p of candidatePaths) {
-        if (fs4.existsSync(p)) {
-          const raw = fs4.readFileSync(p, "utf8");
-          const parsed = JSON.parse(raw);
-          if (parsed && typeof parsed === "object" && Object.keys(parsed).length > 0) {
-            return parsed;
-          }
-        }
-      }
-    } catch {
-    }
   }
   return dict;
 }
@@ -1471,7 +1529,10 @@ async function savePyqFileRecord(params) {
   sessionRecord.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
   sessionRecord.id = sessionId;
   sessionRecord.sessionId = sessionId;
-  await saveRecord(PYQ_TAB, PYQ_HEADERS, sessionRecord, (s) => ({
+  if (USE_FIRESTORE3) {
+    all[sessionId] = sessionRecord;
+    await writeContentCollection(PYQ_TAB, Object.values(all));
+  } else await saveRecord(PYQ_TAB, PYQ_HEADERS, sessionRecord, (s) => ({
     exam: s.exam,
     session: s.session,
     year: s.year,
@@ -1492,7 +1553,9 @@ async function deletePyqFileRecord(params) {
     delete sessionRecord.subjects[subjectKey].key;
   }
   sessionRecord.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
-  await saveRecord(PYQ_TAB, PYQ_HEADERS, sessionRecord, (s) => ({
+  if (USE_FIRESTORE3) {
+    await writeContentCollection(PYQ_TAB, Object.values(all));
+  } else await saveRecord(PYQ_TAB, PYQ_HEADERS, sessionRecord, (s) => ({
     exam: s.exam,
     session: s.session,
     year: s.year,
@@ -1509,7 +1572,9 @@ async function syncPyqSessions(incomingSessions) {
     if (!session || !session.subjects) continue;
     const existing = all[sessionId];
     if (!existing) {
-      await saveRecord(PYQ_TAB, PYQ_HEADERS, { ...session, id: sessionId, sessionId }, (s) => ({
+      if (USE_FIRESTORE3) {
+        all[sessionId] = { ...session, id: sessionId, sessionId };
+      } else await saveRecord(PYQ_TAB, PYQ_HEADERS, { ...session, id: sessionId, sessionId }, (s) => ({
         exam: s.exam,
         session: s.session,
         year: s.year,
@@ -1535,7 +1600,9 @@ async function syncPyqSessions(incomingSessions) {
       }
       if (updated) {
         existing.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
-        await saveRecord(PYQ_TAB, PYQ_HEADERS, existing, (s) => ({
+        if (USE_FIRESTORE3) {
+          all[sessionId] = existing;
+        } else await saveRecord(PYQ_TAB, PYQ_HEADERS, existing, (s) => ({
           exam: s.exam,
           session: s.session,
           year: s.year,
@@ -1544,14 +1611,16 @@ async function syncPyqSessions(incomingSessions) {
       }
     }
   }
+  if (USE_FIRESTORE3) await writeContentCollection(PYQ_TAB, Object.values(all));
   return getAllPyqSessions();
 }
 
 // notes-db.ts
 var NOTES_TAB = "subject_notes";
 var NOTES_HEADERS = ["id", "subjectId", "subjectTitle", "title", "url", "json", "uploadedAt"];
+var USE_FIRESTORE4 = process.env.USE_FIRESTORE_CONTENT !== "false";
 async function getAllNotes() {
-  const notes = await fetchCollection(NOTES_TAB, NOTES_HEADERS);
+  const notes = USE_FIRESTORE4 ? await readContentCollection(NOTES_TAB) : await fetchCollection(NOTES_TAB, NOTES_HEADERS);
   return [...notes].sort(
     (a, b) => new Date(b.uploadedAt || 0).getTime() - new Date(a.uploadedAt || 0).getTime()
   );
@@ -1574,7 +1643,10 @@ async function saveNote(data) {
     fileSize: data.fileSize || "PDF Document",
     uploadedAt: (/* @__PURE__ */ new Date()).toISOString()
   };
-  await saveRecord(NOTES_TAB, NOTES_HEADERS, newNote, (n) => ({
+  if (USE_FIRESTORE4) {
+    const notes = await getAllNotes();
+    await writeContentCollection(NOTES_TAB, [...notes, newNote]);
+  } else await saveRecord(NOTES_TAB, NOTES_HEADERS, newNote, (n) => ({
     subjectId: n.subjectId,
     subjectTitle: n.subjectTitle,
     title: n.title,
@@ -1584,6 +1656,12 @@ async function saveNote(data) {
   return newNote;
 }
 async function deleteNote(id) {
+  if (USE_FIRESTORE4) {
+    const notes = await getAllNotes();
+    if (!notes.some((note) => note.id === id)) return false;
+    await writeContentCollection(NOTES_TAB, notes.filter((note) => note.id !== id), [id]);
+    return true;
+  }
   return deleteRecord(NOTES_TAB, NOTES_HEADERS, id);
 }
 async function syncNotes(incomingNotes) {
@@ -1595,7 +1673,10 @@ async function syncNotes(incomingNotes) {
   for (const n of existing) existingMap.set(n.id, true);
   for (const note of incomingNotes) {
     if (note && note.id && !existingMap.has(note.id)) {
-      await saveRecord(NOTES_TAB, NOTES_HEADERS, note, (n) => ({
+      if (USE_FIRESTORE4) {
+        existing.push(note);
+        existingMap.set(note.id, true);
+      } else await saveRecord(NOTES_TAB, NOTES_HEADERS, note, (n) => ({
         subjectId: n.subjectId,
         subjectTitle: n.subjectTitle,
         title: n.title,
@@ -1604,6 +1685,7 @@ async function syncNotes(incomingNotes) {
       }));
     }
   }
+  if (USE_FIRESTORE4) await writeContentCollection(NOTES_TAB, existing);
   return getAllNotes();
 }
 
@@ -1744,10 +1826,31 @@ A 21-year-old worker from Bihar, Rishu, was killed and another, Dhaneshwar, suff
 
 6.  India\u2019s men stormed into the semi-finals of the inaugural Commonwealth Kabaddi Championship in Ahmedabad with a 48-20 win over Tanzania, led by Neeraj Narwal\u2019s 12 points. They face Sri Lanka in their last group match on 29 October.`;
 
+// admin-emails.ts
+var ADMIN_EMAILS = [
+  "diyawalunj@gmail.com",
+  "vedantranjeetjadhav@gmail.com",
+  "abhijeetgaikwad1904@gmail.com",
+  "muthalrishikesh2006@gmail.com",
+  "adityasahane076@gmail.com",
+  "nishchay.defence@gmail.com"
+];
+
 // server.ts
 dotenv.config();
 var app = express();
 var PORT = 3e3;
+function validateEnvironment() {
+  const required = ["GOOGLE_SERVICE_ACCOUNT_EMAIL", "GOOGLE_PRIVATE_KEY", "VITE_FIREBASE_PROJECT_ID"];
+  const missing = required.filter((name) => !process.env[name]?.trim());
+  if (missing.length) {
+    console.error(`[CONFIG ERROR] Missing required environment variables: ${missing.join(", ")}`);
+    if (process.env.NODE_ENV === "production" && !process.env.VERCEL) {
+      process.exit(1);
+    }
+  }
+}
+validateEnvironment();
 app.set("trust proxy", 1);
 app.use((req, res, next) => {
   const matchedPath = req.headers["x-matched-path"];
@@ -1828,13 +1931,13 @@ app.use(
   })
 );
 app.use(express.raw({ type: "application/pdf", limit: "10mb" }));
-app.use(express.json({ limit: "50mb" }));
-app.use(express.urlencoded({ extended: true, limit: "50mb" }));
+app.use(express.json({ limit: "8mb" }));
+app.use(express.urlencoded({ extended: true, limit: "1mb" }));
 app.use((err, req, res, next) => {
   if (err && (err.type === "entity.too.large" || err.status === 413)) {
     return res.status(413).json({
       success: false,
-      error: 'The uploaded file payload is too large for direct processing. Please choose a file under 35 MB or use the "Paste PDF / Drive Link" tab.'
+      error: "The request payload is too large. Banner images must be 5 MB or smaller; use a PDF or Drive link for larger documents."
     });
   }
   if (err && err instanceof SyntaxError && "body" in err) {
@@ -1886,10 +1989,10 @@ var publishLimiter = rateLimit({
   message: { success: false, error: "Publishing rate limit exceeded." }
 });
 var IS_VERCEL4 = Boolean(process.env.VERCEL);
-var UPLOADS_DIR = IS_VERCEL4 ? path5.join(os4.tmpdir(), "nishchay_uploads") : path5.join(process.cwd(), "public", "uploads");
+var UPLOADS_DIR = IS_VERCEL4 ? path4.join(os4.tmpdir(), "nishchay_uploads") : path4.join(process.cwd(), "public", "uploads");
 try {
-  if (!fs5.existsSync(UPLOADS_DIR)) {
-    fs5.mkdirSync(UPLOADS_DIR, { recursive: true });
+  if (!fs4.existsSync(UPLOADS_DIR)) {
+    fs4.mkdirSync(UPLOADS_DIR, { recursive: true });
   }
 } catch (fsErr) {
   console.warn("Could not initialize uploads directory:", fsErr);
@@ -1904,13 +2007,14 @@ app.use(
   })
 );
 try {
-  if (!admin.apps.length) {
+  if (!admin2.apps.length) {
     const projectId = process.env.VITE_FIREBASE_PROJECT_ID || "nishchay-defence";
-    const serviceEmail = process.env.FIREBASE_SERVICE_ACCOUNT_EMAIL;
-    const serviceKey = process.env.FIREBASE_PRIVATE_KEY ? process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, "\n").replace(/^"(.*)"$/, "$1").trim() : void 0;
+    const serviceEmail = process.env.FIREBASE_SERVICE_ACCOUNT_EMAIL || process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
+    const rawServiceKey = process.env.FIREBASE_PRIVATE_KEY || process.env.GOOGLE_PRIVATE_KEY;
+    const serviceKey = rawServiceKey ? rawServiceKey.replace(/\\n/g, "\n").replace(/^"(.*)"$/, "$1").trim() : void 0;
     if (serviceEmail && serviceKey && serviceKey.includes("BEGIN PRIVATE KEY")) {
-      admin.initializeApp({
-        credential: admin.credential.cert({
+      admin2.initializeApp({
+        credential: admin2.credential.cert({
           projectId,
           clientEmail: serviceEmail,
           privateKey: serviceKey
@@ -1919,21 +2023,13 @@ try {
       });
       console.log("\u2705 Firebase Admin initialized with Service Account for:", projectId);
     } else {
-      admin.initializeApp({ projectId });
+      admin2.initializeApp({ projectId });
       console.log("\u2705 Firebase Admin initialized with Project ID (public cert token verification):", projectId);
     }
   }
 } catch (error) {
   console.error("\u274C Firebase Admin initialization error:", error.message);
 }
-var ADMIN_EMAILS = [
-  "diyawalunj@gmail.com",
-  "vedantranjeetjadhav@gmail.com",
-  "abhijeetgaikwad1904@gmail.com",
-  "muthalrishikesh2006@gmail.com",
-  "adityasahane076@gmail.com",
-  "nishchay.defence@gmail.com"
-];
 function isValidUrlOrPath(url) {
   if (!url || typeof url !== "string") return false;
   const trimmed = url.trim();
@@ -1952,6 +2048,11 @@ function isValidUrlOrPath(url) {
   } catch {
     return false;
   }
+}
+function isValidBannerImage(value) {
+  if (typeof value !== "string" || !value.trim()) return false;
+  if (value.startsWith("data:image/")) return value.length <= 3e5;
+  return isValidUrlOrPath(value);
 }
 function sanitizeSheetCell(val) {
   if (val === null || val === void 0) return "";
@@ -1979,7 +2080,7 @@ var authenticate = async (req, res, next) => {
     });
   }
   try {
-    const decodedToken = await admin.auth().verifyIdToken(token);
+    const decodedToken = await admin2.auth().verifyIdToken(token);
     const email = decodedToken.email?.trim().toLowerCase();
     if (!email) {
       return res.status(403).json({
@@ -1988,7 +2089,7 @@ var authenticate = async (req, res, next) => {
       });
     }
     const hasAdminClaim = decodedToken.admin === true;
-    const isEmailAdmin = ADMIN_EMAILS.some((e) => e.toLowerCase() === email);
+    const isEmailAdmin = decodedToken.email_verified === true && ADMIN_EMAILS.some((e) => e.toLowerCase() === email);
     if (!hasAdminClaim && !isEmailAdmin) {
       console.warn(`[SECURITY WARN] Forbidden admin access attempt by ${email} from IP: ${clientIp}`);
       return res.status(403).json({
@@ -2071,7 +2172,13 @@ async function getSheet(sheetId, tabName, defaultHeaders) {
   }
   return sheet;
 }
-async function saveToGoogleSheet(data) {
+var contactSheetWriteQueue = Promise.resolve();
+function saveToGoogleSheet(data) {
+  const result = contactSheetWriteQueue.then(() => saveToGoogleSheetNow(data));
+  contactSheetWriteQueue = result.catch(() => void 0);
+  return result;
+}
+async function saveToGoogleSheetNow(data) {
   const sheetId = process.env.GOOGLE_SHEET_ID_CONTACT || "1gGWQxXAuKCpt99m6efSBwaDUqLFJn_7f-WnESPOnmQY";
   if (!sheetId) {
     console.error("\u274C [contact] Missing Sheet ID in environment variables");
@@ -2090,7 +2197,7 @@ async function saveToGoogleSheet(data) {
       { key: "Email", value: data.email || data.emailAddress || "(No Email)", aliases: ["email", "email address", "email_address", "emailaddress", "emails"] },
       { key: "Message", value: data.message || data.msg || data.body || data.question || "(No Message)", aliases: ["message", "question", "msg", "body", "messages", "queries", "query"] }
     ];
-    console.log("\u2139\uFE0F [contact] Mapping data:", JSON.stringify(data));
+    console.log("\u2139\uFE0F [contact] Mapping validated submission to the contact sheet.");
     mappings.forEach((m) => {
       const sanitizedVal = sanitizeSheetCell(m.value);
       const match = sheet.headerValues.find(
@@ -2122,7 +2229,7 @@ app.get("/api/health", (req, res) => {
     timestamp: (/* @__PURE__ */ new Date()).toISOString(),
     services: {
       sheetsConfigured: !!(process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL && process.env.GOOGLE_PRIVATE_KEY),
-      firebaseConfigured: !!admin.apps.length
+      firebaseConfigured: !!admin2.apps.length
     }
   });
 });
@@ -2165,15 +2272,24 @@ app.post("/api/contact", contactLimiter, async (req, res) => {
     });
   }
 });
-app.get("/api/n-intel/stories", async (req, res) => {
+app.get("/api/n-intel/stories", (req, res, next) => {
+  if (req.query.includeDeleted === "true") {
+    return authenticate(req, res, next);
+  }
+  next();
+}, async (req, res) => {
   try {
-    const { date, month, category, search, includeDeleted } = req.query;
+    const { date, month, category, search } = req.query;
+    const includeDeleted = req.query.includeDeleted === "true";
+    if (includeDeleted && !req.user?.isAdmin) {
+      return res.status(403).json({ success: false, error: "Administrator privileges required." });
+    }
     const stories = await getAllStories({
       date,
       month,
       category,
       search,
-      includeDeleted: includeDeleted === "true"
+      includeDeleted
     });
     res.json({ success: true, stories });
   } catch (error) {
@@ -2231,9 +2347,9 @@ app.get("/api/articles/:id", async (req, res) => {
 });
 app.get("/api/uploads/:filename", (req, res) => {
   try {
-    const safeName = path5.basename(req.params.filename);
-    const filePath = path5.join(UPLOADS_DIR, safeName);
-    if (fs5.existsSync(filePath)) {
+    const safeName = path4.basename(req.params.filename);
+    const filePath = path4.join(UPLOADS_DIR, safeName);
+    if (fs4.existsSync(filePath)) {
       res.setHeader("X-Content-Type-Options", "nosniff");
       res.sendFile(filePath);
     } else {
@@ -2243,11 +2359,17 @@ app.get("/api/uploads/:filename", (req, res) => {
     res.status(500).json({ success: false, error: "Error reading file." });
   }
 });
-app.post("/api/articles/sync", async (req, res) => {
+app.post("/api/articles/sync", authenticate, async (req, res) => {
+  if (!req.user?.isAdmin) {
+    return res.status(403).json({ success: false, error: "Access denied: Administrator privileges required." });
+  }
   try {
     const { articles } = req.body;
     if (!Array.isArray(articles)) {
       return res.status(400).json({ success: false, error: "Articles array required." });
+    }
+    if (articles.some((article) => typeof article?.bannerImageUrl === "string" && article.bannerImageUrl.startsWith("data:image/") && article.bannerImageUrl.length > 3e5)) {
+      return res.status(400).json({ success: false, error: "Compressed banner image exceeds the free Firestore document limit." });
     }
     const result = await syncArticles(articles);
     res.json({ success: true, ...result });
@@ -2264,7 +2386,7 @@ app.post("/api/articles/:id/download", downloadLimiter, async (req, res) => {
     res.status(500).json({ success: false, error: "Failed to record download count." });
   }
 });
-app.post("/api/articles/upload-banner", publishLimiter, authenticate, (req, res) => {
+app.post("/api/articles/upload-banner", publishLimiter, authenticate, async (req, res) => {
   if (!req.user?.isAdmin) {
     return res.status(403).json({ success: false, error: "Access denied: Admin privileges required." });
   }
@@ -2297,13 +2419,19 @@ app.post("/api/articles/upload-banner", publishLimiter, authenticate, (req, res)
       });
     }
     try {
-      if (!fs5.existsSync(UPLOADS_DIR)) {
-        fs5.mkdirSync(UPLOADS_DIR, { recursive: true });
+      if (!fs4.existsSync(UPLOADS_DIR)) {
+        fs4.mkdirSync(UPLOADS_DIR, { recursive: true });
       }
       const safeRandomToken = crypto.randomBytes(16).toString("hex");
       const safeName = `banner-${Date.now()}-${safeRandomToken}.${ext}`;
-      const filePath = path5.join(UPLOADS_DIR, safeName);
-      fs5.writeFileSync(filePath, buffer, { flag: "wx" });
+      if (IS_VERCEL4) {
+        if (imageBase64.length > 35e4) {
+          return res.status(413).json({ success: false, error: "Compressed banner is too large to store on the free Firestore plan. Reduce its dimensions or use a public image URL." });
+        }
+        return res.json({ success: true, url: imageBase64, localUrl: imageBase64 });
+      }
+      const filePath = path4.join(UPLOADS_DIR, safeName);
+      fs4.writeFileSync(filePath, buffer, { flag: "wx" });
       const publicUrl = `/api/uploads/${safeName}`;
       res.json({ success: true, url: publicUrl, localUrl: `/uploads/${safeName}` });
     } catch (writeErr) {
@@ -2336,7 +2464,7 @@ app.post("/api/articles", authenticate, async (req, res) => {
     if (!title || typeof title !== "string" || !title.trim() || title.length > 300) {
       return res.status(400).json({ success: false, error: "Article headline is required (max 300 characters)." });
     }
-    if (!bannerImageUrl || !isValidUrlOrPath(bannerImageUrl)) {
+    if (!isValidBannerImage(bannerImageUrl)) {
       return res.status(400).json({ success: false, error: "A valid banner image URL or uploaded file is required." });
     }
     if (authorAvatarUrl && !isValidUrlOrPath(authorAvatarUrl)) {
@@ -2374,7 +2502,7 @@ app.put("/api/articles/:id", authenticate, async (req, res) => {
   }
   try {
     const { bannerImageUrl, authorAvatarUrl, title, authorName, content } = req.body;
-    if (bannerImageUrl !== void 0 && !isValidUrlOrPath(bannerImageUrl)) {
+    if (bannerImageUrl !== void 0 && !isValidBannerImage(bannerImageUrl)) {
       return res.status(400).json({ success: false, error: "Invalid banner image URL provided." });
     }
     if (authorAvatarUrl !== void 0 && authorAvatarUrl && !isValidUrlOrPath(authorAvatarUrl)) {
@@ -2754,6 +2882,9 @@ app.post("/api/notes/link", authenticate, async (req, res) => {
     if (!subjectId || !subjectTitle || !title || !url) {
       return res.status(400).json({ success: false, error: "Missing required parameters." });
     }
+    if (!isValidUrlOrPath(url)) {
+      return res.status(400).json({ success: false, error: "Invalid note URL." });
+    }
     const note = await saveNote({
       subjectId,
       subjectTitle,
@@ -2779,7 +2910,8 @@ app.post("/api/notes/delete", authenticate, async (req, res) => {
       return res.status(400).json({ success: false, error: "Missing note ID." });
     }
     const success = await deleteNote(id);
-    res.json({ success });
+    if (!success) return res.status(404).json({ success: false, error: "Note not found." });
+    res.json({ success: true });
   } catch (err) {
     console.error("Error deleting subject note:", err);
     res.status(500).json({ success: false, error: "Failed to delete note." });
@@ -2822,7 +2954,6 @@ async function setupServer() {
   console.log("GOOGLE_SERVICE_ACCOUNT_EMAIL:", GOOGLE_SERVICE_ACCOUNT_EMAIL ? "\u2705 Present" : "\u274C Missing");
   console.log("GOOGLE_PRIVATE_KEY:", GOOGLE_PRIVATE_KEY ? "\u2705 Present" : "\u274C Missing");
   console.log("GOOGLE_SHEET_ID_CONTACT:", GOOGLE_SHEET_ID_CONTACT || "1gGWQxXAuKCpt99m6efSBwaDUqLFJn_7f-WnESPOnmQY" ? "\u2705 Present" : "\u274C Missing");
-  console.log("GOOGLE_DRIVE_FOLDER_ID:", process.env.GOOGLE_DRIVE_FOLDER_ID ? "\u2705 Present (Google Drive Uploads Active)" : "\u26A0\uFE0F Not Set (Using Local Storage fallback)");
   console.log("---------------------------------");
   if (!process.env.VERCEL) {
     try {
@@ -2839,11 +2970,11 @@ async function setupServer() {
     });
     app.use(vite.middlewares);
   } else if (!process.env.VERCEL) {
-    const distPath = path5.join(process.cwd(), "dist");
-    if (fs5.existsSync(distPath)) {
+    const distPath = path4.join(process.cwd(), "dist");
+    if (fs4.existsSync(distPath)) {
       app.use(express.static(distPath));
       app.get("*", (req, res) => {
-        res.sendFile(path5.join(distPath, "index.html"));
+        res.sendFile(path4.join(distPath, "index.html"));
       });
     }
   }

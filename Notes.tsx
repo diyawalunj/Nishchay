@@ -589,7 +589,7 @@ export default function Notes() {
       });
   }, []);
 
-  // Initial fetch and automatic cross-device sync (revalidate on focus & 25s polling)
+  // Initial fetch and automatic cross-device sync (revalidate on tab visibility & 60s polling)
   useEffect(() => {
     fetchPyqSessions();
     fetchNotes();
@@ -606,14 +606,12 @@ export default function Notes() {
         fetchPyqSessions();
         fetchNotes();
       }
-    }, 25000);
+    }, 60000);
 
-    window.addEventListener('focus', handleFocus);
     document.addEventListener('visibilitychange', handleFocus);
 
     return () => {
       clearInterval(interval);
-      window.removeEventListener('focus', handleFocus);
       document.removeEventListener('visibilitychange', handleFocus);
     };
   }, [fetchPyqSessions, fetchNotes]);

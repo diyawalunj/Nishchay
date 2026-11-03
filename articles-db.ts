@@ -1,13 +1,11 @@
 /**
- * articles-db.ts — Local / In-Memory Storage for Articles.
- *
- * NOTE: As requested, persistence storage (Google Cloud DB) is reserved ONLY
- * for the Notes section. Articles use local JSON file & in-memory caching.
+ * Articles use Firestore on Vercel and local JSON files for development.
  */
 
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
+import { readContentCollection, writeContentCollection } from './firestore-content';
 
 export interface Article {
   id: string;
@@ -32,6 +30,7 @@ export interface Article {
 }
 
 const IS_VERCEL = Boolean(process.env.VERCEL);
+const USE_FIRESTORE = process.env.USE_FIRESTORE_CONTENT !== 'false';
 const DATA_DIR = IS_VERCEL ? path.join(os.tmpdir(), 'nishchay_data') : path.join(process.cwd(), 'data');
 const SEED_DATA_DIR = path.join(process.cwd(), 'data');
 const ARTICLES_FILE = path.join(DATA_DIR, 'articles.json');
@@ -63,7 +62,8 @@ function calculateReadingTime(text: string): string {
   return `${minutes} min read`;
 }
 
-function loadArticles(): Article[] {
+async function loadArticles(): Promise<Article[]> {
+  if (USE_FIRESTORE) return readContentCollection<Article>('articles');
   if (articlesCache) return articlesCache;
   ensureDataDir();
 
@@ -113,7 +113,7 @@ Despite political shifts, geography remains immutable. India and Bangladesh shar
       }
     ];
 
-    saveArticles(initialArticles);
+    await saveArticles(initialArticles);
     return initialArticles;
   }
 
@@ -128,7 +128,12 @@ Despite political shifts, geography remains immutable. India and Bangladesh shar
   }
 }
 
-function saveArticles(articles: Article[]): void {
+async function saveArticles(articles: Article[], deletedIds: string[] = []): Promise<void> {
+  if (USE_FIRESTORE) {
+    await writeContentCollection('articles', articles, deletedIds);
+    articlesCache = null;
+    return;
+  }
   articlesCache = articles;
   ensureDataDir();
   const tempPath = `${ARTICLES_FILE}.${Date.now()}.${Math.random().toString(36).substring(2, 8)}.tmp`;
@@ -148,7 +153,7 @@ function saveArticles(articles: Article[]): void {
 // ---------------------------------------------------------------------------
 
 export async function getAllArticles(): Promise<Article[]> {
-  const articles = loadArticles();
+  const articles = await loadArticles();
   return [...articles].sort(
     (a, b) => new Date(b.publishDate || b.createdAt).getTime() - new Date(a.publishDate || a.createdAt).getTime()
   );
@@ -156,7 +161,7 @@ export async function getAllArticles(): Promise<Article[]> {
 
 export async function getArticleById(idOrSlug: string): Promise<Article | null> {
   if (!idOrSlug) return null;
-  const articles = loadArticles();
+  const articles = await loadArticles();
   const query = String(idOrSlug).trim().toLowerCase();
   return (
     articles.find(
@@ -183,7 +188,7 @@ export async function createArticle(data: {
   sourceReference?: string;
   authorEmail?: string;
 }): Promise<Article> {
-  const articles = loadArticles();
+  const articles = await loadArticles();
   const slug = slugify(data.title) + '-' + Date.now().toString().slice(-4);
   const id = `article-${slug}`;
   const now = new Date();
@@ -217,12 +222,12 @@ export async function createArticle(data: {
   };
 
   articles.unshift(newArticle);
-  saveArticles(articles);
+  await saveArticles(articles);
   return newArticle;
 }
 
 export async function updateArticle(id: string, updates: Partial<Article>): Promise<Article | null> {
-  const articles = loadArticles();
+  const articles = await loadArticles();
   const index = articles.findIndex(a => a.id === id);
   if (index === -1) return null;
 
@@ -249,17 +254,17 @@ export async function updateArticle(id: string, updates: Partial<Article>): Prom
   }
 
   articles[index] = updated;
-  saveArticles(articles);
+  await saveArticles(articles);
   return updated;
 }
 
 export async function deleteArticle(id: string): Promise<boolean> {
-  const articles = loadArticles();
+  const articles = await loadArticles();
   const index = articles.findIndex(a => a.id === id);
   if (index === -1) return false;
   const articleToDelete = articles[index];
 
-  if (articleToDelete.bannerImageUrl && articleToDelete.bannerImageUrl.startsWith('/uploads/')) {
+  if (!USE_FIRESTORE && articleToDelete.bannerImageUrl && articleToDelete.bannerImageUrl.startsWith('/uploads/')) {
     const filename = path.basename(articleToDelete.bannerImageUrl);
     if (/^banner-\d+-[a-f0-9]+\.(png|jpg|webp)$/i.test(filename)) {
       const filePath = path.join(process.cwd(), 'public', 'uploads', filename);
@@ -274,25 +279,25 @@ export async function deleteArticle(id: string): Promise<boolean> {
   }
 
   const filtered = articles.filter(a => a.id !== id);
-  saveArticles(filtered);
+  await saveArticles(filtered, [id]);
   return true;
 }
 
 export async function incrementDownloadCount(id: string): Promise<void> {
-  const articles = loadArticles();
+  const articles = await loadArticles();
   const art = articles.find(a => a.id === id || a.slug === id);
   if (art) {
     art.pdfDownloadCount = (art.pdfDownloadCount || 0) + 1;
-    saveArticles(articles);
+    await saveArticles(articles);
   }
 }
 
 export async function syncArticles(incoming: Article[]): Promise<{ added: number; updated: number; total: number }> {
   if (!Array.isArray(incoming) || incoming.length === 0) {
-    return { added: 0, updated: 0, total: loadArticles().length };
+    return { added: 0, updated: 0, total: (await loadArticles()).length };
   }
 
-  const articles = loadArticles();
+  const articles = await loadArticles();
   const existingMap = new Map<string, number>();
   articles.forEach((a, i) => {
     existingMap.set(a.id, i);
@@ -330,7 +335,7 @@ export async function syncArticles(incoming: Article[]): Promise<{ added: number
   }
 
   if (added > 0 || updated > 0) {
-    saveArticles(articles);
+    await saveArticles(articles);
   }
 
   return { added, updated, total: articles.length };

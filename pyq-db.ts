@@ -1,18 +1,14 @@
 /**
  * pyq-db.ts — Persistent Cloud Database Storage for PYQ (Previous Year Questions).
  *
- * Backed by authenticated Google Cloud Storage (via cloud-db.ts).
- * Permanent, cross-device, single source of truth.
- * Survives container recycling, server restarts, and redeployments.
+ * Backed by Firestore on Vercel and Google Sheets for local development.
  */
 
-import fs from 'fs';
-import path from 'path';
 import {
   fetchCollection,
-  saveRecord,
-  deleteRecord
+  saveRecord
 } from './cloud-db';
+import { readContentCollection, writeContentCollection } from './firestore-content';
 
 export interface PyqFileItem {
   url: string;
@@ -46,32 +42,16 @@ export interface PyqSessionData {
 
 const PYQ_TAB = 'pyq_sessions';
 const PYQ_HEADERS = ['id', 'exam', 'session', 'year', 'title', 'json', 'updatedAt'];
+const USE_FIRESTORE = process.env.USE_FIRESTORE_CONTENT !== 'false';
 
 export async function getAllPyqSessions(): Promise<Record<string, PyqSessionData>> {
-  const sessions = await fetchCollection<PyqSessionData>(PYQ_TAB, PYQ_HEADERS);
+  const sessions = USE_FIRESTORE
+    ? await readContentCollection<PyqSessionData>(PYQ_TAB)
+    : await fetchCollection<PyqSessionData>(PYQ_TAB, PYQ_HEADERS);
   const dict: Record<string, PyqSessionData> = {};
   for (const s of sessions) {
     const key = s.sessionId || s.id;
     dict[key] = { ...s, id: key, sessionId: key };
-  }
-
-  // If cloud sheet returned empty, check local disk seed data
-  if (Object.keys(dict).length === 0) {
-    try {
-      const candidatePaths = [
-        path.join(process.cwd(), 'data', 'pyq-papers.json'),
-        path.join(process.cwd(), 'data', 'pyq_sessions.json'),
-      ];
-      for (const p of candidatePaths) {
-        if (fs.existsSync(p)) {
-          const raw = fs.readFileSync(p, 'utf8');
-          const parsed = JSON.parse(raw);
-          if (parsed && typeof parsed === 'object' && Object.keys(parsed).length > 0) {
-            return parsed;
-          }
-        }
-      }
-    } catch {}
   }
 
   return dict;
@@ -125,7 +105,10 @@ export async function savePyqFileRecord(params: {
   sessionRecord.id = sessionId;
   sessionRecord.sessionId = sessionId;
 
-  await saveRecord(PYQ_TAB, PYQ_HEADERS, sessionRecord, s => ({
+  if (USE_FIRESTORE) {
+    all[sessionId] = sessionRecord;
+    await writeContentCollection(PYQ_TAB, Object.values(all));
+  } else await saveRecord(PYQ_TAB, PYQ_HEADERS, sessionRecord, s => ({
     exam: s.exam,
     session: s.session,
     year: s.year,
@@ -155,7 +138,9 @@ export async function deletePyqFileRecord(params: {
   }
 
   sessionRecord.updatedAt = new Date().toISOString();
-  await saveRecord(PYQ_TAB, PYQ_HEADERS, sessionRecord, s => ({
+  if (USE_FIRESTORE) {
+    await writeContentCollection(PYQ_TAB, Object.values(all));
+  } else await saveRecord(PYQ_TAB, PYQ_HEADERS, sessionRecord, s => ({
     exam: s.exam,
     session: s.session,
     year: s.year,
@@ -177,7 +162,9 @@ export async function syncPyqSessions(
     if (!session || !session.subjects) continue;
     const existing = all[sessionId];
     if (!existing) {
-      await saveRecord(PYQ_TAB, PYQ_HEADERS, { ...session, id: sessionId, sessionId }, s => ({
+      if (USE_FIRESTORE) {
+        all[sessionId] = { ...session, id: sessionId, sessionId };
+      } else await saveRecord(PYQ_TAB, PYQ_HEADERS, { ...session, id: sessionId, sessionId }, s => ({
         exam: s.exam,
         session: s.session,
         year: s.year,
@@ -203,7 +190,9 @@ export async function syncPyqSessions(
       }
       if (updated) {
         existing.updatedAt = new Date().toISOString();
-        await saveRecord(PYQ_TAB, PYQ_HEADERS, existing, s => ({
+        if (USE_FIRESTORE) {
+          all[sessionId] = existing;
+        } else await saveRecord(PYQ_TAB, PYQ_HEADERS, existing, s => ({
           exam: s.exam,
           session: s.session,
           year: s.year,
@@ -213,5 +202,6 @@ export async function syncPyqSessions(
     }
   }
 
+  if (USE_FIRESTORE) await writeContentCollection(PYQ_TAB, Object.values(all));
   return getAllPyqSessions();
 }

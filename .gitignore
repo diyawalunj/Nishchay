@@ -13,7 +13,10 @@ coverage/
 *.pem
 *.key
 scripts/*.json
-!firebase-applet-config.json
 !firebase-blueprint.json
+firebase-applet-config.json
+data/firestore-migration-backup-*.json
+data/pyq_sessions.json
+data/subject_notes.json
 
 
