@@ -43,15 +43,43 @@ export interface PyqSessionData {
 const PYQ_TAB = 'pyq_sessions';
 const PYQ_HEADERS = ['id', 'exam', 'session', 'year', 'title', 'json', 'updatedAt'];
 const USE_FIRESTORE = process.env.USE_FIRESTORE_CONTENT !== 'false';
+const BLOCKED_RECORD_KEYS = new Set(['__proto__', 'prototype', 'constructor']);
+
+function isSafeSessionId(value: unknown): value is string {
+  return typeof value === 'string'
+    && value.length > 0
+    && value.length <= 160
+    && !BLOCKED_RECORD_KEYS.has(value);
+}
+
+function createSessionRecord(): Record<string, PyqSessionData> {
+  return Object.create(null) as Record<string, PyqSessionData>;
+}
+
+function setSessionRecord(
+  target: Record<string, PyqSessionData>,
+  sessionId: string,
+  session: PyqSessionData
+): void {
+  if (!isSafeSessionId(sessionId)) return;
+  Object.defineProperty(target, sessionId, {
+    value: session,
+    enumerable: true,
+    configurable: true,
+    writable: true
+  });
+}
 
 export async function getAllPyqSessions(): Promise<Record<string, PyqSessionData>> {
   const sessions = USE_FIRESTORE
     ? await readContentCollection<PyqSessionData>(PYQ_TAB)
     : await fetchCollection<PyqSessionData>(PYQ_TAB, PYQ_HEADERS);
-  const dict: Record<string, PyqSessionData> = {};
+  const dict = createSessionRecord();
   for (const s of sessions) {
     const key = s.sessionId || s.id;
-    dict[key] = { ...s, id: key, sessionId: key };
+    if (isSafeSessionId(key)) {
+      setSessionRecord(dict, key, { ...s, id: key, sessionId: key });
+    }
   }
 
   return dict;
@@ -72,6 +100,9 @@ export async function savePyqFileRecord(params: {
 }): Promise<PyqSessionData> {
   const all = await getAllPyqSessions();
   const { sessionId, exam, session, year, title, subjectKey, fileType, url, driveFileId, fileName, fileSize } = params;
+  if (!isSafeSessionId(sessionId)) throw new Error('Invalid PYQ session ID.');
+  if (!['maths', 'gat', 'english', 'gs', 'afcat'].includes(subjectKey)) throw new Error('Invalid PYQ subject.');
+  if (fileType !== 'paper' && fileType !== 'key') throw new Error('Invalid PYQ file type.');
 
   let sessionRecord: PyqSessionData = all[sessionId] || {
     id: sessionId,
@@ -106,7 +137,7 @@ export async function savePyqFileRecord(params: {
   sessionRecord.sessionId = sessionId;
 
   if (USE_FIRESTORE) {
-    all[sessionId] = sessionRecord;
+    setSessionRecord(all, sessionId, sessionRecord);
     await writeContentCollection(PYQ_TAB, Object.values(all));
   } else await saveRecord(PYQ_TAB, PYQ_HEADERS, sessionRecord, s => ({
     exam: s.exam,
@@ -125,6 +156,9 @@ export async function deletePyqFileRecord(params: {
 }): Promise<PyqSessionData | null> {
   const all = await getAllPyqSessions();
   const { sessionId, subjectKey, fileType } = params;
+  if (!isSafeSessionId(sessionId)) return null;
+  if (!['maths', 'gat', 'english', 'gs', 'afcat'].includes(subjectKey)) return null;
+  if (fileType !== 'paper' && fileType !== 'key') return null;
 
   const sessionRecord = all[sessionId];
   if (!sessionRecord || !sessionRecord.subjects || !sessionRecord.subjects[subjectKey]) {
@@ -159,11 +193,12 @@ export async function syncPyqSessions(
 
   const all = await getAllPyqSessions();
   for (const [sessionId, session] of Object.entries(incomingSessions)) {
+    if (!isSafeSessionId(sessionId)) continue;
     if (!session || !session.subjects) continue;
     const existing = all[sessionId];
     if (!existing) {
       if (USE_FIRESTORE) {
-        all[sessionId] = { ...session, id: sessionId, sessionId };
+        setSessionRecord(all, sessionId, { ...session, id: sessionId, sessionId });
       } else await saveRecord(PYQ_TAB, PYQ_HEADERS, { ...session, id: sessionId, sessionId }, s => ({
         exam: s.exam,
         session: s.session,
@@ -191,7 +226,7 @@ export async function syncPyqSessions(
       if (updated) {
         existing.updatedAt = new Date().toISOString();
         if (USE_FIRESTORE) {
-          all[sessionId] = existing;
+          setSessionRecord(all, sessionId, existing);
         } else await saveRecord(PYQ_TAB, PYQ_HEADERS, existing, s => ({
           exam: s.exam,
           session: s.session,

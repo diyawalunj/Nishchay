@@ -1490,18 +1490,39 @@ async function deleteRecord(tabName, headers, id) {
 var PYQ_TAB = "pyq_sessions";
 var PYQ_HEADERS = ["id", "exam", "session", "year", "title", "json", "updatedAt"];
 var USE_FIRESTORE3 = process.env.USE_FIRESTORE_CONTENT !== "false";
+var BLOCKED_RECORD_KEYS = /* @__PURE__ */ new Set(["__proto__", "prototype", "constructor"]);
+function isSafeSessionId(value) {
+  return typeof value === "string" && value.length > 0 && value.length <= 160 && !BLOCKED_RECORD_KEYS.has(value);
+}
+function createSessionRecord() {
+  return /* @__PURE__ */ Object.create(null);
+}
+function setSessionRecord(target, sessionId, session) {
+  if (!isSafeSessionId(sessionId)) return;
+  Object.defineProperty(target, sessionId, {
+    value: session,
+    enumerable: true,
+    configurable: true,
+    writable: true
+  });
+}
 async function getAllPyqSessions() {
   const sessions = USE_FIRESTORE3 ? await readContentCollection(PYQ_TAB) : await fetchCollection(PYQ_TAB, PYQ_HEADERS);
-  const dict = {};
+  const dict = createSessionRecord();
   for (const s of sessions) {
     const key = s.sessionId || s.id;
-    dict[key] = { ...s, id: key, sessionId: key };
+    if (isSafeSessionId(key)) {
+      setSessionRecord(dict, key, { ...s, id: key, sessionId: key });
+    }
   }
   return dict;
 }
 async function savePyqFileRecord(params) {
   const all = await getAllPyqSessions();
   const { sessionId, exam, session, year, title, subjectKey, fileType, url, driveFileId, fileName, fileSize } = params;
+  if (!isSafeSessionId(sessionId)) throw new Error("Invalid PYQ session ID.");
+  if (!["maths", "gat", "english", "gs", "afcat"].includes(subjectKey)) throw new Error("Invalid PYQ subject.");
+  if (fileType !== "paper" && fileType !== "key") throw new Error("Invalid PYQ file type.");
   let sessionRecord = all[sessionId] || {
     id: sessionId,
     sessionId,
@@ -1530,7 +1551,7 @@ async function savePyqFileRecord(params) {
   sessionRecord.id = sessionId;
   sessionRecord.sessionId = sessionId;
   if (USE_FIRESTORE3) {
-    all[sessionId] = sessionRecord;
+    setSessionRecord(all, sessionId, sessionRecord);
     await writeContentCollection(PYQ_TAB, Object.values(all));
   } else await saveRecord(PYQ_TAB, PYQ_HEADERS, sessionRecord, (s) => ({
     exam: s.exam,
@@ -1543,6 +1564,9 @@ async function savePyqFileRecord(params) {
 async function deletePyqFileRecord(params) {
   const all = await getAllPyqSessions();
   const { sessionId, subjectKey, fileType } = params;
+  if (!isSafeSessionId(sessionId)) return null;
+  if (!["maths", "gat", "english", "gs", "afcat"].includes(subjectKey)) return null;
+  if (fileType !== "paper" && fileType !== "key") return null;
   const sessionRecord = all[sessionId];
   if (!sessionRecord || !sessionRecord.subjects || !sessionRecord.subjects[subjectKey]) {
     return sessionRecord || null;
@@ -1569,11 +1593,12 @@ async function syncPyqSessions(incomingSessions) {
   }
   const all = await getAllPyqSessions();
   for (const [sessionId, session] of Object.entries(incomingSessions)) {
+    if (!isSafeSessionId(sessionId)) continue;
     if (!session || !session.subjects) continue;
     const existing = all[sessionId];
     if (!existing) {
       if (USE_FIRESTORE3) {
-        all[sessionId] = { ...session, id: sessionId, sessionId };
+        setSessionRecord(all, sessionId, { ...session, id: sessionId, sessionId });
       } else await saveRecord(PYQ_TAB, PYQ_HEADERS, { ...session, id: sessionId, sessionId }, (s) => ({
         exam: s.exam,
         session: s.session,
@@ -1601,7 +1626,7 @@ async function syncPyqSessions(incomingSessions) {
       if (updated) {
         existing.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
         if (USE_FIRESTORE3) {
-          all[sessionId] = existing;
+          setSessionRecord(all, sessionId, existing);
         } else await saveRecord(PYQ_TAB, PYQ_HEADERS, existing, (s) => ({
           exam: s.exam,
           session: s.session,
@@ -1979,6 +2004,14 @@ var downloadLimiter = rateLimit({
   validate: false,
   message: { success: false, error: "Download limit exceeded." }
 });
+var fileReadLimiter = rateLimit({
+  windowMs: 10 * 60 * 1e3,
+  max: 300,
+  standardHeaders: true,
+  legacyHeaders: false,
+  validate: false,
+  message: { success: false, error: "Too many file requests. Please slow down." }
+});
 var publishLimiter = rateLimit({
   windowMs: 15 * 60 * 1e3,
   // 15 minutes
@@ -2345,7 +2378,7 @@ app.get("/api/articles/:id", async (req, res) => {
     res.status(500).json({ success: false, error: error.message });
   }
 });
-app.get("/api/uploads/:filename", (req, res) => {
+app.get("/api/uploads/:filename", fileReadLimiter, (req, res) => {
   try {
     const safeName = path4.basename(req.params.filename);
     const filePath = path4.join(UPLOADS_DIR, safeName);
@@ -2934,7 +2967,7 @@ app.post("/api/notes/sync", authenticate, async (req, res) => {
   }
 });
 app.use((err, req, res, next) => {
-  console.error(`[SERVER ERROR] ${req.method} ${req.url}:`, err.message || err);
+  console.error("%s %s %s: %s", "[SERVER ERROR]", req.method, req.url, err.message || err);
   if (res.headersSent) {
     return next(err);
   }
@@ -2973,7 +3006,7 @@ async function setupServer() {
     const distPath = path4.join(process.cwd(), "dist");
     if (fs4.existsSync(distPath)) {
       app.use(express.static(distPath));
-      app.get("*", (req, res) => {
+      app.get("*", fileReadLimiter, (req, res) => {
         res.sendFile(path4.join(distPath, "index.html"));
       });
     }

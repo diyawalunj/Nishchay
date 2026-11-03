@@ -8,6 +8,7 @@ import {
   FileText, Check, AlertCircle, ExternalLink, Bookmark
 } from 'lucide-react';
 import type { Article } from './articles-db';
+import { safeImageUrl } from './safe-image-url';
 import { auth, onAuthStateChanged, checkIfAdmin, type User as FirebaseUser } from './firebase';
 import { getLocalTodayDate } from './n-intel-whatsapp';
 import {
@@ -531,7 +532,7 @@ export default function Articles() {
                   {/* Compulsory Banner Image */}
                   <Link to={`/articles/${art.slug || art.id}`} className="block relative aspect-[16/10] overflow-hidden bg-gray-100">
                     <img
-                      src={art.bannerImageUrl}
+                      src={safeImageUrl(art.bannerImageUrl)}
                       alt={art.title}
                       className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                       onError={(e) => {
@@ -731,7 +732,7 @@ export default function Articles() {
                 {bannerImageUrl && (
                   <div className="mt-4 relative aspect-[16/8] rounded-xl overflow-hidden border border-amber-300 shadow-sm bg-gray-100">
                     <img
-                      src={bannerImageUrl}
+                      src={safeImageUrl(bannerImageUrl)}
                       alt="Banner Preview"
                       className="w-full h-full object-cover"
                       onError={() => setFormError('The banner image URL could not be loaded. Please verify the URL.')}

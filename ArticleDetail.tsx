@@ -7,6 +7,7 @@ import {
   Shield, Check, ArrowLeft
 } from 'lucide-react';
 import type { Article } from './articles-db';
+import { safeImageUrl } from './safe-image-url';
 import { openWhatsAppShare } from './n-intel-whatsapp';
 import { getLocalArticles, saveLocalArticle, syncLocalArticlesWithServer } from './articles-storage';
 
@@ -454,7 +455,7 @@ export default function ArticleDetail() {
             {/* Banner Image */}
             <div className="relative aspect-[16/9] w-full overflow-hidden bg-gray-100">
               <img
-                src={article.bannerImageUrl}
+                src={safeImageUrl(article.bannerImageUrl)}
                 alt={article.title}
                 className="w-full h-full object-cover"
                 onError={(e) => {

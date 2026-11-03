@@ -218,6 +218,17 @@ const downloadLimiter = rateLimit({
   message: { success: false, error: 'Download limit exceeded.' }
 });
 
+// File-backed routes do extra disk work; keep them protected even when the
+// broader /api limiter is also active.
+const fileReadLimiter = rateLimit({
+  windowMs: 10 * 60 * 1000,
+  max: 300,
+  standardHeaders: true,
+  legacyHeaders: false,
+  validate: false,
+  message: { success: false, error: 'Too many file requests. Please slow down.' }
+});
+
 const publishLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 30,
@@ -681,7 +692,7 @@ app.get('/api/articles/:id', async (req, res) => {
 });
 
 // Public: Serve uploaded banner images directly under /api prefix for Vercel SPA compatibility
-app.get('/api/uploads/:filename', (req, res) => {
+app.get('/api/uploads/:filename', fileReadLimiter, (req, res) => {
   try {
     const safeName = path.basename(req.params.filename);
     const filePath = path.join(UPLOADS_DIR, safeName);
@@ -1390,7 +1401,7 @@ app.post('/api/notes/sync', authenticate as any, async (req: AuthRequest, res: R
 
 // Centralized Error Handling Middleware (Safe error masking in production)
 app.use((err: any, req: Request, res: Response, next: NextFunction) => {
-  console.error(`[SERVER ERROR] ${req.method} ${req.url}:`, err.message || err);
+  console.error('%s %s %s: %s', '[SERVER ERROR]', req.method, req.url, err.message || err);
   if (res.headersSent) {
     return next(err);
   }
@@ -1440,7 +1451,7 @@ async function setupServer() {
     const distPath = path.join(process.cwd(), 'dist');
     if (fs.existsSync(distPath)) {
       app.use(express.static(distPath));
-      app.get('*', (req, res) => {
+      app.get('*', fileReadLimiter, (req, res) => {
         res.sendFile(path.join(distPath, 'index.html'));
       });
     }
