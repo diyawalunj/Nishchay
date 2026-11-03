@@ -272,7 +272,8 @@ const ADMIN_EMAILS = [
   "vedantranjeetjadhav@gmail.com",
   "abhijeetgaikwad1904@gmail.com",
   "muthalrishikesh2006@gmail.com",
-  "adityasahane076@gmail.com"
+  "adityasahane076@gmail.com",
+  "nishchay.defence@gmail.com"
 ];
 
 // Helper: Validate absolute or safe relative HTTP URLs, Data URLs, and upload paths
@@ -344,9 +345,10 @@ const authenticate = async (req: AuthRequest, res: Response, next: NextFunction)
       });
     }
 
+    const hasAdminClaim = decodedToken.admin === true;
     const isEmailAdmin = ADMIN_EMAILS.some(e => e.toLowerCase() === email);
 
-    if (!isEmailAdmin) {
+    if (!hasAdminClaim && !isEmailAdmin) {
       console.warn(`[SECURITY WARN] Forbidden admin access attempt by ${email} from IP: ${clientIp}`);
       return res.status(403).json({
         success: false,

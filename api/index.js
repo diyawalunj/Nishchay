@@ -1,7 +1,7 @@
 // server.ts
 import express from "express";
-import path2 from "path";
-import fs2 from "fs";
+import path3 from "path";
+import fs3 from "fs";
 import os2 from "os";
 import cors from "cors";
 import dotenv from "dotenv";
@@ -551,6 +551,14 @@ async function getOrCreateTab(tabTitle, headerValues) {
     } catch {
       await doc.loadInfo();
       tab = doc.sheetsByTitle[tabTitle];
+    }
+  }
+  try {
+    await tab.loadHeaderRow();
+  } catch {
+    try {
+      await tab.setHeaderRow(headerValues);
+    } catch {
     }
   }
   return tab;
@@ -1222,6 +1230,8 @@ async function syncArticles(incoming) {
 }
 
 // pyq-db.ts
+import fs2 from "fs";
+import path2 from "path";
 var PYQ_TAB = "pyq_sessions";
 var PYQ_HEADERS = ["id", "exam", "session", "year", "title", "json", "updatedAt"];
 async function getAllPyqSessions() {
@@ -1230,6 +1240,24 @@ async function getAllPyqSessions() {
   for (const s of sessions) {
     const key = s.sessionId || s.id;
     dict[key] = { ...s, id: key, sessionId: key };
+  }
+  if (Object.keys(dict).length === 0) {
+    try {
+      const candidatePaths = [
+        path2.join(process.cwd(), "data", "pyq-papers.json"),
+        path2.join(process.cwd(), "data", "pyq_sessions.json")
+      ];
+      for (const p of candidatePaths) {
+        if (fs2.existsSync(p)) {
+          const raw = fs2.readFileSync(p, "utf8");
+          const parsed = JSON.parse(raw);
+          if (parsed && typeof parsed === "object" && Object.keys(parsed).length > 0) {
+            return parsed;
+          }
+        }
+      }
+    } catch {
+    }
   }
   return dict;
 }
@@ -1678,10 +1706,10 @@ var publishLimiter = rateLimit({
   message: { success: false, error: "Publishing rate limit exceeded." }
 });
 var IS_VERCEL2 = Boolean(process.env.VERCEL);
-var UPLOADS_DIR = IS_VERCEL2 ? path2.join(os2.tmpdir(), "nishchay_uploads") : path2.join(process.cwd(), "public", "uploads");
+var UPLOADS_DIR = IS_VERCEL2 ? path3.join(os2.tmpdir(), "nishchay_uploads") : path3.join(process.cwd(), "public", "uploads");
 try {
-  if (!fs2.existsSync(UPLOADS_DIR)) {
-    fs2.mkdirSync(UPLOADS_DIR, { recursive: true });
+  if (!fs3.existsSync(UPLOADS_DIR)) {
+    fs3.mkdirSync(UPLOADS_DIR, { recursive: true });
   }
 } catch (fsErr) {
   console.warn("Could not initialize uploads directory:", fsErr);
@@ -1723,7 +1751,8 @@ var ADMIN_EMAILS = [
   "vedantranjeetjadhav@gmail.com",
   "abhijeetgaikwad1904@gmail.com",
   "muthalrishikesh2006@gmail.com",
-  "adityasahane076@gmail.com"
+  "adityasahane076@gmail.com",
+  "nishchay.defence@gmail.com"
 ];
 function isValidUrlOrPath(url) {
   if (!url || typeof url !== "string") return false;
@@ -1778,8 +1807,9 @@ var authenticate = async (req, res, next) => {
         error: "Access denied: Token contains no verified email address."
       });
     }
+    const hasAdminClaim = decodedToken.admin === true;
     const isEmailAdmin = ADMIN_EMAILS.some((e) => e.toLowerCase() === email);
-    if (!isEmailAdmin) {
+    if (!hasAdminClaim && !isEmailAdmin) {
       console.warn(`[SECURITY WARN] Forbidden admin access attempt by ${email} from IP: ${clientIp}`);
       return res.status(403).json({
         success: false,
@@ -2021,9 +2051,9 @@ app.get("/api/articles/:id", async (req, res) => {
 });
 app.get("/api/uploads/:filename", (req, res) => {
   try {
-    const safeName = path2.basename(req.params.filename);
-    const filePath = path2.join(UPLOADS_DIR, safeName);
-    if (fs2.existsSync(filePath)) {
+    const safeName = path3.basename(req.params.filename);
+    const filePath = path3.join(UPLOADS_DIR, safeName);
+    if (fs3.existsSync(filePath)) {
       res.setHeader("X-Content-Type-Options", "nosniff");
       res.sendFile(filePath);
     } else {
@@ -2087,13 +2117,13 @@ app.post("/api/articles/upload-banner", publishLimiter, authenticate, (req, res)
       });
     }
     try {
-      if (!fs2.existsSync(UPLOADS_DIR)) {
-        fs2.mkdirSync(UPLOADS_DIR, { recursive: true });
+      if (!fs3.existsSync(UPLOADS_DIR)) {
+        fs3.mkdirSync(UPLOADS_DIR, { recursive: true });
       }
       const safeRandomToken = crypto.randomBytes(16).toString("hex");
       const safeName = `banner-${Date.now()}-${safeRandomToken}.${ext}`;
-      const filePath = path2.join(UPLOADS_DIR, safeName);
-      fs2.writeFileSync(filePath, buffer, { flag: "wx" });
+      const filePath = path3.join(UPLOADS_DIR, safeName);
+      fs3.writeFileSync(filePath, buffer, { flag: "wx" });
       const publicUrl = `/api/uploads/${safeName}`;
       res.json({ success: true, url: publicUrl, localUrl: `/uploads/${safeName}` });
     } catch (writeErr) {
@@ -2629,11 +2659,11 @@ async function setupServer() {
     });
     app.use(vite.middlewares);
   } else if (!process.env.VERCEL) {
-    const distPath = path2.join(process.cwd(), "dist");
-    if (fs2.existsSync(distPath)) {
+    const distPath = path3.join(process.cwd(), "dist");
+    if (fs3.existsSync(distPath)) {
       app.use(express.static(distPath));
       app.get("*", (req, res) => {
-        res.sendFile(path2.join(distPath, "index.html"));
+        res.sendFile(path3.join(distPath, "index.html"));
       });
     }
   }

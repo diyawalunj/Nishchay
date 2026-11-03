@@ -16,8 +16,17 @@ export default function NIntelArchive() {
   const [isAdmin, setIsAdmin] = useState(false);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-      setIsAdmin(checkIfAdmin(currentUser));
+    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+      if (currentUser) {
+        try {
+          const token = await currentUser.getIdTokenResult(true);
+          setIsAdmin(token.claims.admin === true);
+        } catch {
+          setIsAdmin(checkIfAdmin(currentUser));
+        }
+      } else {
+        setIsAdmin(false);
+      }
     });
     return () => unsubscribe();
   }, []);

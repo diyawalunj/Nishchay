@@ -29,14 +29,7 @@ service cloud.firestore {
     }
     
     function isAdmin() {
-      return isAuthenticated() && 
-        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
-         ((request.auth.token.email == "diyawalunj@gmail.com" ||
-           request.auth.token.email == "vedantranjeetjadhav@gmail.com" ||
-           request.auth.token.email == "abhijeetgaikwad1904@gmail.com" ||
-           request.auth.token.email == "muthalrishikesh2006@gmail.com" ||
-           request.auth.token.email == "adityasahane076@gmail.com") && 
-          request.auth.token.email_verified == true));
+      return request.auth != null && request.auth.token.admin == true;
     }
     
     function isValidEmail(email) {
@@ -70,11 +63,14 @@ service cloud.firestore {
     // ===============================================================
 
     match /users/{userId} {
-      allow read: if isAuthenticated();
+      allow read: if isOwner(userId) || isAdmin();
       allow create: if isOwner(userId) && isValidUser(request.resource.data) && 
-                      (request.resource.data.role == 'user' || isAdmin());
-      allow update: if isOwner(userId) && isValidUser(request.resource.data) && 
-                      (request.resource.data.role == resource.data.role || isAdmin());
+                      request.resource.data.uid == userId && 
+                      request.resource.data.email == request.auth.token.email && 
+                      (!('role' in request.resource.data) || request.resource.data.role == 'user');
+      allow update: if (isOwner(userId) && isValidUser(request.resource.data) && 
+                       !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'uid', 'email'])) || 
+                      isAdmin();
     }
 
     match /subject_notes/{noteId} {

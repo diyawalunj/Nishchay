@@ -6,6 +6,8 @@
  * Survives container recycling, server restarts, and redeployments.
  */
 
+import fs from 'fs';
+import path from 'path';
 import {
   fetchCollection,
   saveRecord,
@@ -52,6 +54,26 @@ export async function getAllPyqSessions(): Promise<Record<string, PyqSessionData
     const key = s.sessionId || s.id;
     dict[key] = { ...s, id: key, sessionId: key };
   }
+
+  // If cloud sheet returned empty, check local disk seed data
+  if (Object.keys(dict).length === 0) {
+    try {
+      const candidatePaths = [
+        path.join(process.cwd(), 'data', 'pyq-papers.json'),
+        path.join(process.cwd(), 'data', 'pyq_sessions.json'),
+      ];
+      for (const p of candidatePaths) {
+        if (fs.existsSync(p)) {
+          const raw = fs.readFileSync(p, 'utf8');
+          const parsed = JSON.parse(raw);
+          if (parsed && typeof parsed === 'object' && Object.keys(parsed).length > 0) {
+            return parsed;
+          }
+        }
+      }
+    } catch {}
+  }
+
   return dict;
 }
 

@@ -158,7 +158,7 @@ export default function ArticleDetail() {
 
       // 2. Format inline highlights (==yellow== and ""green""), bold (**text**), and underline (__text__ or <u>text</u>)
       const parseInline = (textStr: string) => {
-        const regex = /(==.*?==|""[^"\n]+""|[“”]{2}[^“”\n]+[“”]{2}|\*\*.*?\*\*|__.*?__|<u>.*?<\/u>)/g;
+        const regex = /(==.*?==|""[^"\n]+""|[“”]{2}[^“”\n]+[“”]{2}|\^\^.*?\^\^|\*\*.*?\*\*|__.*?__|<u>.*?<\/u>)/g;
         const parts = textStr.split(regex);
 
         return parts.map((part, pIdx) => {
@@ -180,7 +180,8 @@ export default function ArticleDetail() {
           }
           if (
             (part.startsWith('""') && part.endsWith('""') && part.length >= 4) ||
-            (part.startsWith('““') && part.endsWith('””') && part.length >= 4)
+            (part.startsWith('““') && part.endsWith('””') && part.length >= 4) ||
+            (part.startsWith('^^') && part.endsWith('^^') && part.length >= 4)
           ) {
             const inner = part.slice(2, -2);
             return (

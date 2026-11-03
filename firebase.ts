@@ -92,13 +92,14 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
 
 // ── Admin Check ──
 // Private list — only used for initial role assignment during sign-up.
-// The actual admin check reads from Firestore.
+// The actual authorization enforcement is performed by Firestore Security Rules and Firebase Custom Claims.
 const ADMIN_EMAILS = [
   "diyawalunj@gmail.com",
   "vedantranjeetjadhav@gmail.com",
   "abhijeetgaikwad1904@gmail.com",
   "muthalrishikesh2006@gmail.com",
-  "adityasahane076@gmail.com"
+  "adityasahane076@gmail.com",
+  "nishchay.defence@gmail.com"
 ];
 
 /** Synchronous fallback — checks email list. Use for fast routing decisions only. */
@@ -108,17 +109,17 @@ export const checkIfAdmin = (user: User | null) => {
   return ADMIN_EMAILS.some(e => e.toLowerCase() === email);
 };
 
-/** Async admin check — reads role from Firestore `users/{uid}`. Authoritative source. */
+/**
+ * Async admin check — reads the Firebase Custom Claim `admin === true` from the ID token.
+ * Authoritative client-side source for UI display decisions.
+ */
 export const checkIfAdminAsync = async (user: User | null): Promise<boolean> => {
   if (!user) return false;
-  // Fast path: check email first
-  if (checkIfAdmin(user)) return true;
-  // Authoritative path: check Firestore role
   try {
-    const userDoc = await getDoc(doc(db, 'users', user.uid));
-    return userDoc.exists() && userDoc.data()?.role === 'admin';
+    const token = await user.getIdTokenResult(true);
+    return token.claims.admin === true;
   } catch (e) {
-    console.warn('Could not verify admin role from Firestore, falling back to email check', e);
+    console.warn('Could not verify admin claim from token, checking email fallback', e);
     return checkIfAdmin(user);
   }
 };

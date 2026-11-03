@@ -82,6 +82,13 @@ async function getOrCreateTab(
       tab = doc.sheetsByTitle[tabTitle];
     }
   }
+  try {
+    await tab.loadHeaderRow();
+  } catch {
+    try {
+      await tab.setHeaderRow(headerValues);
+    } catch {}
+  }
   return tab;
 }
 

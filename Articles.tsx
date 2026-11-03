@@ -84,9 +84,18 @@ export default function Articles() {
   }, [isUploadModalOpen, deletingArticle]);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       setUser(currentUser);
-      setIsAdmin(checkIfAdmin(currentUser));
+      if (currentUser) {
+        try {
+          const token = await currentUser.getIdTokenResult(true);
+          setIsAdmin(token.claims.admin === true);
+        } catch {
+          setIsAdmin(checkIfAdmin(currentUser));
+        }
+      } else {
+        setIsAdmin(false);
+      }
     });
     return () => unsubscribe();
   }, []);

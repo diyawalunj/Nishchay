@@ -5,28 +5,28 @@ const FOUNDERS = [
   {
     name: 'Abhijeet Gaikwad',
     image: '/abhi.jpg',
-    qualification: 'NDA Qualified',
+    qualification: 'NDA & AFCAT Qualified',
     degrees: ['B.Tech in AI & Data Science', 'B.A. (Hons.) Political Science'],
     squadron: '1 MAH AIR SQN NCC'
   },
   {
     name: 'Aditya Sahane',
     image: '/aditya.jpg',
-    qualification: 'NDA Qualified',
+    qualification: 'NDA & AFCAT Qualified',
     degrees: ['B.Tech in Computer Science Engineering'],
     squadron: '3 MAH AIR SQN NCC'
   },
   {
     name: 'Rishikesh Muthal',
     image: '/rishi.jpg',
-    qualification: 'NDA Qualified',
+    qualification: 'NDA, CDS & AFCAT Qualified',
     degrees: ['B.Tech in AI & Data Science'],
     squadron: '1 MAH AIR SQN NCC'
   },
   {
     name: 'Vedant Jadhav',
     image: '/vedant.jpg',
-    qualification: 'CDS Qualified',
+    qualification: 'CDS & AFCAT Qualified',
     degrees: ['B.E. Information Technology'],
     squadron: '1 MAH AIR SQN NCC'
   }
@@ -168,7 +168,7 @@ export default function About() {
                   </div>
                 </div>
                 <h3 className="text-2xl font-black mb-2 text-[#1A1A1A] tracking-tight">{founder.name}</h3>
-                <p className="text-[#1B4332] font-black text-[10px] tracking-[0.2em] uppercase mb-6">{founder.qualification}</p>
+                <p className="text-[#1B4332] font-black text-[10px] tracking-[0.2em] uppercase mb-6 leading-relaxed">{founder.qualification}</p>
                 <div className="space-y-2 mb-8">
                   {founder.degrees.map((degree) => (
                     <p key={degree} className="text-gray-400 text-xs font-bold uppercase tracking-widest">{degree}</p>

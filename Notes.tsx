@@ -500,8 +500,17 @@ export default function Notes() {
   const [uploadSuccess, setUploadSuccess] = useState('');
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-      setIsAdmin(checkIfAdmin(currentUser));
+    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+      if (currentUser) {
+        try {
+          const token = await currentUser.getIdTokenResult(true);
+          setIsAdmin(token.claims.admin === true);
+        } catch {
+          setIsAdmin(checkIfAdmin(currentUser));
+        }
+      } else {
+        setIsAdmin(false);
+      }
     });
     return () => unsubscribe();
   }, []);
@@ -512,12 +521,34 @@ export default function Notes() {
       .then((res) => res.json())
       .then((data) => {
         if (data && data.success && data.sessions) {
-          setPyqSessions(data.sessions);
-          try {
-            localStorage.setItem(LOCAL_STORAGE_PYQ_KEY, JSON.stringify(data.sessions));
-          } catch (e) {
-            console.warn('LocalStorage save failed:', e);
-          }
+          setPyqSessions((prev) => {
+            const merged = mergePyqSessionsSafely(prev, data.sessions);
+            try {
+              localStorage.setItem(LOCAL_STORAGE_PYQ_KEY, JSON.stringify(merged));
+            } catch (e) {
+              console.warn('LocalStorage save failed:', e);
+            }
+
+            // If local cache had sessions that server didn't have, auto-sync back to server
+            const localHasMore = Object.keys(prev || {}).some((k) => {
+              const cur = prev[k];
+              const srv = data.sessions[k];
+              if (!srv && cur && cur.subjects && Object.keys(cur.subjects).length > 0) return true;
+              return false;
+            });
+
+            if (localHasMore) {
+              getAuthHeaders().then((headers) => {
+                fetch('/api/pyq/sync', {
+                  method: 'POST',
+                  headers,
+                  body: JSON.stringify({ sessions: merged }),
+                }).catch(() => {});
+              }).catch(() => {});
+            }
+
+            return merged;
+          });
         }
       })
       .catch((err) => {
@@ -530,12 +561,27 @@ export default function Notes() {
       .then((res) => res.json())
       .then((data) => {
         if (data && data.success && Array.isArray(data.notes)) {
-          setAllSubjectNotes(data.notes);
-          try {
-            localStorage.setItem(LOCAL_STORAGE_NOTES_KEY, JSON.stringify(data.notes));
-          } catch (e) {
-            console.warn('LocalStorage save failed for notes:', e);
-          }
+          setAllSubjectNotes((prev) => {
+            const merged = mergeNotesSafely(prev, data.notes);
+            try {
+              localStorage.setItem(LOCAL_STORAGE_NOTES_KEY, JSON.stringify(merged));
+            } catch (e) {
+              console.warn('LocalStorage save failed for notes:', e);
+            }
+
+            // If local cache had notes that server didn't have, auto-sync back to server
+            if (prev && prev.length > 0 && data.notes.length === 0) {
+              getAuthHeaders().then((headers) => {
+                fetch('/api/notes/sync', {
+                  method: 'POST',
+                  headers,
+                  body: JSON.stringify({ notes: merged }),
+                }).catch(() => {});
+              }).catch(() => {});
+            }
+
+            return merged;
+          });
         }
       })
       .catch((err) => {
