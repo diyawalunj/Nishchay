@@ -61,41 +61,17 @@ export default function Header() {
       animate={{ y: 0 }}
       className="fixed top-0 left-0 right-0 z-50 pointer-events-none flex flex-col items-center"
     >
-      <motion.div 
-        layout
-        initial={false}
-        animate={{
-          marginTop: shouldBeSolid ? '1rem' : '0.5rem',
-          paddingTop: shouldBeSolid ? '0.5rem' : '1.25rem',
-          paddingBottom: shouldBeSolid ? '0.5rem' : '1.25rem',
-          backgroundColor: shouldBeSolid 
-            ? 'rgba(255, 255, 255, 0.95)' 
-            : 'rgba(255, 255, 255, 0)',
-          backdropFilter: shouldBeSolid ? 'blur(16px)' : 'blur(0px)',
-          boxShadow: shouldBeSolid 
-            ? '0 20px 40px -12px rgba(0, 0, 0, 0.15)' 
-            : '0 0 0 rgba(0, 0, 0, 0)',
-          borderWidth: shouldBeSolid ? '1px' : '0px',
-          borderColor: shouldBeSolid ? 'rgba(255, 255, 255, 0.2)' : 'rgba(255, 255, 255, 0)',
-          width: 'calc(100% - 2rem)',
-        }}
-        transition={{ 
-          type: 'spring', 
-          stiffness: 300, 
-          damping: 30,
-          backgroundColor: { duration: 0.3 },
-          backdropFilter: { duration: 0.3 }
-        }}
-        style={{ borderRadius: '9999px' }}
-        className="pointer-events-auto lg:max-w-6xl"
+      <div
+        className={`pointer-events-auto w-[calc(100%-2rem)] rounded-full border transition-[margin,padding,background-color,backdrop-filter,box-shadow] duration-300 ease-out lg:max-w-6xl ${
+          shouldBeSolid
+            ? 'mt-4 border-white/20 bg-white/95 py-2 shadow-[0_20px_40px_-12px_rgba(0,0,0,0.15)] backdrop-blur-xl'
+            : 'mt-2 border-transparent bg-transparent py-5 shadow-none backdrop-blur-0'
+        }`}
       >
-        <motion.div 
-          layout
-          animate={{
-            paddingLeft: shouldBeSolid ? '2rem' : '1rem',
-            paddingRight: shouldBeSolid ? '2rem' : '1rem',
-          }}
-          className="max-w-7xl mx-auto flex items-center justify-between"
+        <div
+          className={`mx-auto flex max-w-7xl items-center justify-between transition-[padding] duration-300 ease-out ${
+            shouldBeSolid ? 'px-8' : 'px-4'
+          }`}
         >
           <Link to="/" className="flex items-center gap-3 cursor-pointer">
             <motion.div 
@@ -232,8 +208,8 @@ export default function Header() {
               {isMobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
             </button>
           </div>
-        </motion.div>
-      </motion.div>
+        </div>
+      </div>
 
       {/* Mobile Menu */}
       <AnimatePresence>

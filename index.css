@@ -12,14 +12,27 @@
     @apply bg-[#F8F9FA] text-[#1A1A1A] font-sans antialiased;
   }
 
-  /* Smooth scrolling */
+  /* Route changes reset instantly; individual controls opt in to smooth scroll. */
   html {
-    scroll-behavior: smooth;
+    scroll-behavior: auto;
   }
 
   /* Better selection color */
   ::selection {
     @apply bg-[#1B4332]/20 text-[#1B4332];
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
   }
 }
 

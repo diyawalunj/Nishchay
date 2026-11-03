@@ -1,6 +1,6 @@
-import { useState, useEffect, Suspense, lazy } from 'react';
-import { BrowserRouter as Router, Routes, Route, useLocation } from 'react-router-dom';
-import { motion, AnimatePresence } from 'motion/react';
+import { useState, useEffect, useLayoutEffect, useRef, Suspense, lazy } from 'react';
+import { BrowserRouter as Router, Routes, Route, useLocation, useNavigationType } from 'react-router-dom';
+import { motion, AnimatePresence, MotionConfig } from 'motion/react';
 import { ChevronUp } from 'lucide-react';
 import Header from './Header';
 import Footer from './Footer';
@@ -23,40 +23,35 @@ const ArticleDetail = lazy(() => import('./ArticleDetail'));
 // Branded loading skeleton shown while a route chunk is downloading
 function PageLoader() {
   return (
-    <div className="min-h-[60vh] flex flex-col items-center justify-center gap-6">
-      <motion.div
-        initial={{ opacity: 0, scale: 0.8 }}
-        animate={{ opacity: 1, scale: 1 }}
-        transition={{ duration: 0.3 }}
-        className="w-16 h-16 rounded-2xl bg-[#1B4332]/5 flex items-center justify-center"
-      >
-        <motion.div
-          animate={{ rotate: [0, 10, -10, 0] }}
-          transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
-        >
-          <ChevronUp size={28} className="text-[#1B4332]/30 rotate-0" />
-        </motion.div>
-      </motion.div>
-      <div className="w-48 h-1 rounded-full bg-gray-100 overflow-hidden">
-        <motion.div
-          className="h-full bg-[#1B4332]/20 rounded-full"
-          initial={{ x: "-100%" }}
-          animate={{ x: "200%" }}
-          transition={{ duration: 1.2, repeat: Infinity, ease: "easeInOut" }}
-        />
+    <div role="status" aria-live="polite" className="min-h-[60vh] flex items-center justify-center">
+      <div className="flex items-center gap-3 rounded-full bg-white/90 px-5 py-3 text-sm font-semibold text-[#1B4332] shadow-sm">
+        <span className="h-4 w-4 animate-spin rounded-full border-2 border-[#1B4332]/20 border-t-[#1B4332]" />
+        Loading page…
       </div>
     </div>
   );
 }
 
-// ScrollToTop component to reset scroll position on route change
+// Reset scroll on forward navigation and restore it on browser back/forward.
 function ScrollToTop() {
-  const { pathname } = useLocation();
-  
-  useEffect(() => {
-    window.scrollTo(0, 0);
-  }, [pathname]);
-  
+  const location = useLocation();
+  const navigationType = useNavigationType();
+  const previousLocation = useRef<{ key: string } | null>(null);
+  const positions = useRef(new Map<string, number>());
+
+  useLayoutEffect(() => {
+    window.history.scrollRestoration = 'manual';
+    if (previousLocation.current) {
+      positions.current.set(previousLocation.current.key, window.scrollY);
+    }
+
+    const target = navigationType === 'POP'
+      ? positions.current.get(location.key) ?? 0
+      : 0;
+    window.scrollTo({ top: target, behavior: 'auto' });
+    previousLocation.current = { key: location.key };
+  }, [location.key, location.pathname, navigationType]);
+
   return null;
 }
 
@@ -65,33 +60,30 @@ function AnimatedRoutes() {
   const location = useLocation();
   
   return (
-    <AnimatePresence mode="wait">
-      <motion.div
-        key={location.pathname}
-        initial={{ opacity: 0, y: 16 }}
-        animate={{ opacity: 1, y: 0 }}
-        exit={{ opacity: 0, y: -8 }}
-        transition={{ duration: 0.3, ease: "easeOut" }}
-        className="print:opacity-100 print:transform-none print:overflow-visible print:block print:h-auto"
-      >
-        <Routes location={location}>
-          <Route path="/" element={<Home />} />
-          <Route path="/about" element={<About />} />
-          <Route path="/notes" element={<Notes />} />
-          <Route path="/gallery" element={<Gallery />} />
-          <Route path="/contact" element={<Contact />} />
-          <Route path="/n-intel" element={<NIntel />} />
-          <Route path="/n-intel/edition/:date" element={<NIntel />} />
-          <Route path="/n-intel/story/:id" element={<NIntelStoryDetail />} />
-          <Route path="/n-intel/archive" element={<NIntelArchive />} />
-          <Route path="/n-intel/admin" element={<NIntelAdmin />} />
-          <Route path="/articles" element={<Articles />} />
-          <Route path="/articles/:id" element={<ArticleDetail />} />
-          {/* Fallback for other routes */}
-          <Route path="*" element={<NotFound />} />
-        </Routes>
-      </motion.div>
-    </AnimatePresence>
+    <motion.div
+      key={location.pathname}
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ duration: 0.16, ease: "easeOut" }}
+      className="print:opacity-100 print:transform-none print:overflow-visible print:block print:h-auto"
+    >
+      <Routes location={location}>
+        <Route path="/" element={<Home />} />
+        <Route path="/about" element={<About />} />
+        <Route path="/notes" element={<Notes />} />
+        <Route path="/gallery" element={<Gallery />} />
+        <Route path="/contact" element={<Contact />} />
+        <Route path="/n-intel" element={<NIntel />} />
+        <Route path="/n-intel/edition/:date" element={<NIntel />} />
+        <Route path="/n-intel/story/:id" element={<NIntelStoryDetail />} />
+        <Route path="/n-intel/archive" element={<NIntelArchive />} />
+        <Route path="/n-intel/admin" element={<NIntelAdmin />} />
+        <Route path="/articles" element={<Articles />} />
+        <Route path="/articles/:id" element={<ArticleDetail />} />
+        {/* Fallback for other routes */}
+        <Route path="*" element={<NotFound />} />
+      </Routes>
+    </motion.div>
   );
 }
 
@@ -173,8 +165,10 @@ function AppContent() {
 export default function App() {
   return (
     <Router>
-      <ScrollToTop />
-      <AppContent />
+      <MotionConfig reducedMotion="user">
+        <ScrollToTop />
+        <AppContent />
+      </MotionConfig>
     </Router>
   );
 }
