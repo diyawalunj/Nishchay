@@ -56,7 +56,6 @@ export default function Articles() {
   const [isCustomCategory, setIsCustomCategory] = useState(false);
   const [authorName, setAuthorName] = useState('');
   const [authorRole, setAuthorRole] = useState('');
-  const [authorAvatarUrl, setAuthorAvatarUrl] = useState('');
   const [publishDate, setPublishDate] = useState(() => getLocalTodayDate());
   const [pullQuote, setPullQuote] = useState('');
   const [content, setContent] = useState('');
@@ -125,7 +124,6 @@ export default function Articles() {
     setIsCustomCategory(false);
     setAuthorName('');
     setAuthorRole('');
-    setAuthorAvatarUrl('');
     setPublishDate(getLocalTodayDate());
     setPullQuote('');
     setContent('');
@@ -160,7 +158,6 @@ export default function Articles() {
 
     setAuthorName(art.authorName);
     setAuthorRole(art.authorRole || '');
-    setAuthorAvatarUrl(art.authorAvatarUrl || '');
     setPublishDate(art.publishDate || getLocalTodayDate());
     setPullQuote(art.pullQuote || '');
     setContent(art.content);
@@ -271,7 +268,6 @@ export default function Articles() {
         category: finalCategory,
         authorName: authorName.trim(),
         authorRole: authorRole.trim(),
-        authorAvatarUrl: authorAvatarUrl.trim() || undefined,
         publishDate: (publishDate && publishDate.trim()) ? publishDate.trim() : getLocalTodayDate(),
         pullQuote: pullQuote.trim() || undefined,
         content: content.trim(),
@@ -577,17 +573,9 @@ export default function Articles() {
 
                     {/* Author Attribution */}
                     <div className="flex items-center gap-3 pt-3 border-t border-gray-100">
-                      {art.authorAvatarUrl ? (
-                        <img
-                          src={art.authorAvatarUrl}
-                          alt={art.authorName}
-                          className="w-9 h-9 rounded-full object-cover border border-gray-200"
-                        />
-                      ) : (
-                        <div className="w-9 h-9 rounded-full bg-[#1B4332]/10 text-[#1B4332] flex items-center justify-center font-black text-xs">
-                          {art.authorName.charAt(0)}
-                        </div>
-                      )}
+                      <div className="w-9 h-9 rounded-full bg-[#1B4332]/10 text-[#1B4332] flex items-center justify-center font-black text-xs">
+                        {art.authorName.charAt(0)}
+                      </div>
                       <div className="flex-1 min-w-0">
                         <div className="text-xs font-black text-[#1A1A1A] truncate">{art.authorName}</div>
                         <div className="text-[10px] font-medium text-gray-400 truncate">{art.authorRole}</div>
