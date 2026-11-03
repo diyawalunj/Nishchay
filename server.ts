@@ -247,29 +247,19 @@ try {
       ? process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n').replace(/^"(.*)"$/, '$1').trim()
       : undefined;
 
-    // Try FIREBASE_* service account first, then fall back to GOOGLE_* credentials
-    const googleEmail = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
-    const googleKey = process.env.GOOGLE_PRIVATE_KEY
-      ? process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, '\n').replace(/^"(.*)"$/, '$1').trim()
-      : undefined;
-
-    const effectiveEmail = serviceEmail || googleEmail;
-    const effectiveKey = serviceKey || googleKey;
-
-    if (effectiveEmail && effectiveKey && effectiveKey.includes('BEGIN PRIVATE KEY')) {
+    if (serviceEmail && serviceKey && serviceKey.includes('BEGIN PRIVATE KEY')) {
       admin.initializeApp({
         credential: admin.credential.cert({
           projectId,
-          clientEmail: effectiveEmail,
-          privateKey: effectiveKey
+          clientEmail: serviceEmail,
+          privateKey: serviceKey
         }),
-        projectId,
-        databaseURL: `https://${projectId}-default-rtdb.firebaseio.com`
+        projectId
       });
       console.log('✅ Firebase Admin initialized with Service Account for:', projectId);
     } else {
       admin.initializeApp({ projectId });
-      console.log('✅ Firebase Admin initialized with Project ID only:', projectId);
+      console.log('✅ Firebase Admin initialized with Project ID (public cert token verification):', projectId);
     }
   }
 } catch (error: any) {

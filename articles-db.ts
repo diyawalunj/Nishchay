@@ -1,13 +1,16 @@
 /**
- * articles-db.ts — Firestore-backed persistent storage for Articles.
+ * articles-db.ts — Persistent Cloud Database Storage for Articles.
  *
- * MIGRATION: Previously used Vercel /tmp JSON files (ephemeral, caused 24-hour data loss).
- * Now uses Firebase Admin Firestore (permanent, cross-device, single source of truth).
- *
- * Collection: articles
+ * Backed by authenticated Google Cloud Storage (via cloud-db.ts).
+ * Permanent, cross-device, single source of truth.
+ * Survives container recycling, server restarts, and redeployments.
  */
 
-import admin from 'firebase-admin';
+import {
+  fetchCollection,
+  saveRecord,
+  deleteRecord
+} from './cloud-db';
 
 export interface Article {
   id: string;
@@ -31,13 +34,8 @@ export interface Article {
   authorEmail?: string;
 }
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-function getDb(): FirebaseFirestore.Firestore {
-  return admin.firestore();
-}
+const ARTICLES_TAB = 'articles';
+const ARTICLES_HEADERS = ['id', 'slug', 'title', 'category', 'publishDate', 'authorName', 'json', 'updatedAt'];
 
 function slugify(text: string): string {
   return text
@@ -53,41 +51,30 @@ function calculateReadingTime(text: string): string {
   return `${minutes} min read`;
 }
 
-// Short-lived in-memory cache (30 seconds) to reduce cold-read Firestore costs
-const CACHE_TTL_MS = 30_000;
-let articlesCache: { data: Article[]; expiresAt: number } | null = null;
-
-function invalidateArticlesCache() { articlesCache = null; }
-
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
 
 export async function getAllArticles(): Promise<Article[]> {
-  if (articlesCache && Date.now() < articlesCache.expiresAt) {
-    return articlesCache.data;
-  }
-  const db = getDb();
-  const snap = await db.collection('articles').orderBy('publishDate', 'desc').get();
-  const articles = snap.docs.map(d => d.data() as Article);
-  articlesCache = { data: articles, expiresAt: Date.now() + CACHE_TTL_MS };
-  return articles;
+  const articles = await fetchCollection<Article>(ARTICLES_TAB, ARTICLES_HEADERS);
+  return [...articles].sort(
+    (a, b) => new Date(b.publishDate || b.createdAt).getTime() - new Date(a.publishDate || a.createdAt).getTime()
+  );
 }
 
 export async function getArticleById(idOrSlug: string): Promise<Article | null> {
   if (!idOrSlug) return null;
-  const db = getDb();
-  const query = String(idOrSlug).trim();
-
-  // Try direct doc lookup by ID first (fast)
-  const byId = await db.collection('articles').doc(query).get();
-  if (byId.exists) return byId.data() as Article;
-
-  // Fall back to slug query
-  const slugSnap = await db.collection('articles').where('slug', '==', query).limit(1).get();
-  if (!slugSnap.empty) return slugSnap.docs[0].data() as Article;
-
-  return null;
+  const articles = await getAllArticles();
+  const query = String(idOrSlug).trim().toLowerCase();
+  return (
+    articles.find(
+      a =>
+        a.id === idOrSlug ||
+        a.slug === idOrSlug ||
+        a.id.toLowerCase() === query ||
+        (a.slug && a.slug.toLowerCase() === query)
+    ) || null
+  );
 }
 
 export async function createArticle(data: {
@@ -104,7 +91,6 @@ export async function createArticle(data: {
   sourceReference?: string;
   authorEmail?: string;
 }): Promise<Article> {
-  const db = getDb();
   const slug = slugify(data.title) + '-' + Date.now().toString().slice(-4);
   const id = `article-${slug}`;
   const now = new Date();
@@ -137,20 +123,21 @@ export async function createArticle(data: {
     authorEmail: data.authorEmail
   };
 
-  await db.collection('articles').doc(id).set(newArticle);
-  invalidateArticlesCache();
+  await saveRecord(ARTICLES_TAB, ARTICLES_HEADERS, newArticle, a => ({
+    slug: a.slug,
+    title: a.title,
+    category: a.category,
+    publishDate: a.publishDate,
+    authorName: a.authorName
+  }));
+
   return newArticle;
 }
 
 export async function updateArticle(id: string, updates: Partial<Article>): Promise<Article | null> {
-  const db = getDb();
-  const docRef = db.collection('articles').doc(id);
-  const snap = await docRef.get();
-  if (!snap.exists) return null;
+  const current = await getArticleById(id);
+  if (!current) return null;
 
-  const current = snap.data() as Article;
-
-  // Security: Explicit field whitelisting — protected fields cannot be overwritten
   const updated: Article = {
     ...current,
     title: typeof updates.title === 'string' ? updates.title.trim() : current.title,
@@ -171,79 +158,81 @@ export async function updateArticle(id: string, updates: Partial<Article>): Prom
     updated.readingTime = calculateReadingTime(updates.content);
   }
 
-  await docRef.set(updated, { merge: true });
-  invalidateArticlesCache();
+  await saveRecord(ARTICLES_TAB, ARTICLES_HEADERS, updated, a => ({
+    slug: a.slug,
+    title: a.title,
+    category: a.category,
+    publishDate: a.publishDate,
+    authorName: a.authorName
+  }));
+
   return updated;
 }
 
 export async function deleteArticle(id: string): Promise<boolean> {
-  const db = getDb();
-  const docRef = db.collection('articles').doc(id);
-  const snap = await docRef.get();
-  if (!snap.exists) return false;
-
-  await docRef.delete();
-  invalidateArticlesCache();
-  return true;
+  const current = await getArticleById(id);
+  if (!current) return false;
+  return deleteRecord(ARTICLES_TAB, ARTICLES_HEADERS, current.id);
 }
 
 export async function incrementDownloadCount(id: string): Promise<void> {
-  const db = getDb();
-  // Try both id and slug
-  const byId = await db.collection('articles').doc(id).get();
-  if (byId.exists) {
-    await byId.ref.update({
-      pdfDownloadCount: admin.firestore.FieldValue.increment(1)
-    });
-    invalidateArticlesCache();
-    return;
-  }
-  const slugSnap = await db.collection('articles').where('slug', '==', id).limit(1).get();
-  if (!slugSnap.empty) {
-    await slugSnap.docs[0].ref.update({
-      pdfDownloadCount: admin.firestore.FieldValue.increment(1)
-    });
-    invalidateArticlesCache();
+  const art = await getArticleById(id);
+  if (art) {
+    art.pdfDownloadCount = (art.pdfDownloadCount || 0) + 1;
+    await saveRecord(ARTICLES_TAB, ARTICLES_HEADERS, art, a => ({
+      slug: a.slug,
+      title: a.title,
+      category: a.category,
+      publishDate: a.publishDate,
+      authorName: a.authorName
+    }));
   }
 }
 
-/** Sync: merge client-side articles into Firestore only if they don't exist yet. */
 export async function syncArticles(incoming: Article[]): Promise<{ added: number; updated: number; total: number }> {
   if (!Array.isArray(incoming) || incoming.length === 0) {
     const all = await getAllArticles();
     return { added: 0, updated: 0, total: all.length };
   }
 
-  const db = getDb();
+  const existing = await getAllArticles();
+  const existingMap = new Map<string, Article>();
+  for (const a of existing) {
+    existingMap.set(a.id, a);
+    if (a.slug) existingMap.set(a.slug, a);
+  }
+
   let added = 0;
   let updated = 0;
 
   for (const item of incoming) {
     if (!item || !item.id || !item.title) continue;
-    const ref = db.collection('articles').doc(item.id);
-    const snap = await ref.get();
-
-    if (!snap.exists) {
-      await ref.set(item);
+    const match = existingMap.get(item.id) || (item.slug ? existingMap.get(item.slug) : undefined);
+    if (!match) {
+      await saveRecord(ARTICLES_TAB, ARTICLES_HEADERS, item, a => ({
+        slug: a.slug,
+        title: a.title,
+        category: a.category,
+        publishDate: a.publishDate,
+        authorName: a.authorName
+      }));
       added++;
     } else {
-      // Only update if incoming is newer
-      const curr = snap.data() as Article;
       const incomingTime = new Date(item.updatedAt || item.createdAt || 0).getTime();
-      const currTime = new Date(curr.updatedAt || curr.createdAt || 0).getTime();
+      const currTime = new Date(match.updatedAt || match.createdAt || 0).getTime();
       if (incomingTime > currTime) {
-        await ref.set({
-          ...curr,
-          ...item,
-          viewsCount: Math.max(curr.viewsCount || 0, item.viewsCount || 0),
-          pdfDownloadCount: Math.max(curr.pdfDownloadCount || 0, item.pdfDownloadCount || 0),
-        }, { merge: true });
+        await saveRecord(ARTICLES_TAB, ARTICLES_HEADERS, { ...match, ...item }, a => ({
+          slug: a.slug,
+          title: a.title,
+          category: a.category,
+          publishDate: a.publishDate,
+          authorName: a.authorName
+        }));
         updated++;
       }
     }
   }
 
-  invalidateArticlesCache();
   const all = await getAllArticles();
   return { added, updated, total: all.length };
 }

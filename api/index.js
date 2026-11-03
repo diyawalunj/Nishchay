@@ -1,18 +1,15 @@
 // server.ts
 import express from "express";
-import path from "path";
-import fs from "fs";
-import os from "os";
+import path2 from "path";
+import fs2 from "fs";
+import os2 from "os";
 import cors from "cors";
 import dotenv from "dotenv";
 import helmet from "helmet";
 import { rateLimit } from "express-rate-limit";
 import crypto from "crypto";
-import { GoogleSpreadsheet } from "google-spreadsheet";
-import { JWT } from "google-auth-library";
-import admin5 from "firebase-admin";
-
-// n-intel-db.ts
+import { GoogleSpreadsheet as GoogleSpreadsheet2 } from "google-spreadsheet";
+import { JWT as JWT2 } from "google-auth-library";
 import admin from "firebase-admin";
 
 // n-intel-whatsapp.ts
@@ -497,44 +494,223 @@ function parseDailyNewsPost(rawText, pubDate) {
   };
 }
 
-// n-intel-db.ts
-function getDb() {
-  return admin.firestore();
+// cloud-db.ts
+import { GoogleSpreadsheet } from "google-spreadsheet";
+import { JWT } from "google-auth-library";
+import fs from "fs";
+import path from "path";
+import os from "os";
+var IS_VERCEL = Boolean(process.env.VERCEL);
+var LOCAL_CACHE_DIR = IS_VERCEL ? path.join(os.tmpdir(), "nishchay_cloud_cache") : path.join(process.cwd(), "data");
+function ensureCacheDir() {
+  try {
+    if (!fs.existsSync(LOCAL_CACHE_DIR)) {
+      fs.mkdirSync(LOCAL_CACHE_DIR, { recursive: true });
+    }
+  } catch {
+  }
 }
+function getAuth() {
+  const email = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
+  let key = process.env.GOOGLE_PRIVATE_KEY;
+  if (!email || !key) {
+    throw new Error("Google Cloud Service Account credentials are not configured.");
+  }
+  key = key.replace(/\\n/g, "\n").replace(/^"(.*)"$/, "$1").trim();
+  if (!key.includes("BEGIN PRIVATE KEY")) {
+    throw new Error("GOOGLE_PRIVATE_KEY is malformed.");
+  }
+  return new JWT({
+    email,
+    key,
+    scopes: ["https://www.googleapis.com/auth/spreadsheets"]
+  });
+}
+var docInstance = null;
+var docLoadedAt = 0;
+var DOC_TTL_MS = 6e4;
+async function getDoc() {
+  const now = Date.now();
+  if (docInstance && now - docLoadedAt < DOC_TTL_MS) {
+    return docInstance;
+  }
+  const sheetId = process.env.GOOGLE_SHEET_ID_CONTACT || "1gGWQxXAuKCpt99m6efSBwaDUqLFJn_7f-WnESPOnmQY";
+  const auth = getAuth();
+  const doc = new GoogleSpreadsheet(sheetId, auth);
+  await doc.loadInfo();
+  docInstance = doc;
+  docLoadedAt = now;
+  return doc;
+}
+async function getOrCreateTab(tabTitle, headerValues) {
+  const doc = await getDoc();
+  let tab = doc.sheetsByTitle[tabTitle];
+  if (!tab) {
+    try {
+      tab = await doc.addSheet({ title: tabTitle, headerValues });
+    } catch {
+      await doc.loadInfo();
+      tab = doc.sheetsByTitle[tabTitle];
+    }
+  }
+  return tab;
+}
+var memoryCaches = {};
 var CACHE_TTL_MS = 3e4;
-var storiesCache = null;
-var batchesCache = null;
-var auditCache = null;
-function isCacheValid(entry) {
-  return entry !== null && Date.now() < entry.expiresAt;
+function readDiskBackup(collectionName) {
+  ensureCacheDir();
+  const filePath = path.join(LOCAL_CACHE_DIR, `${collectionName}.json`);
+  if (!fs.existsSync(filePath)) return null;
+  try {
+    const raw = fs.readFileSync(filePath, "utf8");
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
 }
-function invalidateStoriesCache() {
-  storiesCache = null;
+function writeDiskBackup(collectionName, items) {
+  ensureCacheDir();
+  const filePath = path.join(LOCAL_CACHE_DIR, `${collectionName}.json`);
+  const tmpPath = `${filePath}.${Date.now()}.tmp`;
+  try {
+    fs.writeFileSync(tmpPath, JSON.stringify(items), "utf8");
+    fs.renameSync(tmpPath, filePath);
+  } catch (err) {
+    try {
+      if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath);
+    } catch {
+    }
+  }
 }
-function invalidateBatchesCache() {
-  batchesCache = null;
+async function fetchCollection(tabName, headers) {
+  const now = Date.now();
+  const cached = memoryCaches[tabName];
+  if (cached && now < cached.expiresAt) {
+    return cached.items;
+  }
+  try {
+    const tab = await getOrCreateTab(tabName, headers);
+    const rows = await tab.getRows();
+    const items = [];
+    for (const r of rows) {
+      const rawJson = r.get("json");
+      if (rawJson) {
+        try {
+          items.push(JSON.parse(rawJson));
+        } catch {
+        }
+      }
+    }
+    memoryCaches[tabName] = { items, expiresAt: now + CACHE_TTL_MS };
+    writeDiskBackup(tabName, items);
+    return items;
+  } catch (err) {
+    console.warn(`[CloudDB] Could not load ${tabName} from Cloud Sheet, falling back to disk backup:`, err);
+    const backup = readDiskBackup(tabName);
+    if (backup) {
+      memoryCaches[tabName] = { items: backup, expiresAt: now + 5e3 };
+      return backup;
+    }
+    return [];
+  }
 }
-function invalidateAuditCache() {
-  auditCache = null;
+async function saveRecord(tabName, headers, record, rowFieldExtractors) {
+  const tab = await getOrCreateTab(tabName, headers);
+  const rows = await tab.getRows();
+  const existing = rows.find((r) => r.get("id") === record.id);
+  const extraFields = rowFieldExtractors ? rowFieldExtractors(record) : {};
+  const rowData = {
+    ...extraFields,
+    id: record.id,
+    json: JSON.stringify(record),
+    updatedAt: (/* @__PURE__ */ new Date()).toISOString()
+  };
+  if (existing) {
+    for (const [k, v] of Object.entries(rowData)) {
+      existing.set(k, String(v ?? ""));
+    }
+    await existing.save();
+  } else {
+    await tab.addRow(rowData);
+  }
+  delete memoryCaches[tabName];
 }
-async function loadStoriesFromFirestore() {
-  const db = getDb();
-  const snap = await db.collection("nIntelStories").get();
-  return snap.docs.map((d) => d.data());
+async function saveBatchRecords(tabName, headers, records, rowFieldExtractors) {
+  if (records.length === 0) return;
+  const tab = await getOrCreateTab(tabName, headers);
+  const rows = await tab.getRows();
+  const rowMap = /* @__PURE__ */ new Map();
+  for (const r of rows) {
+    const id = r.get("id");
+    if (id) rowMap.set(id, r);
+  }
+  const toAdd = [];
+  for (const rec of records) {
+    const extraFields = rowFieldExtractors ? rowFieldExtractors(rec) : {};
+    const rowData = {
+      ...extraFields,
+      id: rec.id,
+      json: JSON.stringify(rec),
+      updatedAt: (/* @__PURE__ */ new Date()).toISOString()
+    };
+    const existing = rowMap.get(rec.id);
+    if (existing) {
+      for (const [k, v] of Object.entries(rowData)) {
+        existing.set(k, String(v ?? ""));
+      }
+      await existing.save();
+    } else {
+      toAdd.push(rowData);
+    }
+  }
+  if (toAdd.length > 0) {
+    await tab.addRows(toAdd);
+  }
+  delete memoryCaches[tabName];
 }
+async function deleteRecord(tabName, headers, id) {
+  const tab = await getOrCreateTab(tabName, headers);
+  const rows = await tab.getRows();
+  const target = rows.find((r) => r.get("id") === id);
+  if (!target) return false;
+  await target.delete();
+  delete memoryCaches[tabName];
+  return true;
+}
+async function deleteRecordsMatching(tabName, headers, predicate) {
+  const tab = await getOrCreateTab(tabName, headers);
+  const rows = await tab.getRows();
+  let deletedCount = 0;
+  for (const r of rows) {
+    if (predicate(r)) {
+      await r.delete();
+      deletedCount++;
+    }
+  }
+  if (deletedCount > 0) {
+    delete memoryCaches[tabName];
+  }
+  return deletedCount;
+}
+
+// n-intel-db.ts
+var STORIES_TAB = "nintel_stories";
+var STORIES_HEADERS = ["id", "date", "category", "isDeleted", "headline", "json", "updatedAt"];
+var BATCHES_TAB = "nintel_batches";
+var BATCHES_HEADERS = ["id", "date", "rawContentHash", "publishedAt", "json", "updatedAt"];
+var AUDIT_TAB = "nintel_audit";
+var AUDIT_HEADERS = ["id", "action", "storyId", "batchId", "adminEmail", "timestamp", "details", "json"];
 async function loadStories() {
-  if (isCacheValid(storiesCache)) return storiesCache.data;
-  const stories = await loadStoriesFromFirestore();
-  storiesCache = { data: stories, expiresAt: Date.now() + CACHE_TTL_MS };
-  return stories;
+  return fetchCollection(STORIES_TAB, STORIES_HEADERS);
 }
-async function saveBatch(batch) {
-  const db = getDb();
-  await db.collection("nIntelBatches").doc(batch.id).set(batch, { merge: true });
-  invalidateBatchesCache();
+async function loadBatches() {
+  return fetchCollection(BATCHES_TAB, BATCHES_HEADERS);
+}
+async function loadAudit() {
+  return fetchCollection(AUDIT_TAB, AUDIT_HEADERS);
 }
 async function addAuditLog(action, adminEmail, details, storyId, batchId) {
-  const db = getDb();
   const entry = {
     id: `audit-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
     action,
@@ -544,8 +720,14 @@ async function addAuditLog(action, adminEmail, details, storyId, batchId) {
     timestamp: (/* @__PURE__ */ new Date()).toISOString(),
     details
   };
-  await db.collection("nIntelAudit").doc(entry.id).set(entry);
-  invalidateAuditCache();
+  await saveRecord(AUDIT_TAB, AUDIT_HEADERS, entry, (e) => ({
+    action: e.action,
+    storyId: e.storyId || "",
+    batchId: e.batchId || "",
+    adminEmail: e.adminEmail,
+    timestamp: e.timestamp,
+    details: e.details
+  }));
 }
 async function getAllStories(options = {}) {
   let stories = await loadStories();
@@ -556,20 +738,20 @@ async function getAllStories(options = {}) {
     stories = stories.filter((s) => s.date === options.date);
   }
   if (options.month) {
-    stories = stories.filter((s) => s.date.startsWith(options.month));
+    stories = stories.filter((s) => s.date && s.date.startsWith(options.month));
   }
   if (options.category && options.category.toLowerCase() !== "all") {
     const catLower = options.category.toLowerCase();
-    stories = stories.filter((s) => s.category.toLowerCase() === catLower || s.categoryKey === catLower);
+    stories = stories.filter((s) => s.category && s.category.toLowerCase() === catLower || s.categoryKey === catLower);
   }
   if (options.search && options.search.trim()) {
     const q = options.search.trim().toLowerCase();
     stories = stories.filter(
-      (s) => s.headline.toLowerCase().includes(q) || s.content.toLowerCase().includes(q) || s.category.toLowerCase().includes(q) || s.tags && s.tags.some((t) => t.toLowerCase().includes(q)) || s.sourceName && s.sourceName.toLowerCase().includes(q)
+      (s) => s.headline && s.headline.toLowerCase().includes(q) || s.content && s.content.toLowerCase().includes(q) || s.category && s.category.toLowerCase().includes(q) || s.tags && s.tags.some((t) => t.toLowerCase().includes(q)) || s.sourceName && s.sourceName.toLowerCase().includes(q)
     );
   }
   stories = [...stories].sort((a, b) => {
-    if (a.date !== b.date) return b.date.localeCompare(a.date);
+    if (a.date !== b.date) return (b.date || "").localeCompare(a.date || "");
     const timeA = a.createdAt || "";
     const timeB = b.createdAt || "";
     if (timeA && timeB && timeA !== timeB) return timeB.localeCompare(timeA);
@@ -581,30 +763,25 @@ async function getAllStories(options = {}) {
   return stories;
 }
 async function getStoryById(id) {
-  const db = getDb();
-  const doc = await db.collection("nIntelStories").doc(id).get();
-  return doc.exists ? doc.data() : null;
+  const stories = await loadStories();
+  return stories.find((s) => s.id === id) || null;
 }
 async function findDuplicateBatch(hash, date) {
-  const db = getDb();
-  const snap = await db.collection("nIntelBatches").where("rawContentHash", "==", hash).where("date", "==", date).limit(1).get();
-  return snap.empty ? null : snap.docs[0].data();
+  const batches = await loadBatches();
+  return batches.find((b) => b.rawContentHash === hash && b.date === date) || null;
 }
 async function saveBatchAndStories(batch, newStories, adminEmail) {
-  const db = getDb();
-  const CHUNK = 400;
-  for (let i = 0; i < newStories.length; i += CHUNK) {
-    const chunk = newStories.slice(i, i + CHUNK);
-    const fsBatch = db.batch();
-    for (const story of chunk) {
-      const ref = db.collection("nIntelStories").doc(story.id);
-      fsBatch.set(ref, story, { merge: true });
-    }
-    await fsBatch.commit();
-  }
-  await saveBatch(batch);
-  invalidateStoriesCache();
-  invalidateBatchesCache();
+  await saveRecord(BATCHES_TAB, BATCHES_HEADERS, batch, (b) => ({
+    date: b.date,
+    rawContentHash: b.rawContentHash,
+    publishedAt: b.publishedAt
+  }));
+  await saveBatchRecords(STORIES_TAB, STORIES_HEADERS, newStories, (s) => ({
+    date: s.date,
+    category: s.category,
+    isDeleted: s.isDeleted ? "true" : "false",
+    headline: s.headline.substring(0, 200)
+  }));
   await addAuditLog(
     "PUBLISH",
     adminEmail,
@@ -614,11 +791,9 @@ async function saveBatchAndStories(batch, newStories, adminEmail) {
   );
 }
 async function updateStory(id, updates, adminEmail) {
-  const db = getDb();
-  const docRef = db.collection("nIntelStories").doc(id);
-  const snap = await docRef.get();
-  if (!snap.exists) return null;
-  const current = snap.data();
+  const stories = await loadStories();
+  const current = stories.find((s) => s.id === id);
+  if (!current) return null;
   let categoryKey = current.categoryKey;
   if (typeof updates.category === "string" && updates.category.trim()) {
     categoryKey = updates.category.toLowerCase().replace(/[^a-z0-9]+/g, "-");
@@ -635,17 +810,19 @@ async function updateStory(id, updates, adminEmail) {
     updatedAt: (/* @__PURE__ */ new Date()).toISOString(),
     lastEditedBy: adminEmail
   };
-  await docRef.set(updated, { merge: true });
-  invalidateStoriesCache();
+  await saveRecord(STORIES_TAB, STORIES_HEADERS, updated, (s) => ({
+    date: s.date,
+    category: s.category,
+    isDeleted: s.isDeleted ? "true" : "false",
+    headline: s.headline.substring(0, 200)
+  }));
   await addAuditLog("EDIT", adminEmail, `Edited story [${id}]: updated (${Object.keys(updates).join(", ")})`, id);
   return updated;
 }
 async function deleteStory(id, adminEmail) {
-  const db = getDb();
-  const docRef = db.collection("nIntelStories").doc(id);
-  const snap = await docRef.get();
-  if (!snap.exists) return false;
-  const current = snap.data();
+  const stories = await loadStories();
+  const current = stories.find((s) => s.id === id);
+  if (!current) return false;
   const updated = {
     ...current,
     isDeleted: true,
@@ -653,158 +830,173 @@ async function deleteStory(id, adminEmail) {
     deletedBy: adminEmail,
     updatedAt: (/* @__PURE__ */ new Date()).toISOString()
   };
-  await docRef.set(updated, { merge: true });
-  invalidateStoriesCache();
+  await saveRecord(STORIES_TAB, STORIES_HEADERS, updated, (s) => ({
+    date: s.date,
+    category: s.category,
+    isDeleted: "true",
+    headline: s.headline.substring(0, 200)
+  }));
   await addAuditLog("DELETE", adminEmail, `Soft-deleted story [${id}]: "${current.headline}"`, id);
   return true;
 }
 async function restoreStory(id, adminEmail) {
-  const db = getDb();
-  const docRef = db.collection("nIntelStories").doc(id);
-  const snap = await docRef.get();
-  if (!snap.exists) return false;
-  const current = snap.data();
-  await docRef.set({
+  const stories = await loadStories();
+  const current = stories.find((s) => s.id === id);
+  if (!current) return false;
+  const updated = {
     ...current,
     isDeleted: false,
-    deletedAt: admin.firestore.FieldValue.delete(),
-    deletedBy: admin.firestore.FieldValue.delete(),
+    deletedAt: void 0,
+    deletedBy: void 0,
     updatedAt: (/* @__PURE__ */ new Date()).toISOString()
-  }, { merge: true });
-  invalidateStoriesCache();
+  };
+  await saveRecord(STORIES_TAB, STORIES_HEADERS, updated, (s) => ({
+    date: s.date,
+    category: s.category,
+    isDeleted: "false",
+    headline: s.headline.substring(0, 200)
+  }));
   await addAuditLog("RESTORE", adminEmail, `Restored story [${id}]: "${current.headline}"`, id);
   return true;
 }
 async function purgeStory(id, adminEmail) {
-  const db = getDb();
-  const docRef = db.collection("nIntelStories").doc(id);
-  const snap = await docRef.get();
-  if (!snap.exists) return false;
-  const headline = snap.data().headline;
-  await docRef.delete();
-  invalidateStoriesCache();
-  await addAuditLog("DELETE", adminEmail, `Permanently purged story [${id}]: "${headline}"`, id);
+  const stories = await loadStories();
+  const story = stories.find((s) => s.id === id);
+  if (!story) return false;
+  await deleteRecord(STORIES_TAB, STORIES_HEADERS, id);
+  await addAuditLog("DELETE", adminEmail, `Permanently purged story [${id}]: "${story.headline}"`, id);
   return true;
 }
 async function purgeAllDeletedStories(adminEmail) {
-  const db = getDb();
-  const snap = await db.collection("nIntelStories").where("isDeleted", "==", true).get();
-  if (snap.empty) return 0;
-  const fsBatch = db.batch();
-  for (const doc of snap.docs) {
-    fsBatch.delete(doc.ref);
+  const purgedCount = await deleteRecordsMatching(STORIES_TAB, STORIES_HEADERS, (r) => {
+    return r.get("isDeleted") === "true";
+  });
+  if (purgedCount > 0) {
+    await addAuditLog("DELETE", adminEmail, `Emptied trash: permanently purged all ${purgedCount} deleted stories.`);
   }
-  await fsBatch.commit();
-  invalidateStoriesCache();
-  await addAuditLog("DELETE", adminEmail, `Emptied trash: permanently purged ${snap.size} deleted stories.`);
-  return snap.size;
+  return purgedCount;
 }
 async function deleteStoriesByDate(date, adminEmail, permanent = false) {
-  const db = getDb();
-  const snap = await db.collection("nIntelStories").where("date", "==", date).get();
-  if (snap.empty) return { count: 0, date };
-  const fsBatch = db.batch();
-  let count = 0;
-  for (const docSnap of snap.docs) {
-    const story = docSnap.data();
-    if (permanent) {
-      fsBatch.delete(docSnap.ref);
-      count++;
-    } else if (!story.isDeleted) {
-      fsBatch.set(docSnap.ref, {
-        ...story,
-        isDeleted: true,
-        deletedAt: (/* @__PURE__ */ new Date()).toISOString(),
-        deletedBy: adminEmail,
-        updatedAt: (/* @__PURE__ */ new Date()).toISOString()
-      }, { merge: true });
-      count++;
+  if (permanent) {
+    const count = await deleteRecordsMatching(STORIES_TAB, STORIES_HEADERS, (r) => {
+      return r.get("date") === date;
+    });
+    await addAuditLog("DELETE", adminEmail, `Permanently purged entire briefing for ${date} (${count} stories removed).`);
+    return { count, date };
+  } else {
+    const stories = await loadStories();
+    let count = 0;
+    const toUpdate = [];
+    for (const s of stories) {
+      if (s.date === date && !s.isDeleted) {
+        toUpdate.push({
+          ...s,
+          isDeleted: true,
+          deletedAt: (/* @__PURE__ */ new Date()).toISOString(),
+          deletedBy: adminEmail,
+          updatedAt: (/* @__PURE__ */ new Date()).toISOString()
+        });
+        count++;
+      }
     }
+    if (toUpdate.length > 0) {
+      await saveBatchRecords(STORIES_TAB, STORIES_HEADERS, toUpdate, (s) => ({
+        date: s.date,
+        category: s.category,
+        isDeleted: "true",
+        headline: s.headline.substring(0, 200)
+      }));
+    }
+    await addAuditLog("DELETE", adminEmail, `Soft-deleted entire briefing for ${date} (${count} stories moved to trash).`);
+    return { count, date };
   }
-  await fsBatch.commit();
-  invalidateStoriesCache();
-  const action = permanent ? "Permanently purged" : "Soft-deleted";
-  await addAuditLog("DELETE", adminEmail, `${action} entire briefing for ${date} (${count} stories).`);
-  return { count, date };
 }
 async function deleteStoriesByCategory(category, adminEmail, date, permanent = false) {
-  const db = getDb();
-  let query = db.collection("nIntelStories").where("category", "==", category.trim());
-  if (date) {
-    query = query.where("date", "==", date);
-  }
-  const snap = await query.get();
-  if (snap.empty) return { count: 0, category, date };
-  const fsBatch = db.batch();
-  let count = 0;
-  for (const docSnap of snap.docs) {
-    const story = docSnap.data();
-    if (permanent) {
-      fsBatch.delete(docSnap.ref);
-      count++;
-    } else if (!story.isDeleted) {
-      fsBatch.set(docSnap.ref, {
-        ...story,
-        isDeleted: true,
-        deletedAt: (/* @__PURE__ */ new Date()).toISOString(),
-        deletedBy: adminEmail,
-        updatedAt: (/* @__PURE__ */ new Date()).toISOString()
-      }, { merge: true });
-      count++;
+  const targetCategory = category.trim().toLowerCase();
+  const matchesCategory = (r) => {
+    const cat = (r.get("category") || "").trim().toLowerCase();
+    if (cat !== targetCategory) return false;
+    if (date && r.get("date") !== date) return false;
+    return true;
+  };
+  if (permanent) {
+    const count = await deleteRecordsMatching(STORIES_TAB, STORIES_HEADERS, matchesCategory);
+    await addAuditLog("DELETE", adminEmail, `Permanently purged category "${category}"${date ? ` for date ${date}` : ""} (${count} stories removed).`);
+    return { count, category, date };
+  } else {
+    const stories = await loadStories();
+    let count = 0;
+    const toUpdate = [];
+    for (const s of stories) {
+      const cat = (s.category || "").trim().toLowerCase();
+      if (cat === targetCategory && (!date || s.date === date) && !s.isDeleted) {
+        toUpdate.push({
+          ...s,
+          isDeleted: true,
+          deletedAt: (/* @__PURE__ */ new Date()).toISOString(),
+          deletedBy: adminEmail,
+          updatedAt: (/* @__PURE__ */ new Date()).toISOString()
+        });
+        count++;
+      }
     }
+    if (toUpdate.length > 0) {
+      await saveBatchRecords(STORIES_TAB, STORIES_HEADERS, toUpdate, (s) => ({
+        date: s.date,
+        category: s.category,
+        isDeleted: "true",
+        headline: s.headline.substring(0, 200)
+      }));
+    }
+    await addAuditLog("DELETE", adminEmail, `Soft-deleted category "${category}"${date ? ` for date ${date}` : ""} (${count} stories moved to trash).`);
+    return { count, category, date };
   }
-  await fsBatch.commit();
-  invalidateStoriesCache();
-  const action = permanent ? "Permanently purged" : "Soft-deleted";
-  await addAuditLog(
-    "DELETE",
-    adminEmail,
-    `${action} category "${category}"${date ? ` for date ${date}` : ""} (${count} stories).`
-  );
-  return { count, category, date };
 }
 async function deleteStoriesByIds(ids, adminEmail, permanent = false) {
   if (!Array.isArray(ids) || ids.length === 0) return { count: 0, ids: [] };
-  const db = getDb();
-  const fsBatch = db.batch();
-  let count = 0;
-  for (const id of ids) {
-    const docRef = db.collection("nIntelStories").doc(id);
-    const snap = await docRef.get();
-    if (!snap.exists) continue;
-    const story = snap.data();
-    if (permanent) {
-      fsBatch.delete(docRef);
-      count++;
-    } else if (!story.isDeleted) {
-      fsBatch.set(docRef, {
-        ...story,
-        isDeleted: true,
-        deletedAt: (/* @__PURE__ */ new Date()).toISOString(),
-        deletedBy: adminEmail,
-        updatedAt: (/* @__PURE__ */ new Date()).toISOString()
-      }, { merge: true });
-      count++;
+  const idMap = {};
+  for (const id of ids) idMap[id] = true;
+  if (permanent) {
+    const count = await deleteRecordsMatching(STORIES_TAB, STORIES_HEADERS, (r) => Boolean(idMap[r.get("id")]));
+    await addAuditLog("DELETE", adminEmail, `Permanently purged ${count} selected stories.`);
+    return { count, ids };
+  } else {
+    const stories = await loadStories();
+    let count = 0;
+    const toUpdate = [];
+    for (const s of stories) {
+      if (idMap[s.id] && !s.isDeleted) {
+        toUpdate.push({
+          ...s,
+          isDeleted: true,
+          deletedAt: (/* @__PURE__ */ new Date()).toISOString(),
+          deletedBy: adminEmail,
+          updatedAt: (/* @__PURE__ */ new Date()).toISOString()
+        });
+        count++;
+      }
     }
+    if (toUpdate.length > 0) {
+      await saveBatchRecords(STORIES_TAB, STORIES_HEADERS, toUpdate, (s) => ({
+        date: s.date,
+        category: s.category,
+        isDeleted: "true",
+        headline: s.headline.substring(0, 200)
+      }));
+    }
+    await addAuditLog("DELETE", adminEmail, `Soft-deleted ${count} selected stories.`);
+    return { count, ids };
   }
-  await fsBatch.commit();
-  invalidateStoriesCache();
-  const action = permanent ? "Permanently purged" : "Soft-deleted";
-  await addAuditLog("DELETE", adminEmail, `${action} ${count} selected stories.`);
-  return { count, ids };
 }
 async function getAuditLogs(limitCount = 100) {
-  if (isCacheValid(auditCache)) return auditCache.data.slice(0, limitCount);
-  const db = getDb();
-  const snap = await db.collection("nIntelAudit").orderBy("timestamp", "desc").limit(Math.min(limitCount, 1e3)).get();
-  const logs = snap.docs.map((d) => d.data());
-  auditCache = { data: logs, expiresAt: Date.now() + CACHE_TTL_MS };
-  return logs;
+  const logs = await loadAudit();
+  return logs.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()).slice(0, limitCount);
 }
 async function getAvailableEditions() {
   const stories = await getAllStories({ includeDeleted: false });
   const map = {};
   for (const s of stories) {
+    if (!s.date) continue;
     if (!map[s.date]) {
       map[s.date] = {
         date: s.date,
@@ -816,10 +1008,12 @@ async function getAvailableEditions() {
       };
     }
     map[s.date].storyCount++;
-    map[s.date].categories.add(s.category);
-    map[s.date].categoryCounts[s.category] = (map[s.date].categoryCounts[s.category] || 0) + 1;
-    if (s.isDefence || s.category.toLowerCase().includes("defence")) {
-      map[s.date].defenceCount++;
+    if (s.category) {
+      map[s.date].categories.add(s.category);
+      map[s.date].categoryCounts[s.category] = (map[s.date].categoryCounts[s.category] || 0) + 1;
+      if (s.isDefence || s.category.toLowerCase().includes("defence")) {
+        map[s.date].defenceCount++;
+      }
     }
     if (map[s.date].headlines.length < 3 && s.headline) {
       map[s.date].headlines.push(s.headline);
@@ -835,10 +1029,9 @@ async function getAvailableEditions() {
   })).sort((a, b) => b.date.localeCompare(a.date));
 }
 async function seedSampleDataIfEmpty(samplePostText) {
-  const db = getDb();
-  const snap = await db.collection("nIntelStories").limit(1).get();
-  if (!snap.empty) return;
-  console.log("\u{1F331} Seeding initial N-INTEL sample edition into Firestore...");
+  const existing = await loadStories();
+  if (existing.length > 0) return;
+  console.log("\u{1F331} Seeding initial N-INTEL sample edition into Cloud Database...");
   const parseResult = parseDailyNewsPost(samplePostText, "2026-10-28");
   if (parseResult.success && parseResult.stories.length > 0) {
     const batch = {
@@ -851,7 +1044,7 @@ async function seedSampleDataIfEmpty(samplePostText) {
       categories: parseResult.categories
     };
     await saveBatchAndStories(batch, parseResult.stories, "system@nishchay.defence");
-    console.log(`\u2705 Seeded ${parseResult.totalStories} N-INTEL stories into Firestore.`);
+    console.log(`\u2705 Seeded ${parseResult.totalStories} N-INTEL stories into Cloud Database.`);
   }
 }
 async function syncNIntelStories(incomingStories, incomingBatches) {
@@ -859,40 +1052,25 @@ async function syncNIntelStories(incomingStories, incomingBatches) {
     const all2 = await loadStories();
     return { count: 0, total: all2.length };
   }
-  const db = getDb();
-  const fsBatch = db.batch();
-  for (const story of incomingStories) {
-    if (!story || !story.id) continue;
-    const ref = db.collection("nIntelStories").doc(story.id);
-    const existing = await ref.get();
-    if (!existing.exists) {
-      fsBatch.set(ref, story);
-    }
-  }
-  await fsBatch.commit();
-  invalidateStoriesCache();
-  if (Array.isArray(incomingBatches) && incomingBatches.length > 0) {
-    const bFsBatch = db.batch();
-    for (const b of incomingBatches) {
-      if (!b || !b.id) continue;
-      const ref = db.collection("nIntelBatches").doc(b.id);
-      const existing = await ref.get();
-      if (!existing.exists) {
-        bFsBatch.set(ref, b);
-      }
-    }
-    await bFsBatch.commit();
-    invalidateBatchesCache();
+  const existing = await loadStories();
+  const existingMap = /* @__PURE__ */ new Map();
+  for (const s of existing) existingMap.set(s.id, true);
+  const toAdd = incomingStories.filter((s) => s && s.id && !existingMap.has(s.id));
+  if (toAdd.length > 0) {
+    await saveBatchRecords(STORIES_TAB, STORIES_HEADERS, toAdd, (s) => ({
+      date: s.date,
+      category: s.category,
+      isDeleted: s.isDeleted ? "true" : "false",
+      headline: s.headline.substring(0, 200)
+    }));
   }
   const all = await loadStories();
-  return { count: incomingStories.length, total: all.length };
+  return { count: toAdd.length, total: all.length };
 }
 
 // articles-db.ts
-import admin2 from "firebase-admin";
-function getDb2() {
-  return admin2.firestore();
-}
+var ARTICLES_TAB = "articles";
+var ARTICLES_HEADERS = ["id", "slug", "title", "category", "publishDate", "authorName", "json", "updatedAt"];
 function slugify(text) {
   return text.toLowerCase().replace(/[^\w\s-]/g, "").trim().replace(/\s+/g, "-");
 }
@@ -901,33 +1079,21 @@ function calculateReadingTime(text) {
   const minutes = Math.max(2, Math.ceil(words / 180));
   return `${minutes} min read`;
 }
-var CACHE_TTL_MS2 = 3e4;
-var articlesCache = null;
-function invalidateArticlesCache() {
-  articlesCache = null;
-}
 async function getAllArticles() {
-  if (articlesCache && Date.now() < articlesCache.expiresAt) {
-    return articlesCache.data;
-  }
-  const db = getDb2();
-  const snap = await db.collection("articles").orderBy("publishDate", "desc").get();
-  const articles = snap.docs.map((d) => d.data());
-  articlesCache = { data: articles, expiresAt: Date.now() + CACHE_TTL_MS2 };
-  return articles;
+  const articles = await fetchCollection(ARTICLES_TAB, ARTICLES_HEADERS);
+  return [...articles].sort(
+    (a, b) => new Date(b.publishDate || b.createdAt).getTime() - new Date(a.publishDate || a.createdAt).getTime()
+  );
 }
 async function getArticleById(idOrSlug) {
   if (!idOrSlug) return null;
-  const db = getDb2();
-  const query = String(idOrSlug).trim();
-  const byId = await db.collection("articles").doc(query).get();
-  if (byId.exists) return byId.data();
-  const slugSnap = await db.collection("articles").where("slug", "==", query).limit(1).get();
-  if (!slugSnap.empty) return slugSnap.docs[0].data();
-  return null;
+  const articles = await getAllArticles();
+  const query = String(idOrSlug).trim().toLowerCase();
+  return articles.find(
+    (a) => a.id === idOrSlug || a.slug === idOrSlug || a.id.toLowerCase() === query || a.slug && a.slug.toLowerCase() === query
+  ) || null;
 }
 async function createArticle(data) {
-  const db = getDb2();
   const slug = slugify(data.title) + "-" + Date.now().toString().slice(-4);
   const id = `article-${slug}`;
   const now = /* @__PURE__ */ new Date();
@@ -954,16 +1120,18 @@ async function createArticle(data) {
     createdAt: (/* @__PURE__ */ new Date()).toISOString(),
     authorEmail: data.authorEmail
   };
-  await db.collection("articles").doc(id).set(newArticle);
-  invalidateArticlesCache();
+  await saveRecord(ARTICLES_TAB, ARTICLES_HEADERS, newArticle, (a) => ({
+    slug: a.slug,
+    title: a.title,
+    category: a.category,
+    publishDate: a.publishDate,
+    authorName: a.authorName
+  }));
   return newArticle;
 }
 async function updateArticle(id, updates) {
-  const db = getDb2();
-  const docRef = db.collection("articles").doc(id);
-  const snap = await docRef.get();
-  if (!snap.exists) return null;
-  const current = snap.data();
+  const current = await getArticleById(id);
+  if (!current) return null;
   const updated = {
     ...current,
     title: typeof updates.title === "string" ? updates.title.trim() : current.title,
@@ -982,35 +1150,31 @@ async function updateArticle(id, updates) {
   if (updates.content && typeof updates.content === "string") {
     updated.readingTime = calculateReadingTime(updates.content);
   }
-  await docRef.set(updated, { merge: true });
-  invalidateArticlesCache();
+  await saveRecord(ARTICLES_TAB, ARTICLES_HEADERS, updated, (a) => ({
+    slug: a.slug,
+    title: a.title,
+    category: a.category,
+    publishDate: a.publishDate,
+    authorName: a.authorName
+  }));
   return updated;
 }
 async function deleteArticle(id) {
-  const db = getDb2();
-  const docRef = db.collection("articles").doc(id);
-  const snap = await docRef.get();
-  if (!snap.exists) return false;
-  await docRef.delete();
-  invalidateArticlesCache();
-  return true;
+  const current = await getArticleById(id);
+  if (!current) return false;
+  return deleteRecord(ARTICLES_TAB, ARTICLES_HEADERS, current.id);
 }
 async function incrementDownloadCount(id) {
-  const db = getDb2();
-  const byId = await db.collection("articles").doc(id).get();
-  if (byId.exists) {
-    await byId.ref.update({
-      pdfDownloadCount: admin2.firestore.FieldValue.increment(1)
-    });
-    invalidateArticlesCache();
-    return;
-  }
-  const slugSnap = await db.collection("articles").where("slug", "==", id).limit(1).get();
-  if (!slugSnap.empty) {
-    await slugSnap.docs[0].ref.update({
-      pdfDownloadCount: admin2.firestore.FieldValue.increment(1)
-    });
-    invalidateArticlesCache();
+  const art = await getArticleById(id);
+  if (art) {
+    art.pdfDownloadCount = (art.pdfDownloadCount || 0) + 1;
+    await saveRecord(ARTICLES_TAB, ARTICLES_HEADERS, art, (a) => ({
+      slug: a.slug,
+      title: a.title,
+      category: a.category,
+      publishDate: a.publishDate,
+      authorName: a.authorName
+    }));
   }
 }
 async function syncArticles(incoming) {
@@ -1018,67 +1182,72 @@ async function syncArticles(incoming) {
     const all2 = await getAllArticles();
     return { added: 0, updated: 0, total: all2.length };
   }
-  const db = getDb2();
+  const existing = await getAllArticles();
+  const existingMap = /* @__PURE__ */ new Map();
+  for (const a of existing) {
+    existingMap.set(a.id, a);
+    if (a.slug) existingMap.set(a.slug, a);
+  }
   let added = 0;
   let updated = 0;
   for (const item of incoming) {
     if (!item || !item.id || !item.title) continue;
-    const ref = db.collection("articles").doc(item.id);
-    const snap = await ref.get();
-    if (!snap.exists) {
-      await ref.set(item);
+    const match = existingMap.get(item.id) || (item.slug ? existingMap.get(item.slug) : void 0);
+    if (!match) {
+      await saveRecord(ARTICLES_TAB, ARTICLES_HEADERS, item, (a) => ({
+        slug: a.slug,
+        title: a.title,
+        category: a.category,
+        publishDate: a.publishDate,
+        authorName: a.authorName
+      }));
       added++;
     } else {
-      const curr = snap.data();
       const incomingTime = new Date(item.updatedAt || item.createdAt || 0).getTime();
-      const currTime = new Date(curr.updatedAt || curr.createdAt || 0).getTime();
+      const currTime = new Date(match.updatedAt || match.createdAt || 0).getTime();
       if (incomingTime > currTime) {
-        await ref.set({
-          ...curr,
-          ...item,
-          viewsCount: Math.max(curr.viewsCount || 0, item.viewsCount || 0),
-          pdfDownloadCount: Math.max(curr.pdfDownloadCount || 0, item.pdfDownloadCount || 0)
-        }, { merge: true });
+        await saveRecord(ARTICLES_TAB, ARTICLES_HEADERS, { ...match, ...item }, (a) => ({
+          slug: a.slug,
+          title: a.title,
+          category: a.category,
+          publishDate: a.publishDate,
+          authorName: a.authorName
+        }));
         updated++;
       }
     }
   }
-  invalidateArticlesCache();
   const all = await getAllArticles();
   return { added, updated, total: all.length };
 }
 
 // pyq-db.ts
-import admin3 from "firebase-admin";
-function getDb3() {
-  return admin3.firestore();
-}
-var CACHE_TTL_MS3 = 3e4;
-var pyqCache = null;
-function invalidatePyqCache() {
-  pyqCache = null;
-}
+var PYQ_TAB = "pyq_sessions";
+var PYQ_HEADERS = ["id", "exam", "session", "year", "title", "json", "updatedAt"];
 async function getAllPyqSessions() {
-  if (pyqCache && Date.now() < pyqCache.expiresAt) return pyqCache.data;
-  const db = getDb3();
-  const snap = await db.collection("pyqSessions").get();
-  const sessions = {};
-  for (const doc of snap.docs) {
-    const data = doc.data();
-    sessions[data.sessionId] = data;
+  const sessions = await fetchCollection(PYQ_TAB, PYQ_HEADERS);
+  const dict = {};
+  for (const s of sessions) {
+    const key = s.sessionId || s.id;
+    dict[key] = { ...s, id: key, sessionId: key };
   }
-  pyqCache = { data: sessions, expiresAt: Date.now() + CACHE_TTL_MS3 };
-  return sessions;
+  return dict;
 }
 async function savePyqFileRecord(params) {
-  const db = getDb3();
+  const all = await getAllPyqSessions();
   const { sessionId, exam, session, year, title, subjectKey, fileType, url, driveFileId, fileName, fileSize } = params;
-  const ref = db.collection("pyqSessions").doc(sessionId);
-  const snap = await ref.get();
-  let sessionRecord = snap.exists ? snap.data() : { sessionId, exam, session, year, title, subjects: {}, updatedAt: (/* @__PURE__ */ new Date()).toISOString() };
-  if (!sessionRecord.subjects[subjectKey]) {
-    sessionRecord.subjects[subjectKey] = {};
-  }
+  let sessionRecord = all[sessionId] || {
+    id: sessionId,
+    sessionId,
+    exam,
+    session,
+    year,
+    title,
+    subjects: {},
+    updatedAt: (/* @__PURE__ */ new Date()).toISOString()
+  };
+  if (!sessionRecord.subjects) sessionRecord.subjects = {};
+  if (!sessionRecord.subjects[subjectKey]) sessionRecord.subjects[subjectKey] = {};
   const fileItem = {
     url,
     driveFileId,
@@ -1092,43 +1261,53 @@ async function savePyqFileRecord(params) {
     sessionRecord.subjects[subjectKey].key = fileItem;
   }
   sessionRecord.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
-  await ref.set(sessionRecord, { merge: true });
-  invalidatePyqCache();
+  sessionRecord.id = sessionId;
+  sessionRecord.sessionId = sessionId;
+  await saveRecord(PYQ_TAB, PYQ_HEADERS, sessionRecord, (s) => ({
+    exam: s.exam,
+    session: s.session,
+    year: s.year,
+    title: s.title
+  }));
   return sessionRecord;
 }
 async function deletePyqFileRecord(params) {
-  const db = getDb3();
+  const all = await getAllPyqSessions();
   const { sessionId, subjectKey, fileType } = params;
-  const ref = db.collection("pyqSessions").doc(sessionId);
-  const snap = await ref.get();
-  if (!snap.exists) return null;
-  const sessionRecord = snap.data();
-  if (!sessionRecord.subjects[subjectKey]) return sessionRecord;
+  const sessionRecord = all[sessionId];
+  if (!sessionRecord || !sessionRecord.subjects || !sessionRecord.subjects[subjectKey]) {
+    return sessionRecord || null;
+  }
   if (fileType === "paper") {
     delete sessionRecord.subjects[subjectKey].paper;
   } else {
     delete sessionRecord.subjects[subjectKey].key;
   }
   sessionRecord.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
-  await ref.set(sessionRecord, { merge: true });
-  invalidatePyqCache();
+  await saveRecord(PYQ_TAB, PYQ_HEADERS, sessionRecord, (s) => ({
+    exam: s.exam,
+    session: s.session,
+    year: s.year,
+    title: s.title
+  }));
   return sessionRecord;
 }
 async function syncPyqSessions(incomingSessions) {
   if (!incomingSessions || typeof incomingSessions !== "object") {
     return getAllPyqSessions();
   }
-  const db = getDb3();
-  let changed = false;
+  const all = await getAllPyqSessions();
   for (const [sessionId, session] of Object.entries(incomingSessions)) {
     if (!session || !session.subjects) continue;
-    const ref = db.collection("pyqSessions").doc(sessionId);
-    const snap = await ref.get();
-    if (!snap.exists) {
-      await ref.set(session);
-      changed = true;
+    const existing = all[sessionId];
+    if (!existing) {
+      await saveRecord(PYQ_TAB, PYQ_HEADERS, { ...session, id: sessionId, sessionId }, (s) => ({
+        exam: s.exam,
+        session: s.session,
+        year: s.year,
+        title: s.title
+      }));
     } else {
-      const existing = snap.data();
       let updated = false;
       for (const key of ["maths", "gat", "english", "gs", "afcat"]) {
         const incSlot = session.subjects[key];
@@ -1148,39 +1327,32 @@ async function syncPyqSessions(incomingSessions) {
       }
       if (updated) {
         existing.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
-        await ref.set(existing, { merge: true });
-        changed = true;
+        await saveRecord(PYQ_TAB, PYQ_HEADERS, existing, (s) => ({
+          exam: s.exam,
+          session: s.session,
+          year: s.year,
+          title: s.title
+        }));
       }
     }
   }
-  if (changed) invalidatePyqCache();
   return getAllPyqSessions();
 }
 
 // notes-db.ts
-import admin4 from "firebase-admin";
-function getDb4() {
-  return admin4.firestore();
-}
-var CACHE_TTL_MS4 = 3e4;
-var notesCache = null;
-function invalidateNotesCache() {
-  notesCache = null;
-}
+var NOTES_TAB = "subject_notes";
+var NOTES_HEADERS = ["id", "subjectId", "subjectTitle", "title", "url", "json", "uploadedAt"];
 async function getAllNotes() {
-  if (notesCache && Date.now() < notesCache.expiresAt) return notesCache.data;
-  const db = getDb4();
-  const snap = await db.collection("subjectNotes").orderBy("uploadedAt", "desc").get();
-  const notes = snap.docs.map((d) => d.data());
-  notesCache = { data: notes, expiresAt: Date.now() + CACHE_TTL_MS4 };
-  return notes;
+  const notes = await fetchCollection(NOTES_TAB, NOTES_HEADERS);
+  return [...notes].sort(
+    (a, b) => new Date(b.uploadedAt || 0).getTime() - new Date(a.uploadedAt || 0).getTime()
+  );
 }
 async function getNotesBySubject(subjectId) {
   const all = await getAllNotes();
   return all.filter((n) => n.subjectId.toLowerCase() === subjectId.toLowerCase());
 }
 async function saveNote(data) {
-  const db = getDb4();
   const id = `note-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
   const newNote = {
     id,
@@ -1194,35 +1366,36 @@ async function saveNote(data) {
     fileSize: data.fileSize || "PDF Document",
     uploadedAt: (/* @__PURE__ */ new Date()).toISOString()
   };
-  await db.collection("subjectNotes").doc(id).set(newNote);
-  invalidateNotesCache();
+  await saveRecord(NOTES_TAB, NOTES_HEADERS, newNote, (n) => ({
+    subjectId: n.subjectId,
+    subjectTitle: n.subjectTitle,
+    title: n.title,
+    url: n.url,
+    uploadedAt: n.uploadedAt
+  }));
   return newNote;
 }
 async function deleteNote(id) {
-  const db = getDb4();
-  const ref = db.collection("subjectNotes").doc(id);
-  const snap = await ref.get();
-  if (!snap.exists) return false;
-  await ref.delete();
-  invalidateNotesCache();
-  return true;
+  return deleteRecord(NOTES_TAB, NOTES_HEADERS, id);
 }
 async function syncNotes(incomingNotes) {
   if (!Array.isArray(incomingNotes) || incomingNotes.length === 0) {
     return getAllNotes();
   }
-  const db = getDb4();
-  let added = false;
+  const existing = await getAllNotes();
+  const existingMap = /* @__PURE__ */ new Map();
+  for (const n of existing) existingMap.set(n.id, true);
   for (const note of incomingNotes) {
-    if (!note || !note.id) continue;
-    const ref = db.collection("subjectNotes").doc(note.id);
-    const snap = await ref.get();
-    if (!snap.exists) {
-      await ref.set(note);
-      added = true;
+    if (note && note.id && !existingMap.has(note.id)) {
+      await saveRecord(NOTES_TAB, NOTES_HEADERS, note, (n) => ({
+        subjectId: n.subjectId,
+        subjectTitle: n.subjectTitle,
+        title: n.title,
+        url: n.url,
+        uploadedAt: n.uploadedAt
+      }));
     }
   }
-  if (added) invalidateNotesCache();
   return getAllNotes();
 }
 
@@ -1504,11 +1677,11 @@ var publishLimiter = rateLimit({
   validate: false,
   message: { success: false, error: "Publishing rate limit exceeded." }
 });
-var IS_VERCEL = Boolean(process.env.VERCEL);
-var UPLOADS_DIR = IS_VERCEL ? path.join(os.tmpdir(), "nishchay_uploads") : path.join(process.cwd(), "public", "uploads");
+var IS_VERCEL2 = Boolean(process.env.VERCEL);
+var UPLOADS_DIR = IS_VERCEL2 ? path2.join(os2.tmpdir(), "nishchay_uploads") : path2.join(process.cwd(), "public", "uploads");
 try {
-  if (!fs.existsSync(UPLOADS_DIR)) {
-    fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+  if (!fs2.existsSync(UPLOADS_DIR)) {
+    fs2.mkdirSync(UPLOADS_DIR, { recursive: true });
   }
 } catch (fsErr) {
   console.warn("Could not initialize uploads directory:", fsErr);
@@ -1523,28 +1696,23 @@ app.use(
   })
 );
 try {
-  if (!admin5.apps.length) {
+  if (!admin.apps.length) {
     const projectId = process.env.VITE_FIREBASE_PROJECT_ID || "nishchay-defence";
     const serviceEmail = process.env.FIREBASE_SERVICE_ACCOUNT_EMAIL;
     const serviceKey = process.env.FIREBASE_PRIVATE_KEY ? process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, "\n").replace(/^"(.*)"$/, "$1").trim() : void 0;
-    const googleEmail = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
-    const googleKey = process.env.GOOGLE_PRIVATE_KEY ? process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, "\n").replace(/^"(.*)"$/, "$1").trim() : void 0;
-    const effectiveEmail = serviceEmail || googleEmail;
-    const effectiveKey = serviceKey || googleKey;
-    if (effectiveEmail && effectiveKey && effectiveKey.includes("BEGIN PRIVATE KEY")) {
-      admin5.initializeApp({
-        credential: admin5.credential.cert({
+    if (serviceEmail && serviceKey && serviceKey.includes("BEGIN PRIVATE KEY")) {
+      admin.initializeApp({
+        credential: admin.credential.cert({
           projectId,
-          clientEmail: effectiveEmail,
-          privateKey: effectiveKey
+          clientEmail: serviceEmail,
+          privateKey: serviceKey
         }),
-        projectId,
-        databaseURL: `https://${projectId}-default-rtdb.firebaseio.com`
+        projectId
       });
       console.log("\u2705 Firebase Admin initialized with Service Account for:", projectId);
     } else {
-      admin5.initializeApp({ projectId });
-      console.log("\u2705 Firebase Admin initialized with Project ID only:", projectId);
+      admin.initializeApp({ projectId });
+      console.log("\u2705 Firebase Admin initialized with Project ID (public cert token verification):", projectId);
     }
   }
 } catch (error) {
@@ -1602,7 +1770,7 @@ var authenticate = async (req, res, next) => {
     });
   }
   try {
-    const decodedToken = await admin5.auth().verifyIdToken(token);
+    const decodedToken = await admin.auth().verifyIdToken(token);
     const email = decodedToken.email?.trim().toLowerCase();
     if (!email) {
       return res.status(403).json({
@@ -1654,7 +1822,7 @@ function getSheetAuth() {
   if (!privateKey.includes("BEGIN PRIVATE KEY")) {
     throw new Error("GOOGLE_PRIVATE_KEY is malformed");
   }
-  return new JWT({
+  return new JWT2({
     email: GOOGLE_SERVICE_ACCOUNT_EMAIL,
     key: privateKey,
     scopes: ["https://www.googleapis.com/auth/spreadsheets"]
@@ -1662,7 +1830,7 @@ function getSheetAuth() {
 }
 async function getSheet(sheetId, tabName, defaultHeaders) {
   const auth = getSheetAuth();
-  const doc = new GoogleSpreadsheet(sheetId, auth);
+  const doc = new GoogleSpreadsheet2(sheetId, auth);
   await doc.loadInfo();
   let sheet = doc.sheetsByTitle[tabName];
   if (!sheet && tabName === "contactform") {
@@ -1744,7 +1912,7 @@ app.get("/api/health", (req, res) => {
     timestamp: (/* @__PURE__ */ new Date()).toISOString(),
     services: {
       sheetsConfigured: !!(process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL && process.env.GOOGLE_PRIVATE_KEY),
-      firebaseConfigured: !!admin5.apps.length
+      firebaseConfigured: !!admin.apps.length
     }
   });
 });
@@ -1853,9 +2021,9 @@ app.get("/api/articles/:id", async (req, res) => {
 });
 app.get("/api/uploads/:filename", (req, res) => {
   try {
-    const safeName = path.basename(req.params.filename);
-    const filePath = path.join(UPLOADS_DIR, safeName);
-    if (fs.existsSync(filePath)) {
+    const safeName = path2.basename(req.params.filename);
+    const filePath = path2.join(UPLOADS_DIR, safeName);
+    if (fs2.existsSync(filePath)) {
       res.setHeader("X-Content-Type-Options", "nosniff");
       res.sendFile(filePath);
     } else {
@@ -1919,13 +2087,13 @@ app.post("/api/articles/upload-banner", publishLimiter, authenticate, (req, res)
       });
     }
     try {
-      if (!fs.existsSync(UPLOADS_DIR)) {
-        fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+      if (!fs2.existsSync(UPLOADS_DIR)) {
+        fs2.mkdirSync(UPLOADS_DIR, { recursive: true });
       }
       const safeRandomToken = crypto.randomBytes(16).toString("hex");
       const safeName = `banner-${Date.now()}-${safeRandomToken}.${ext}`;
-      const filePath = path.join(UPLOADS_DIR, safeName);
-      fs.writeFileSync(filePath, buffer, { flag: "wx" });
+      const filePath = path2.join(UPLOADS_DIR, safeName);
+      fs2.writeFileSync(filePath, buffer, { flag: "wx" });
       const publicUrl = `/api/uploads/${safeName}`;
       res.json({ success: true, url: publicUrl, localUrl: `/uploads/${safeName}` });
     } catch (writeErr) {
@@ -2461,11 +2629,11 @@ async function setupServer() {
     });
     app.use(vite.middlewares);
   } else if (!process.env.VERCEL) {
-    const distPath = path.join(process.cwd(), "dist");
-    if (fs.existsSync(distPath)) {
+    const distPath = path2.join(process.cwd(), "dist");
+    if (fs2.existsSync(distPath)) {
       app.use(express.static(distPath));
       app.get("*", (req, res) => {
-        res.sendFile(path.join(distPath, "index.html"));
+        res.sendFile(path2.join(distPath, "index.html"));
       });
     }
   }
