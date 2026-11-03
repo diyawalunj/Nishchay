@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { motion } from 'motion/react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import {
@@ -21,6 +21,7 @@ import { auth, onAuthStateChanged, checkIfAdmin } from './firebase';
 import {
   mergeEditionsWithLocal,
   mergeStoriesWithLocal,
+  saveLocalBatches,
   syncLocalWithServer,
   type EditionSummary
 } from './n-intel-storage';
@@ -678,24 +679,27 @@ export default function NIntel() {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       const isAdm = checkIfAdmin(currentUser);
       setIsAdmin(isAdm);
-      if (isAdm && currentUser) {
-        currentUser.getIdToken().then(token => {
-          if (token) syncLocalWithServer(token).catch(() => {});
-        }).catch(() => {});
-      }
     });
     return () => unsubscribe();
   }, []);
 
-  // Fetch all editions with client-side multi-layer persistence
-  useEffect(() => {
-    setLoadingEditions(true);
-    fetch('/api/n-intel/editions')
+  // Fetch all editions with authoritative server synchronization
+  const fetchEditions = useCallback((showSpinner = false) => {
+    if (showSpinner) setLoadingEditions(true);
+    fetch(`/api/n-intel/editions?_t=${Date.now()}`)
       .then(res => res.json())
       .then(data => {
         const serverEditions = (data.success && Array.isArray(data.editions)) ? data.editions : [];
-        const merged = mergeEditionsWithLocal(serverEditions);
-        setEditions(merged);
+        setEditions(serverEditions);
+        saveLocalBatches(serverEditions.map(e => ({
+          id: `batch-${e.date}`,
+          date: e.date,
+          rawContentHash: '',
+          publishedAt: '',
+          publishedBy: '',
+          storyCount: e.storyCount,
+          categories: e.categories
+        })));
       })
       .catch(err => {
         console.error('Error fetching editions:', err);
@@ -705,30 +709,66 @@ export default function NIntel() {
       .finally(() => setLoadingEditions(false));
   }, []);
 
-  // When activeDate changes, fetch stories for that date with local cache fallback
-  useEffect(() => {
-    if (!activeDate) {
+  // Fetch stories for active date
+  const fetchStoriesForDate = useCallback((date: string, showSpinner = false) => {
+    if (!date) {
       setStories([]);
       return;
     }
-
-    setLoadingStories(true);
-    setStorySearchQuery('');
-
-    fetch(`/api/n-intel/stories?date=${encodeURIComponent(activeDate)}`)
+    if (showSpinner) setLoadingStories(true);
+    fetch(`/api/n-intel/stories?date=${encodeURIComponent(date)}&_t=${Date.now()}`)
       .then(res => res.json())
       .then(data => {
         const serverStories = (data.success && Array.isArray(data.stories)) ? data.stories : [];
-        const merged = mergeStoriesWithLocal(serverStories, activeDate);
-        setStories(merged);
+        setStories(serverStories);
+        // Authoritative update: update local cache
+        mergeStoriesWithLocal(serverStories, date);
       })
       .catch(err => {
         console.error('Error fetching stories for date:', err);
-        const fallback = mergeStoriesWithLocal([], activeDate);
+        const fallback = mergeStoriesWithLocal([], date);
         setStories(fallback);
       })
       .finally(() => setLoadingStories(false));
-  }, [activeDate]);
+  }, []);
+
+  // When activeDate changes, fetch stories
+  useEffect(() => {
+    if (activeDate) {
+      setStorySearchQuery('');
+      fetchStoriesForDate(activeDate, true);
+    } else {
+      setStories([]);
+    }
+  }, [activeDate, fetchStoriesForDate]);
+
+  // Initial fetch and automatic cross-device sync (revalidate on focus & 25s polling)
+  useEffect(() => {
+    fetchEditions(true);
+
+    const handleFocus = () => {
+      if (document.visibilityState === 'visible') {
+        fetchEditions(false);
+        if (activeDate) fetchStoriesForDate(activeDate, false);
+      }
+    };
+
+    const interval = setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        fetchEditions(false);
+        if (activeDate) fetchStoriesForDate(activeDate, false);
+      }
+    }, 25000);
+
+    window.addEventListener('focus', handleFocus);
+    document.addEventListener('visibilitychange', handleFocus);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('focus', handleFocus);
+      document.removeEventListener('visibilitychange', handleFocus);
+    };
+  }, [fetchEditions, fetchStoriesForDate, activeDate]);
 
   // Group active day's stories by category
   const categoriesMap = useMemo(() => {

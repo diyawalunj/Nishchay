@@ -141,11 +141,6 @@ export default function NIntelAdmin() {
       const isAdm = checkIfAdmin(currentUser);
       setIsAdmin(isAdm);
       setLoadingAuth(false);
-      if (isAdm && currentUser) {
-        currentUser.getIdToken().then(token => {
-          if (token) syncLocalWithServer(token).catch(() => {});
-        }).catch(() => {});
-      }
     });
     return () => unsubscribe();
   }, []);
@@ -184,11 +179,13 @@ export default function NIntelAdmin() {
       if (filterCategory && filterCategory !== 'All') url += `&category=${encodeURIComponent(filterCategory)}`;
       if (searchQuery) url += `&search=${encodeURIComponent(searchQuery)}`;
 
+      url += `&_t=${Date.now()}`;
+
       const res = await fetch(url, { headers });
       const data = await res.json();
       if (data.success) {
-        const merged = mergeStoriesWithLocal(data.stories || [], filterDate || undefined);
-        setStories(merged);
+        const serverStories = data.stories || [];
+        setStories(serverStories);
       }
     } catch (err) {
       console.error('Error fetching stories for management:', err);
@@ -221,6 +218,19 @@ export default function NIntelAdmin() {
     if (isAdmin) {
       if (activeTab === 'manage') fetchStories();
       if (activeTab === 'audit') fetchAuditLogs();
+
+      const handleFocus = () => {
+        if (document.visibilityState === 'visible') {
+          if (activeTab === 'manage') fetchStories();
+          if (activeTab === 'audit') fetchAuditLogs();
+        }
+      };
+      window.addEventListener('focus', handleFocus);
+      document.addEventListener('visibilitychange', handleFocus);
+      return () => {
+        window.removeEventListener('focus', handleFocus);
+        document.removeEventListener('visibilitychange', handleFocus);
+      };
     }
   }, [isAdmin, activeTab, fetchStories, fetchAuditLogs]);
 

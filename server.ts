@@ -247,23 +247,29 @@ try {
       ? process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n').replace(/^"(.*)"$/, '$1').trim()
       : undefined;
 
-    // If a dedicated Firebase Service Account for this project is provided, use it
-    if (serviceEmail && serviceKey && serviceKey.includes('BEGIN PRIVATE KEY')) {
+    // Try FIREBASE_* service account first, then fall back to GOOGLE_* credentials
+    const googleEmail = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
+    const googleKey = process.env.GOOGLE_PRIVATE_KEY
+      ? process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, '\n').replace(/^"(.*)"$/, '$1').trim()
+      : undefined;
+
+    const effectiveEmail = serviceEmail || googleEmail;
+    const effectiveKey = serviceKey || googleKey;
+
+    if (effectiveEmail && effectiveKey && effectiveKey.includes('BEGIN PRIVATE KEY')) {
       admin.initializeApp({
         credential: admin.credential.cert({
           projectId,
-          clientEmail: serviceEmail,
-          privateKey: serviceKey
+          clientEmail: effectiveEmail,
+          privateKey: effectiveKey
         }),
-        projectId
-      });
-      console.log('✅ Firebase Admin initialized with dedicated Service Account for:', projectId);
-    } else {
-      // Standard initialization using Project ID (cryptographically verifies ID tokens via Google public x509 certs)
-      admin.initializeApp({
         projectId,
+        databaseURL: `https://${projectId}-default-rtdb.firebaseio.com`
       });
-      console.log('✅ Firebase Admin initialized with Project ID (public cert verification):', projectId);
+      console.log('✅ Firebase Admin initialized with Service Account for:', projectId);
+    } else {
+      admin.initializeApp({ projectId });
+      console.log('✅ Firebase Admin initialized with Project ID only:', projectId);
     }
   }
 } catch (error: any) {
@@ -379,6 +385,16 @@ app.use((req, res, next) => {
   if (req.url.startsWith('/api')) {
     console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
   }
+  next();
+});
+
+
+// No-cache headers for all API routes (prevents stale CDN/browser cached responses)
+app.use('/api', (req, res, next) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+  res.setHeader('Surrogate-Control', 'no-store');
   next();
 });
 
@@ -566,10 +582,10 @@ app.post('/api/contact', contactLimiter, async (req, res) => {
 ========================= */
 
 // Public: Get all stories (supports filtering by date, category, search, month)
-app.get('/api/n-intel/stories', (req, res) => {
+app.get('/api/n-intel/stories', async (req, res) => {
   try {
     const { date, month, category, search, includeDeleted } = req.query;
-    const stories = getAllStories({
+    const stories = await getAllStories({
       date: date as string,
       month: month as string,
       category: category as string,
@@ -592,9 +608,9 @@ app.param('id', (req, res, next, id) => {
 });
 
 // Public: Get a single story by ID
-app.get('/api/n-intel/stories/:id', (req, res) => {
+app.get('/api/n-intel/stories/:id', async (req, res) => {
   try {
-    const story = getStoryById(req.params.id);
+    const story = await getStoryById(req.params.id);
     if (!story) {
       return res.status(404).json({ success: false, error: 'Story not found' });
     }
@@ -606,9 +622,9 @@ app.get('/api/n-intel/stories/:id', (req, res) => {
 });
 
 // Public: Get list of available editions
-app.get('/api/n-intel/editions', (req, res) => {
+app.get('/api/n-intel/editions', async (req, res) => {
   try {
-    const editions = getAvailableEditions();
+    const editions = await getAvailableEditions();
     res.json({ success: true, editions });
   } catch (error: any) {
     console.error('Error fetching editions:', error);
@@ -619,9 +635,9 @@ app.get('/api/n-intel/editions', (req, res) => {
 // ── ARTICLES API ──
 
 // Public: Get all articles
-app.get('/api/articles', (req, res) => {
+app.get('/api/articles', async (req, res) => {
   try {
-    const articles = getAllArticles();
+    const articles = await getAllArticles();
     res.json({ success: true, articles });
   } catch (error: any) {
     console.error('Error fetching articles:', error);
@@ -630,9 +646,9 @@ app.get('/api/articles', (req, res) => {
 });
 
 // Public: Get single article
-app.get('/api/articles/:id', (req, res) => {
+app.get('/api/articles/:id', async (req, res) => {
   try {
-    const article = getArticleById(req.params.id);
+    const article = await getArticleById(req.params.id);
     if (!article) {
       return res.status(404).json({ success: false, error: 'Article not found.' });
     }
@@ -660,13 +676,13 @@ app.get('/api/uploads/:filename', (req, res) => {
 });
 
 // Two-way synchronization: Repopulates server in-memory & /tmp storage from client cache
-app.post('/api/articles/sync', (req, res) => {
+app.post('/api/articles/sync', async (req, res) => {
   try {
     const { articles } = req.body;
     if (!Array.isArray(articles)) {
       return res.status(400).json({ success: false, error: 'Articles array required.' });
     }
-    const result = syncArticles(articles);
+    const result = await syncArticles(articles);
     res.json({ success: true, ...result });
   } catch (error: any) {
     console.error('Error syncing articles:', error);
@@ -675,9 +691,9 @@ app.post('/api/articles/sync', (req, res) => {
 });
 
 // Public: Increment PDF download count (Rate limited to prevent counter manipulation)
-app.post('/api/articles/:id/download', downloadLimiter, (req, res) => {
+app.post('/api/articles/:id/download', downloadLimiter, async (req, res) => {
   try {
-    incrementDownloadCount(req.params.id);
+    await incrementDownloadCount(req.params.id);
     res.json({ success: true });
   } catch (error: any) {
     res.status(500).json({ success: false, error: 'Failed to record download count.' });
@@ -751,7 +767,7 @@ app.post('/api/articles/upload-banner', publishLimiter, authenticate as any, (re
 });
 
 // Admin Only: Create new article with Schema & URL Validation
-app.post('/api/articles', authenticate as any, (req: AuthRequest, res) => {
+app.post('/api/articles', authenticate as any, async (req: AuthRequest, res) => {
   if (!req.user?.isAdmin) {
     return res.status(403).json({ success: false, error: 'Access denied: Admin privileges required.' });
   }
@@ -787,7 +803,7 @@ app.post('/api/articles', authenticate as any, (req: AuthRequest, res) => {
       return res.status(400).json({ success: false, error: 'Article content must be between 20 and 300,000 characters.' });
     }
 
-    const newArticle = createArticle({
+    const newArticle = await createArticle({
       title: title.trim(),
       bannerImageUrl: bannerImageUrl.trim(),
       category: typeof category === 'string' && category.trim() ? category.trim() : 'International Relations',
@@ -810,7 +826,7 @@ app.post('/api/articles', authenticate as any, (req: AuthRequest, res) => {
 });
 
 // Admin Only: Update article with Input Validation
-app.put('/api/articles/:id', authenticate as any, (req: AuthRequest, res) => {
+app.put('/api/articles/:id', authenticate as any, async (req: AuthRequest, res) => {
   if (!req.user?.isAdmin) {
     return res.status(403).json({ success: false, error: 'Access denied: Admin privileges required.' });
   }
@@ -833,7 +849,7 @@ app.put('/api/articles/:id', authenticate as any, (req: AuthRequest, res) => {
       return res.status(400).json({ success: false, error: 'Content must be between 20 and 300,000 characters.' });
     }
 
-    const updated = updateArticle(req.params.id, req.body);
+    const updated = await updateArticle(req.params.id, req.body);
     if (!updated) {
       return res.status(404).json({ success: false, error: 'Article not found.' });
     }
@@ -845,13 +861,13 @@ app.put('/api/articles/:id', authenticate as any, (req: AuthRequest, res) => {
 });
 
 // Admin Only: Delete article
-app.delete('/api/articles/:id', authenticate as any, (req: AuthRequest, res) => {
+app.delete('/api/articles/:id', authenticate as any, async (req: AuthRequest, res) => {
   if (!req.user?.isAdmin) {
     return res.status(403).json({ success: false, error: 'Access denied: Admin privileges required.' });
   }
 
   try {
-    const success = deleteArticle(req.params.id);
+    const success = await deleteArticle(req.params.id);
     if (!success) {
       return res.status(404).json({ success: false, error: 'Article not found.' });
     }
@@ -863,7 +879,7 @@ app.delete('/api/articles/:id', authenticate as any, (req: AuthRequest, res) => 
 });
 
 // Admin Only: Direct Publish
-app.post('/api/n-intel/publish', publishLimiter, authenticate as any, (req: AuthRequest, res) => {
+app.post('/api/n-intel/publish', publishLimiter, authenticate as any, async (req: AuthRequest, res) => {
   if (!req.user?.isAdmin) {
     return res.status(403).json({ success: false, error: 'Access denied: Admin privileges required.' });
   }
@@ -887,7 +903,7 @@ app.post('/api/n-intel/publish', publishLimiter, authenticate as any, (req: Auth
     }
 
     // Duplicate detection
-    const duplicate = findDuplicateBatch(parseResult.hash, pubDate);
+    const duplicate = await findDuplicateBatch(parseResult.hash, pubDate);
     if (duplicate) {
       return res.status(409).json({
         success: false,
@@ -905,7 +921,7 @@ app.post('/api/n-intel/publish', publishLimiter, authenticate as any, (req: Auth
       categories: parseResult.categories
     };
 
-    saveBatchAndStories(batch, parseResult.stories, req.user.email || 'Admin');
+    await saveBatchAndStories(batch, parseResult.stories, req.user.email || 'Admin');
 
     console.log(`✅ [N-INTEL] Published ${parseResult.totalStories} stories for ${pubDate} by ${req.user.email}`);
 
@@ -926,7 +942,7 @@ app.post('/api/n-intel/publish', publishLimiter, authenticate as any, (req: Auth
 });
 
 // Admin Only: Sync stories and batches from client (Multi-Layer Persistence / Cold-start recovery)
-app.post('/api/n-intel/sync', authenticate as any, (req: AuthRequest, res: Response) => {
+app.post('/api/n-intel/sync', authenticate as any, async (req: AuthRequest, res: Response) => {
   if (!req.user?.isAdmin) {
     return res.status(403).json({ success: false, error: 'Access denied: Admin privileges required.' });
   }
@@ -937,8 +953,8 @@ app.post('/api/n-intel/sync', authenticate as any, (req: AuthRequest, res: Respo
       return res.status(400).json({ success: false, error: 'Invalid stories array.' });
     }
 
-    const result = syncNIntelStories(stories, batches);
-    const editions = getAvailableEditions();
+    const result = await syncNIntelStories(stories, batches);
+    const editions = await getAvailableEditions();
     console.log(`✅ [N-INTEL] Synced ${result.count} stories from client by ${req.user.email}. Store total: ${result.total}`);
 
     res.json({
@@ -953,13 +969,13 @@ app.post('/api/n-intel/sync', authenticate as any, (req: AuthRequest, res: Respo
 });
 
 // Admin Only: Edit a story (supports both PATCH and PUT)
-const handleStoryUpdate = (req: AuthRequest, res: Response) => {
+const handleStoryUpdate = async (req: AuthRequest, res: Response) => {
   if (!req.user?.isAdmin) {
     return res.status(403).json({ success: false, error: 'Access denied: Admin privileges required.' });
   }
 
   try {
-    const updated = updateStory(req.params.id, req.body, req.user.email || 'Admin');
+    const updated = await updateStory(req.params.id, req.body, req.user.email || 'Admin');
     if (!updated) {
       return res.status(404).json({ success: false, error: 'Story not found' });
     }
@@ -973,7 +989,7 @@ app.patch('/api/n-intel/stories/:id', authenticate as any, handleStoryUpdate as 
 app.put('/api/n-intel/stories/:id', authenticate as any, handleStoryUpdate as any);
 
 // Admin Only: Delete a story (soft delete by default, permanent purge if ?permanent=true)
-app.delete('/api/n-intel/stories/:id', authenticate as any, (req: AuthRequest, res) => {
+app.delete('/api/n-intel/stories/:id', authenticate as any, async (req: AuthRequest, res) => {
   if (!req.user?.isAdmin) {
     return res.status(403).json({ success: false, error: 'Access denied: Admin privileges required.' });
   }
@@ -983,14 +999,14 @@ app.delete('/api/n-intel/stories/:id', authenticate as any, (req: AuthRequest, r
     const adminEmail = req.user.email || 'Admin';
 
     if (isPermanent) {
-      const success = purgeStory(req.params.id, adminEmail);
+      const success = await purgeStory(req.params.id, adminEmail);
       if (!success) {
         return res.status(404).json({ success: false, error: 'Story not found' });
       }
       return res.json({ success: true, message: 'Story permanently purged from database.', permanent: true });
     }
 
-    const success = deleteStory(req.params.id, adminEmail);
+    const success = await deleteStory(req.params.id, adminEmail);
     if (!success) {
       return res.status(404).json({ success: false, error: 'Story not found' });
     }
@@ -1002,7 +1018,7 @@ app.delete('/api/n-intel/stories/:id', authenticate as any, (req: AuthRequest, r
 });
 
 // Admin Only: Bulk Delete (date-wise, category-wise, or multi-item IDs)
-app.post('/api/n-intel/stories/bulk-delete', authenticate as any, (req: AuthRequest, res: Response) => {
+app.post('/api/n-intel/stories/bulk-delete', authenticate as any, async (req: AuthRequest, res: Response) => {
   if (!req.user?.isAdmin) {
     return res.status(403).json({ success: false, error: 'Access denied: Admin privileges required.' });
   }
@@ -1016,7 +1032,7 @@ app.post('/api/n-intel/stories/bulk-delete', authenticate as any, (req: AuthRequ
       if (!date) {
         return res.status(400).json({ success: false, error: 'Target date is required for date-wise deletion.' });
       }
-      const result = deleteStoriesByDate(date, adminEmail, isPermanent);
+      const result = await deleteStoriesByDate(date, adminEmail, isPermanent);
       return res.json({
         success: true,
         type: 'date',
@@ -1031,7 +1047,7 @@ app.post('/api/n-intel/stories/bulk-delete', authenticate as any, (req: AuthRequ
       if (!category) {
         return res.status(400).json({ success: false, error: 'Target category is required for category-wise deletion.' });
       }
-      const result = deleteStoriesByCategory(category, adminEmail, date, isPermanent);
+      const result = await deleteStoriesByCategory(category, adminEmail, date, isPermanent);
       return res.json({
         success: true,
         type: 'category',
@@ -1047,7 +1063,7 @@ app.post('/api/n-intel/stories/bulk-delete', authenticate as any, (req: AuthRequ
       if (!Array.isArray(ids) || ids.length === 0) {
         return res.status(400).json({ success: false, error: 'Story IDs array is required.' });
       }
-      const result = deleteStoriesByIds(ids, adminEmail, isPermanent);
+      const result = await deleteStoriesByIds(ids, adminEmail, isPermanent);
       return res.json({
         success: true,
         type: 'ids',
@@ -1066,7 +1082,7 @@ app.post('/api/n-intel/stories/bulk-delete', authenticate as any, (req: AuthRequ
 });
 
 // Admin Only: Date-wise deletion endpoint
-app.delete('/api/n-intel/editions/:date', authenticate as any, (req: AuthRequest, res: Response) => {
+app.delete('/api/n-intel/editions/:date', authenticate as any, async (req: AuthRequest, res: Response) => {
   if (!req.user?.isAdmin) {
     return res.status(403).json({ success: false, error: 'Access denied: Admin privileges required.' });
   }
@@ -1074,7 +1090,7 @@ app.delete('/api/n-intel/editions/:date', authenticate as any, (req: AuthRequest
   try {
     const isPermanent = req.query.permanent === 'true';
     const adminEmail = req.user.email || 'Admin';
-    const result = deleteStoriesByDate(req.params.date, adminEmail, isPermanent);
+    const result = await deleteStoriesByDate(req.params.date, adminEmail, isPermanent);
     res.json({
       success: true,
       count: result.count,
@@ -1089,14 +1105,14 @@ app.delete('/api/n-intel/editions/:date', authenticate as any, (req: AuthRequest
 });
 
 // Admin Only: Restore a soft-deleted story
-app.post('/api/n-intel/stories/:id/restore', authenticate as any, (req: AuthRequest, res) => {
+app.post('/api/n-intel/stories/:id/restore', authenticate as any, async (req: AuthRequest, res) => {
   if (!req.user?.isAdmin) {
     return res.status(403).json({ success: false, error: 'Access denied: Admin privileges required.' });
   }
 
   try {
     const adminEmail = req.user.email || 'Admin';
-    const success = restoreStory(req.params.id, adminEmail);
+    const success = await restoreStory(req.params.id, adminEmail);
     if (!success) {
       return res.status(404).json({ success: false, error: 'Story not found' });
     }
@@ -1108,14 +1124,14 @@ app.post('/api/n-intel/stories/:id/restore', authenticate as any, (req: AuthRequ
 });
 
 // Admin Only: Empty trash (purge all soft-deleted stories permanently)
-app.delete('/api/n-intel/trash/empty', authenticate as any, (req: AuthRequest, res) => {
+app.delete('/api/n-intel/trash/empty', authenticate as any, async (req: AuthRequest, res) => {
   if (!req.user?.isAdmin) {
     return res.status(403).json({ success: false, error: 'Access denied: Admin privileges required.' });
   }
 
   try {
     const adminEmail = req.user.email || 'Admin';
-    const purgedCount = purgeAllDeletedStories(adminEmail);
+    const purgedCount = await purgeAllDeletedStories(adminEmail);
     res.json({
       success: true,
       message: `Trash emptied successfully. ${purgedCount} stories permanently erased.`,
@@ -1128,13 +1144,13 @@ app.delete('/api/n-intel/trash/empty', authenticate as any, (req: AuthRequest, r
 });
 
 // Admin Only: Get audit history
-app.get('/api/n-intel/audit', authenticate as any, (req: AuthRequest, res) => {
+app.get('/api/n-intel/audit', authenticate as any, async (req: AuthRequest, res) => {
   if (!req.user?.isAdmin) {
     return res.status(403).json({ success: false, error: 'Access denied: Admin privileges required.' });
   }
 
   try {
-    const logs = getAuditLogs();
+    const logs = await getAuditLogs();
     res.json({ success: true, logs });
   } catch (error: any) {
     console.error('Error fetching audit logs:', error);
@@ -1147,9 +1163,9 @@ app.get('/api/n-intel/audit', authenticate as any, (req: AuthRequest, res) => {
    ========================================================================== */
 
 // Get all uploaded PYQ sessions and file metadata
-app.get('/api/pyq', (req: Request, res: Response) => {
+app.get('/api/pyq', async (req, res) => {
   try {
-    const sessions = getAllPyqSessions();
+    const sessions = await getAllPyqSessions();
     res.json({ success: true, sessions });
   } catch (err: any) {
     console.error('Error retrieving PYQ sessions:', err);
@@ -1158,7 +1174,7 @@ app.get('/api/pyq', (req: Request, res: Response) => {
 });
 
 // Link an external PDF or Drive URL (Admin Only)
-app.post('/api/pyq/link', authenticate as any, (req: AuthRequest, res: Response) => {
+app.post('/api/pyq/link', authenticate as any, async (req: AuthRequest, res: Response) => {
   if (!req.user?.isAdmin) {
     return res.status(403).json({ success: false, error: 'Access denied: Administrator privileges required.' });
   }
@@ -1185,7 +1201,7 @@ app.post('/api/pyq/link', authenticate as any, (req: AuthRequest, res: Response)
       return res.status(400).json({ success: false, error: 'Invalid URL. Only valid HTTP/HTTPS URLs are accepted.' });
     }
 
-    const sessionRecord = savePyqFileRecord({
+    const sessionRecord = await savePyqFileRecord({
       sessionId,
       exam: exam || (sessionId.startsWith('nda') ? 'NDA' : sessionId.startsWith('afcat') ? 'AFCAT' : 'CDS'),
       session: session || 'I',
@@ -1206,7 +1222,7 @@ app.post('/api/pyq/link', authenticate as any, (req: AuthRequest, res: Response)
 });
 
 // Delete an uploaded file or link (Admin Only)
-app.post('/api/pyq/delete', authenticate as any, (req: AuthRequest, res: Response) => {
+app.post('/api/pyq/delete', authenticate as any, async (req: AuthRequest, res: Response) => {
   if (!req.user?.isAdmin) {
     return res.status(403).json({ success: false, error: 'Access denied: Administrator privileges required.' });
   }
@@ -1217,7 +1233,7 @@ app.post('/api/pyq/delete', authenticate as any, (req: AuthRequest, res: Respons
       return res.status(400).json({ success: false, error: 'Missing required parameters.' });
     }
 
-    const sessionRecord = deletePyqFileRecord({ sessionId, subjectKey, fileType });
+    const sessionRecord = await deletePyqFileRecord({ sessionId, subjectKey, fileType });
     res.json({ success: true, session: sessionRecord });
   } catch (err: any) {
     console.error('Error deleting PYQ file:', err);
@@ -1226,7 +1242,7 @@ app.post('/api/pyq/delete', authenticate as any, (req: AuthRequest, res: Respons
 });
 
 // Sync PYQ sessions from client (Admin Only)
-app.post('/api/pyq/sync', authenticate as any, (req: AuthRequest, res: Response) => {
+app.post('/api/pyq/sync', authenticate as any, async (req: AuthRequest, res: Response) => {
   if (!req.user?.isAdmin) {
     return res.status(403).json({ success: false, error: 'Access denied: Administrator privileges required.' });
   }
@@ -1237,7 +1253,7 @@ app.post('/api/pyq/sync', authenticate as any, (req: AuthRequest, res: Response)
       return res.status(400).json({ success: false, error: 'Invalid sessions payload.' });
     }
 
-    const updated = syncPyqSessions(sessions);
+    const updated = await syncPyqSessions(sessions);
     res.json({ success: true, sessions: updated });
   } catch (err: any) {
     console.error('Error syncing PYQ sessions:', err);
@@ -1250,14 +1266,14 @@ app.post('/api/pyq/sync', authenticate as any, (req: AuthRequest, res: Response)
 // ─────────────────────────────────────────────────────────────
 
 // GET all notes or filter by subject
-app.get('/api/notes', (req: Request, res: Response) => {
+app.get('/api/notes', async (req, res) => {
   try {
     const { subject } = req.query;
     if (typeof subject === 'string' && subject.trim()) {
-      const notes = getNotesBySubject(subject.trim());
+      const notes = await getNotesBySubject(subject.trim());
       return res.json({ success: true, notes });
     }
-    const notes = getAllNotes();
+    const notes = await getAllNotes();
     res.json({ success: true, notes });
   } catch (err: any) {
     console.error('Error fetching subject notes:', err);
@@ -1266,7 +1282,7 @@ app.get('/api/notes', (req: Request, res: Response) => {
 });
 
 // Link a note from Google Drive or external URL (Admin Only)
-app.post('/api/notes/link', authenticate as any, (req: AuthRequest, res: Response) => {
+app.post('/api/notes/link', authenticate as any, async (req: AuthRequest, res: Response) => {
   if (!req.user?.isAdmin) {
     return res.status(403).json({ success: false, error: 'Access denied: Administrator privileges required.' });
   }
@@ -1278,7 +1294,7 @@ app.post('/api/notes/link', authenticate as any, (req: AuthRequest, res: Respons
       return res.status(400).json({ success: false, error: 'Missing required parameters.' });
     }
 
-    const note = saveNote({
+    const note = await saveNote({
       subjectId,
       subjectTitle,
       title,
@@ -1296,7 +1312,7 @@ app.post('/api/notes/link', authenticate as any, (req: AuthRequest, res: Respons
 });
 
 // Delete a note (Admin Only)
-app.post('/api/notes/delete', authenticate as any, (req: AuthRequest, res: Response) => {
+app.post('/api/notes/delete', authenticate as any, async (req: AuthRequest, res: Response) => {
   if (!req.user?.isAdmin) {
     return res.status(403).json({ success: false, error: 'Access denied: Administrator privileges required.' });
   }
@@ -1307,7 +1323,7 @@ app.post('/api/notes/delete', authenticate as any, (req: AuthRequest, res: Respo
       return res.status(400).json({ success: false, error: 'Missing note ID.' });
     }
 
-    const success = deleteNote(id);
+    const success = await deleteNote(id);
     res.json({ success });
   } catch (err: any) {
     console.error('Error deleting subject note:', err);
@@ -1316,7 +1332,7 @@ app.post('/api/notes/delete', authenticate as any, (req: AuthRequest, res: Respo
 });
 
 // Sync notes from client (Admin Only)
-app.post('/api/notes/sync', authenticate as any, (req: AuthRequest, res: Response) => {
+app.post('/api/notes/sync', authenticate as any, async (req: AuthRequest, res: Response) => {
   if (!req.user?.isAdmin) {
     return res.status(403).json({ success: false, error: 'Access denied: Administrator privileges required.' });
   }
@@ -1327,7 +1343,7 @@ app.post('/api/notes/sync', authenticate as any, (req: AuthRequest, res: Respons
       return res.status(400).json({ success: false, error: 'Invalid notes array.' });
     }
 
-    const updated = syncNotes(notes);
+    const updated = await syncNotes(notes);
     res.json({ success: true, notes: updated });
   } catch (err: any) {
     console.error('Error syncing notes:', err);
@@ -1371,7 +1387,7 @@ async function setupServer() {
   // Seed sample N-INTEL edition if empty (local dev only)
   if (!process.env.VERCEL) {
     try {
-      seedSampleDataIfEmpty(SAMPLE_NINTEL_POST);
+      await seedSampleDataIfEmpty(SAMPLE_NINTEL_POST);
     } catch (err) {
       console.warn('⚠️ Could not seed sample N-INTEL data:', err);
     }

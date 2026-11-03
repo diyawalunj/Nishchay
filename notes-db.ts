@@ -1,93 +1,16 @@
-import fs from 'fs';
-import path from 'path';
-import os from 'os';
+/**
+ * notes-db.ts — Firestore-backed persistent storage for Subject Notes.
+ *
+ * MIGRATION: Previously used Vercel /tmp JSON files (ephemeral, caused data loss).
+ * Now uses Firebase Admin Firestore (permanent, cross-device, single source of truth).
+ *
+ * Collection: subjectNotes
+ */
+
+import admin from 'firebase-admin';
 
 export interface SubjectNote {
-  id: string; // e.g. "note-1730000000000"
-  subjectId: string; // e.g. "maths", "english", "physics"
-  subjectTitle: string; // e.g. "Mathematics"
-  title: string; // Note display title
-  category?: string; // Optional chapter / topic name
-  url: string; // File URL (e.g. /uploads/notes/filename.pdf or Google Drive link)
-  driveFileId?: string; // Optional Google Drive File ID
-  fileName: string;
-  fileSize?: string;
-  uploadedAt: string;
-}
-
-const IS_VERCEL = Boolean(process.env.VERCEL);
-const DATA_DIR = IS_VERCEL ? path.join(os.tmpdir(), 'nishchay_data') : path.join(process.cwd(), 'data');
-const SEED_DATA_DIR = path.join(process.cwd(), 'data');
-const NOTES_FILE = path.join(DATA_DIR, 'notes.json');
-const SEED_NOTES_FILE = path.join(SEED_DATA_DIR, 'notes.json');
-
-function ensureDataDir() {
-  try {
-    if (!fs.existsSync(DATA_DIR)) {
-      fs.mkdirSync(DATA_DIR, { recursive: true });
-    }
-    if (IS_VERCEL && !fs.existsSync(NOTES_FILE) && fs.existsSync(SEED_NOTES_FILE)) {
-      fs.copyFileSync(SEED_NOTES_FILE, NOTES_FILE);
-    }
-  } catch (err) {
-    console.warn('Could not ensure data directory:', err);
-  }
-}
-
-let notesCache: SubjectNote[] | null = null;
-
-export function getAllNotes(): SubjectNote[] {
-  if (notesCache) {
-    return notesCache;
-  }
-
-  ensureDataDir();
-
-  // On Vercel, read from /tmp first, fallback to seeded repository data
-  let targetFile = NOTES_FILE;
-  if (!fs.existsSync(targetFile) && fs.existsSync(SEED_NOTES_FILE)) {
-    targetFile = SEED_NOTES_FILE;
-  }
-
-  if (!fs.existsSync(targetFile)) {
-    notesCache = [];
-    return notesCache;
-  }
-
-  try {
-    const raw = fs.readFileSync(targetFile, 'utf-8');
-    notesCache = JSON.parse(raw);
-    return notesCache || [];
-  } catch (err) {
-    console.error('Failed to parse notes.json, fallback to empty list:', err);
-    notesCache = [];
-    return notesCache;
-  }
-}
-
-export function getNotesBySubject(subjectId: string): SubjectNote[] {
-  const all = getAllNotes();
-  return all.filter((n) => n.subjectId.toLowerCase() === subjectId.toLowerCase());
-}
-
-export function getNoteById(id: string): SubjectNote | undefined {
-  const all = getAllNotes();
-  return all.find((n) => n.id === id);
-}
-
-function persistNotes(notes: SubjectNote[]) {
-  ensureDataDir();
-  notesCache = notes;
-  try {
-    const tempFile = `${NOTES_FILE}.tmp.${Date.now()}`;
-    fs.writeFileSync(tempFile, JSON.stringify(notes, null, 2), 'utf-8');
-    fs.renameSync(tempFile, NOTES_FILE);
-  } catch (err) {
-    console.warn('Could not write notes.json to disk:', err);
-  }
-}
-
-export function saveNote(data: {
+  id: string;
   subjectId: string;
   subjectTitle: string;
   title: string;
@@ -96,8 +19,49 @@ export function saveNote(data: {
   driveFileId?: string;
   fileName: string;
   fileSize?: string;
-}): SubjectNote {
-  const all = getAllNotes();
+  uploadedAt: string;
+}
+
+function getDb(): FirebaseFirestore.Firestore {
+  return admin.firestore();
+}
+
+const CACHE_TTL_MS = 30_000;
+let notesCache: { data: SubjectNote[]; expiresAt: number } | null = null;
+
+function invalidateNotesCache() { notesCache = null; }
+
+export async function getAllNotes(): Promise<SubjectNote[]> {
+  if (notesCache && Date.now() < notesCache.expiresAt) return notesCache.data;
+  const db = getDb();
+  const snap = await db.collection('subjectNotes').orderBy('uploadedAt', 'desc').get();
+  const notes = snap.docs.map(d => d.data() as SubjectNote);
+  notesCache = { data: notes, expiresAt: Date.now() + CACHE_TTL_MS };
+  return notes;
+}
+
+export async function getNotesBySubject(subjectId: string): Promise<SubjectNote[]> {
+  const all = await getAllNotes();
+  return all.filter(n => n.subjectId.toLowerCase() === subjectId.toLowerCase());
+}
+
+export async function getNoteById(id: string): Promise<SubjectNote | undefined> {
+  const db = getDb();
+  const snap = await db.collection('subjectNotes').doc(id).get();
+  return snap.exists ? (snap.data() as SubjectNote) : undefined;
+}
+
+export async function saveNote(data: {
+  subjectId: string;
+  subjectTitle: string;
+  title: string;
+  category?: string;
+  url: string;
+  driveFileId?: string;
+  fileName: string;
+  fileSize?: string;
+}): Promise<SubjectNote> {
+  const db = getDb();
   const id = `note-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
   const newNote: SubjectNote = {
     id,
@@ -109,46 +73,42 @@ export function saveNote(data: {
     driveFileId: data.driveFileId,
     fileName: data.fileName,
     fileSize: data.fileSize || 'PDF Document',
-    uploadedAt: new Date().toISOString(),
+    uploadedAt: new Date().toISOString()
   };
 
-  all.unshift(newNote); // newest first
-  persistNotes(all);
+  await db.collection('subjectNotes').doc(id).set(newNote);
+  invalidateNotesCache();
   return newNote;
 }
 
-export function deleteNote(id: string): boolean {
-  const all = getAllNotes();
-  const index = all.findIndex((n) => n.id === id);
-  if (index === -1) return false;
-
-  all.splice(index, 1);
-  persistNotes(all);
+export async function deleteNote(id: string): Promise<boolean> {
+  const db = getDb();
+  const ref = db.collection('subjectNotes').doc(id);
+  const snap = await ref.get();
+  if (!snap.exists) return false;
+  await ref.delete();
+  invalidateNotesCache();
   return true;
 }
 
-export function syncNotes(incomingNotes: SubjectNote[]): SubjectNote[] {
+export async function syncNotes(incomingNotes: SubjectNote[]): Promise<SubjectNote[]> {
   if (!Array.isArray(incomingNotes) || incomingNotes.length === 0) {
     return getAllNotes();
   }
-  const all = getAllNotes();
-  const map = new Map<string, SubjectNote>();
-  for (const n of all) {
-    if (n && n.id) map.set(n.id, n);
-  }
+
+  const db = getDb();
   let added = false;
-  for (const n of incomingNotes) {
-    if (n && n.id && !map.has(n.id)) {
-      map.set(n.id, n);
+
+  for (const note of incomingNotes) {
+    if (!note || !note.id) continue;
+    const ref = db.collection('subjectNotes').doc(note.id);
+    const snap = await ref.get();
+    if (!snap.exists) {
+      await ref.set(note);
       added = true;
     }
   }
-  if (added) {
-    const merged = Array.from(map.values()).sort(
-      (a, b) => new Date(b.uploadedAt || 0).getTime() - new Date(a.uploadedAt || 0).getTime()
-    );
-    persistNotes(merged);
-    return merged;
-  }
-  return all;
+
+  if (added) invalidateNotesCache();
+  return getAllNotes();
 }

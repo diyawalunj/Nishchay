@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { auth, onAuthStateChanged, checkIfAdmin } from './firebase';
 import type { SubjectNote } from './notes-db';
 import { motion, AnimatePresence } from 'motion/react';
@@ -506,21 +506,18 @@ export default function Notes() {
     return () => unsubscribe();
   }, []);
 
-  // Fetch latest uploaded papers from server and merge safely (NEVER wipe local papers)
-  useEffect(() => {
-    fetch('/api/pyq')
+  // Revalidation & synchronization: fetch latest authoritative data from server
+  const fetchPyqSessions = useCallback(() => {
+    fetch(`/api/pyq?_t=${Date.now()}`)
       .then((res) => res.json())
       .then((data) => {
         if (data && data.success && data.sessions) {
-          setPyqSessions((prev) => {
-            const merged = mergePyqSessionsSafely(prev, data.sessions);
-            try {
-              localStorage.setItem(LOCAL_STORAGE_PYQ_KEY, JSON.stringify(merged));
-            } catch (e) {
-              console.warn('LocalStorage save failed:', e);
-            }
-            return merged;
-          });
+          setPyqSessions(data.sessions);
+          try {
+            localStorage.setItem(LOCAL_STORAGE_PYQ_KEY, JSON.stringify(data.sessions));
+          } catch (e) {
+            console.warn('LocalStorage save failed:', e);
+          }
         }
       })
       .catch((err) => {
@@ -528,21 +525,17 @@ export default function Notes() {
       });
   }, []);
 
-  // Fetch latest uploaded subject notes from server and merge safely (NEVER wipe local notes)
-  useEffect(() => {
-    fetch('/api/notes')
+  const fetchNotes = useCallback(() => {
+    fetch(`/api/notes?_t=${Date.now()}`)
       .then((res) => res.json())
       .then((data) => {
         if (data && data.success && Array.isArray(data.notes)) {
-          setAllSubjectNotes((prev) => {
-            const merged = mergeNotesSafely(prev, data.notes);
-            try {
-              localStorage.setItem(LOCAL_STORAGE_NOTES_KEY, JSON.stringify(merged));
-            } catch (e) {
-              console.warn('LocalStorage save failed for notes:', e);
-            }
-            return merged;
-          });
+          setAllSubjectNotes(data.notes);
+          try {
+            localStorage.setItem(LOCAL_STORAGE_NOTES_KEY, JSON.stringify(data.notes));
+          } catch (e) {
+            console.warn('LocalStorage save failed for notes:', e);
+          }
         }
       })
       .catch((err) => {
@@ -550,34 +543,34 @@ export default function Notes() {
       });
   }, []);
 
-  // Background server hydration: when admin is logged in, sync local items to serverless instance
+  // Initial fetch and automatic cross-device sync (revalidate on focus & 25s polling)
   useEffect(() => {
-    if (!isAdmin) return;
+    fetchPyqSessions();
+    fetchNotes();
 
-    const hydrateServerInstance = async () => {
-      try {
-        const headers = await getAuthHeaders();
-        if (Array.isArray(allSubjectNotes) && allSubjectNotes.length > 0) {
-          fetch('/api/notes/sync', {
-            method: 'POST',
-            headers,
-            body: JSON.stringify({ notes: allSubjectNotes }),
-          }).catch(() => {});
-        }
-        if (pyqSessions && typeof pyqSessions === 'object' && Object.keys(pyqSessions).length > 0) {
-          fetch('/api/pyq/sync', {
-            method: 'POST',
-            headers,
-            body: JSON.stringify({ sessions: pyqSessions }),
-          }).catch(() => {});
-        }
-      } catch (e) {
-        // Silent background sync
+    const handleFocus = () => {
+      if (document.visibilityState === 'visible') {
+        fetchPyqSessions();
+        fetchNotes();
       }
     };
 
-    hydrateServerInstance();
-  }, [isAdmin]);
+    const interval = setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        fetchPyqSessions();
+        fetchNotes();
+      }
+    }, 25000);
+
+    window.addEventListener('focus', handleFocus);
+    document.addEventListener('visibilitychange', handleFocus);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('focus', handleFocus);
+      document.removeEventListener('visibilitychange', handleFocus);
+    };
+  }, [fetchPyqSessions, fetchNotes]);
 
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: 'smooth' });

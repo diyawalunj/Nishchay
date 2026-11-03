@@ -52,16 +52,10 @@ export default function ArticleDetail() {
               handleDownloadPdf(data.article.id);
             }, 600);
           }
-        } else if (cached) {
-          // Server lost data due to serverless cold restart — trigger background sync to restore it!
-          syncLocalArticlesWithServer().catch(() => {});
         }
       })
       .catch(err => {
         console.warn('Network issue fetching article from server:', err);
-        if (cached) {
-          syncLocalArticlesWithServer().catch(() => {});
-        }
       })
       .finally(() => setLoading(false));
   }, [id, searchParams]);

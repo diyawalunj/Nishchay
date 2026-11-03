@@ -1,6 +1,13 @@
-import fs from 'fs';
-import path from 'path';
-import os from 'os';
+/**
+ * pyq-db.ts — Firestore-backed persistent storage for PYQ (Previous Year Questions).
+ *
+ * MIGRATION: Previously used Vercel /tmp JSON files (ephemeral, caused data loss).
+ * Now uses Firebase Admin Firestore (permanent, cross-device, single source of truth).
+ *
+ * Collection: pyqSessions
+ */
+
+import admin from 'firebase-admin';
 
 export interface PyqFileItem {
   url: string;
@@ -31,68 +38,29 @@ export interface PyqSessionData {
   updatedAt: string;
 }
 
-const IS_VERCEL = Boolean(process.env.VERCEL);
-const DATA_DIR = IS_VERCEL ? path.join(os.tmpdir(), 'nishchay_data') : path.join(process.cwd(), 'data');
-const SEED_DATA_DIR = path.join(process.cwd(), 'data');
-const PYQ_FILE = path.join(DATA_DIR, 'pyq-papers.json');
-const SEED_PYQ_FILE = path.join(SEED_DATA_DIR, 'pyq-papers.json');
-
-function ensureDataDir() {
-  try {
-    if (!fs.existsSync(DATA_DIR)) {
-      fs.mkdirSync(DATA_DIR, { recursive: true });
-    }
-    if (IS_VERCEL && !fs.existsSync(PYQ_FILE) && fs.existsSync(SEED_PYQ_FILE)) {
-      fs.copyFileSync(SEED_PYQ_FILE, PYQ_FILE);
-    }
-  } catch (err) {
-    console.warn('Could not ensure data directory:', err);
-  }
+function getDb(): FirebaseFirestore.Firestore {
+  return admin.firestore();
 }
 
-let pyqCache: Record<string, PyqSessionData> | null = null;
+const CACHE_TTL_MS = 30_000;
+let pyqCache: { data: Record<string, PyqSessionData>; expiresAt: number } | null = null;
 
-export function getAllPyqSessions(): Record<string, PyqSessionData> {
-  if (pyqCache) {
-    return pyqCache;
+function invalidatePyqCache() { pyqCache = null; }
+
+export async function getAllPyqSessions(): Promise<Record<string, PyqSessionData>> {
+  if (pyqCache && Date.now() < pyqCache.expiresAt) return pyqCache.data;
+  const db = getDb();
+  const snap = await db.collection('pyqSessions').get();
+  const sessions: Record<string, PyqSessionData> = {};
+  for (const doc of snap.docs) {
+    const data = doc.data() as PyqSessionData;
+    sessions[data.sessionId] = data;
   }
-
-  ensureDataDir();
-
-  let targetFile = PYQ_FILE;
-  if (!fs.existsSync(targetFile) && fs.existsSync(SEED_PYQ_FILE)) {
-    targetFile = SEED_PYQ_FILE;
-  }
-
-  if (!fs.existsSync(targetFile)) {
-    pyqCache = {};
-    return pyqCache;
-  }
-
-  try {
-    const raw = fs.readFileSync(targetFile, 'utf-8');
-    pyqCache = JSON.parse(raw);
-    return pyqCache || {};
-  } catch (err) {
-    console.error('Failed to parse pyq-papers.json, fallback to empty:', err);
-    pyqCache = {};
-    return pyqCache;
-  }
+  pyqCache = { data: sessions, expiresAt: Date.now() + CACHE_TTL_MS };
+  return sessions;
 }
 
-function persistPyqData(data: Record<string, PyqSessionData>) {
-  ensureDataDir();
-  pyqCache = data;
-  try {
-    const tempFile = `${PYQ_FILE}.tmp.${Date.now()}`;
-    fs.writeFileSync(tempFile, JSON.stringify(data, null, 2), 'utf-8');
-    fs.renameSync(tempFile, PYQ_FILE);
-  } catch (err) {
-    console.warn('Could not write pyq-papers.json to disk:', err);
-  }
-}
-
-export function savePyqFileRecord(params: {
+export async function savePyqFileRecord(params: {
   sessionId: string;
   exam: 'NDA' | 'CDS' | 'AFCAT';
   session: 'I' | 'II';
@@ -104,23 +72,17 @@ export function savePyqFileRecord(params: {
   driveFileId?: string;
   fileName: string;
   fileSize?: string;
-}): PyqSessionData {
-  const all = getAllPyqSessions();
+}): Promise<PyqSessionData> {
+  const db = getDb();
   const { sessionId, exam, session, year, title, subjectKey, fileType, url, driveFileId, fileName, fileSize } = params;
 
-  if (!all[sessionId]) {
-    all[sessionId] = {
-      sessionId,
-      exam,
-      session,
-      year,
-      title,
-      subjects: {},
-      updatedAt: new Date().toISOString(),
-    };
-  }
+  const ref = db.collection('pyqSessions').doc(sessionId);
+  const snap = await ref.get();
 
-  const sessionRecord = all[sessionId];
+  let sessionRecord: PyqSessionData = snap.exists
+    ? (snap.data() as PyqSessionData)
+    : { sessionId, exam, session, year, title, subjects: {}, updatedAt: new Date().toISOString() };
+
   if (!sessionRecord.subjects[subjectKey]) {
     sessionRecord.subjects[subjectKey] = {};
   }
@@ -130,7 +92,7 @@ export function savePyqFileRecord(params: {
     driveFileId,
     fileName,
     fileSize: fileSize || 'PDF Document',
-    uploadedAt: new Date().toISOString(),
+    uploadedAt: new Date().toISOString()
   };
 
   if (fileType === 'paper') {
@@ -140,22 +102,25 @@ export function savePyqFileRecord(params: {
   }
 
   sessionRecord.updatedAt = new Date().toISOString();
-  persistPyqData(all);
+  await ref.set(sessionRecord, { merge: true });
+  invalidatePyqCache();
   return sessionRecord;
 }
 
-export function deletePyqFileRecord(params: {
+export async function deletePyqFileRecord(params: {
   sessionId: string;
   subjectKey: 'maths' | 'gat' | 'english' | 'gs' | 'afcat';
   fileType: 'paper' | 'key';
-}): PyqSessionData | null {
-  const all = getAllPyqSessions();
+}): Promise<PyqSessionData | null> {
+  const db = getDb();
   const { sessionId, subjectKey, fileType } = params;
 
-  const sessionRecord = all[sessionId];
-  if (!sessionRecord || !sessionRecord.subjects[subjectKey]) {
-    return sessionRecord || null;
-  }
+  const ref = db.collection('pyqSessions').doc(sessionId);
+  const snap = await ref.get();
+  if (!snap.exists) return null;
+
+  const sessionRecord = snap.data() as PyqSessionData;
+  if (!sessionRecord.subjects[subjectKey]) return sessionRecord;
 
   if (fileType === 'paper') {
     delete sessionRecord.subjects[subjectKey]!.paper;
@@ -164,43 +129,56 @@ export function deletePyqFileRecord(params: {
   }
 
   sessionRecord.updatedAt = new Date().toISOString();
-  persistPyqData(all);
+  await ref.set(sessionRecord, { merge: true });
+  invalidatePyqCache();
   return sessionRecord;
 }
 
-export function syncPyqSessions(incomingSessions: Record<string, PyqSessionData>): Record<string, PyqSessionData> {
+export async function syncPyqSessions(
+  incomingSessions: Record<string, PyqSessionData>
+): Promise<Record<string, PyqSessionData>> {
   if (!incomingSessions || typeof incomingSessions !== 'object') {
     return getAllPyqSessions();
   }
-  const all = getAllPyqSessions();
+
+  const db = getDb();
   let changed = false;
 
   for (const [sessionId, session] of Object.entries(incomingSessions)) {
     if (!session || !session.subjects) continue;
-    if (!all[sessionId]) {
-      all[sessionId] = session;
+    const ref = db.collection('pyqSessions').doc(sessionId);
+    const snap = await ref.get();
+
+    if (!snap.exists) {
+      await ref.set(session);
       changed = true;
     } else {
-      for (const key of ['maths', 'gat', 'english', 'gs'] as const) {
+      const existing = snap.data() as PyqSessionData;
+      let updated = false;
+      for (const key of ['maths', 'gat', 'english', 'gs', 'afcat'] as const) {
         const incSlot = session.subjects[key];
         if (!incSlot) continue;
-        if (!all[sessionId].subjects[key]) {
-          all[sessionId].subjects[key] = {};
+        if (!existing.subjects[key]) {
+          existing.subjects[key] = {};
+          updated = true;
         }
-        if (incSlot.paper && !all[sessionId].subjects[key]!.paper) {
-          all[sessionId].subjects[key]!.paper = incSlot.paper;
-          changed = true;
+        if (incSlot.paper && !existing.subjects[key]!.paper) {
+          existing.subjects[key]!.paper = incSlot.paper;
+          updated = true;
         }
-        if (incSlot.key && !all[sessionId].subjects[key]!.key) {
-          all[sessionId].subjects[key]!.key = incSlot.key;
-          changed = true;
+        if (incSlot.key && !existing.subjects[key]!.key) {
+          existing.subjects[key]!.key = incSlot.key;
+          updated = true;
         }
+      }
+      if (updated) {
+        existing.updatedAt = new Date().toISOString();
+        await ref.set(existing, { merge: true });
+        changed = true;
       }
     }
   }
 
-  if (changed) {
-    persistPyqData(all);
-  }
-  return all;
+  if (changed) invalidatePyqCache();
+  return getAllPyqSessions();
 }

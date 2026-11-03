@@ -91,7 +91,7 @@ export const saveLocalArticle = (article: Article): void => {
 };
 
 /**
- * Save multiple articles to local storage.
+ * Save multiple articles to local storage (replaces cache with authoritative server list).
  */
 export const saveAllLocalArticles = (articles: Article[]): void => {
   try {
@@ -121,93 +121,50 @@ export const deleteLocalArticle = (id: string): void => {
 };
 
 /**
- * Merges server articles with local storage articles.
- * Preserves locally authored articles that the server might have lost during a cold restart.
+ * Server is authoritative: replaces cached articles with confirmed server response.
+ * Local cache is only used when server response is completely empty due to network offline.
  */
 export const mergeArticlesWithLocal = (serverArticles: Article[]): Article[] => {
-  const localArticles = getLocalArticles();
-  const deleted = getDeletedArticleIds();
-  const map: Record<string, Article> = {};
-
-  // 1. Ingest valid server articles first
-  if (Array.isArray(serverArticles)) {
-    for (const s of serverArticles) {
-      if (s && s.id && !deleted[s.id]) {
-        map[s.id] = s;
-        if (s.slug) map[s.slug] = s;
-      }
-    }
+  if (Array.isArray(serverArticles) && serverArticles.length > 0) {
+    // Overwrite local storage so deleted articles never resurrect
+    saveAllLocalArticles(serverArticles);
+    return serverArticles;
   }
 
-  // 2. Ingest local articles (if server missed any, preserve them!)
-  for (const l of localArticles) {
-    if (l && l.id && !deleted[l.id]) {
-      const match = map[l.id] || (l.slug ? map[l.slug] : null);
-      if (!match) {
-        map[l.id] = l;
-      } else {
-        // If local version has newer timestamp, keep local
-        const serverTime = new Date(match.updatedAt || match.createdAt || 0).getTime();
-        const localTime = new Date(l.updatedAt || l.createdAt || 0).getTime();
-        if (localTime > serverTime) {
-          map[l.id] = { ...match, ...l };
-        }
-      }
-    }
+  // If server returned explicitly empty array, clear local storage
+  if (Array.isArray(serverArticles) && serverArticles.length === 0) {
+    saveAllLocalArticles([]);
+    return [];
   }
 
-  // Unique list
-  const seen = new Set<string>();
-  const merged: Article[] = [];
-  for (const item of Object.values(map)) {
-    if (item && item.id && !seen.has(item.id)) {
-      seen.add(item.id);
-      merged.push(item);
-    }
-  }
-
-  merged.sort((a, b) => new Date(b.publishDate || b.createdAt || 0).getTime() - new Date(a.publishDate || a.createdAt || 0).getTime());
-  saveAllLocalArticles(merged);
-  return merged;
+  // Network offline fallback
+  return getLocalArticles();
 };
 
 /**
- * Background synchronizer: Sends locally cached articles to the server
- * so that a freshly cold-started server container is automatically repopulated.
+ * No-op: Automatic background push from client to server is permanently disabled.
+ * Firestore is now the authoritative store, eliminating accidental resurrection of deleted data.
  */
-export const syncLocalArticlesWithServer = async (): Promise<void> => {
-  try {
-    if (typeof window === 'undefined') return;
-    const articles = getLocalArticles();
-    if (!articles.length) return;
-
-    await fetch('/api/articles/sync', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ articles })
-    });
-  } catch (e) {
-    // Non-blocking background sync
-    console.debug('Articles background sync non-critical notice:', e);
-  }
+export const syncLocalArticlesWithServer = async (): Promise<boolean> => {
+  return true;
 };
 
 /**
- * Compresses an image file client-side using an HTML5 Canvas to produce a sharp,
- * optimized WebP/JPEG Data URL. Completely eliminates dependency on server /tmp file storage.
+ * Compresses an image file on the client-side to a WebP/JPEG data URL.
+ * Preserves high visual fidelity while keeping payload ultra-lightweight.
  */
 export const compressImageToDataUrl = (
   file: File,
-  maxWidth = 1280,
-  maxHeight = 800,
+  maxWidth = 1600,
+  maxHeight = 900,
   quality = 0.82
 ): Promise<string> => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
-    reader.onerror = () => reject(new Error('Failed to read image file'));
-    reader.onload = () => {
+    reader.onerror = () => reject(new Error('Failed to read file'));
+    reader.onload = (e) => {
       const img = new Image();
-      img.onerror = () => reject(new Error('Failed to decode image data'));
+      img.onerror = () => reject(new Error('Failed to load image for compression'));
       img.onload = () => {
         let width = img.width;
         let height = img.height;
@@ -224,30 +181,26 @@ export const compressImageToDataUrl = (
         const canvas = document.createElement('canvas');
         canvas.width = width;
         canvas.height = height;
+
         const ctx = canvas.getContext('2d');
         if (!ctx) {
-          resolve(reader.result as string);
-          return;
+          return resolve(reader.result as string);
         }
 
-        // Fill white background for transparent PNGs
-        ctx.fillStyle = '#FFFFFF';
-        ctx.fillRect(0, 0, width, height);
         ctx.drawImage(img, 0, 0, width, height);
 
         // Try webp first, fallback to jpeg
         try {
-          const webp = canvas.toDataURL('image/webp', quality);
-          if (webp.startsWith('data:image/webp')) {
-            resolve(webp);
-            return;
+          const webpUrl = canvas.toDataURL('image/webp', quality);
+          if (webpUrl.startsWith('data:image/webp')) {
+            return resolve(webpUrl);
           }
-        } catch {
-          // fallback to jpeg
-        }
-        resolve(canvas.toDataURL('image/jpeg', quality));
+        } catch {}
+
+        const jpegUrl = canvas.toDataURL('image/jpeg', quality);
+        resolve(jpegUrl);
       };
-      img.src = reader.result as string;
+      img.src = e.target?.result as string;
     };
     reader.readAsDataURL(file);
   });

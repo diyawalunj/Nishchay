@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { Link, useSearchParams } from 'react-router-dom';
@@ -13,6 +13,7 @@ import { getLocalTodayDate } from './n-intel-whatsapp';
 import {
   getLocalArticles,
   saveLocalArticle,
+  saveAllLocalArticles,
   deleteLocalArticle,
   mergeArticlesWithLocal,
   syncLocalArticlesWithServer,
@@ -90,15 +91,14 @@ export default function Articles() {
     return () => unsubscribe();
   }, []);
 
-  const fetchArticles = () => {
-    setLoading(articles.length === 0);
-    fetch('/api/articles')
+  const fetchArticles = useCallback((showSpinner = false) => {
+    if (showSpinner) setLoading(true);
+    fetch(`/api/articles?_t=${Date.now()}`)
       .then(res => res.json())
       .then(data => {
         if (data.success && Array.isArray(data.articles)) {
-          const merged = mergeArticlesWithLocal(data.articles);
-          setArticles(merged);
-          syncLocalArticlesWithServer().catch(() => {});
+          setArticles(data.articles);
+          saveAllLocalArticles(data.articles);
         } else {
           const fallback = getLocalArticles();
           if (fallback.length > 0) setArticles(fallback);
@@ -110,11 +110,33 @@ export default function Articles() {
         if (fallback.length > 0) setArticles(fallback);
       })
       .finally(() => setLoading(false));
-  };
-
-  useEffect(() => {
-    fetchArticles();
   }, []);
+
+  // Initial fetch and automatic cross-device sync (revalidate on focus & 25s polling)
+  useEffect(() => {
+    fetchArticles(articles.length === 0);
+
+    const handleFocus = () => {
+      if (document.visibilityState === 'visible') {
+        fetchArticles(false);
+      }
+    };
+
+    const interval = setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        fetchArticles(false);
+      }
+    }, 25000);
+
+    window.addEventListener('focus', handleFocus);
+    document.addEventListener('visibilitychange', handleFocus);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('focus', handleFocus);
+      document.removeEventListener('visibilitychange', handleFocus);
+    };
+  }, [fetchArticles]);
 
   const resetForm = () => {
     setTitle('');

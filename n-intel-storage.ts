@@ -13,7 +13,7 @@ const LOCAL_STORIES_KEY = 'nishchay_nintel_local_stories';
 const LOCAL_BATCHES_KEY = 'nishchay_nintel_local_batches';
 
 /**
- * Safely load local stories from browser localStorage
+ * Safely load local stories from browser localStorage for instant initial paint.
  */
 export function getLocalStories(): NIntelStory[] {
   if (typeof window === 'undefined') return [];
@@ -29,24 +29,14 @@ export function getLocalStories(): NIntelStory[] {
 }
 
 /**
- * Safely save/merge stories into browser localStorage
+ * Updates local cache with the authoritative server dataset.
+ * Overwrites local cache to prevent resurrection of deleted stories.
  */
 export function saveLocalStories(incoming: NIntelStory[]): NIntelStory[] {
   if (typeof window === 'undefined' || !Array.isArray(incoming)) return [];
   try {
-    const existing = getLocalStories();
-    const map = new Map<string, NIntelStory>();
-
-    for (const s of existing) {
-      if (s && s.id) map.set(s.id, s);
-    }
-    for (const s of incoming) {
-      if (s && s.id) map.set(s.id, s);
-    }
-
-    const merged = Array.from(map.values());
-    localStorage.setItem(LOCAL_STORIES_KEY, JSON.stringify(merged));
-    return merged;
+    localStorage.setItem(LOCAL_STORIES_KEY, JSON.stringify(incoming));
+    return incoming;
   } catch (err) {
     console.warn('Could not persist local N-INTEL stories:', err);
     return incoming;
@@ -70,24 +60,13 @@ export function getLocalBatches(): NIntelBatch[] {
 }
 
 /**
- * Safely save/merge batches into browser localStorage
+ * Overwrite local batches with authoritative server data
  */
 export function saveLocalBatches(incoming: NIntelBatch[]): NIntelBatch[] {
   if (typeof window === 'undefined' || !Array.isArray(incoming)) return [];
   try {
-    const existing = getLocalBatches();
-    const map = new Map<string, NIntelBatch>();
-
-    for (const b of existing) {
-      if (b && b.id) map.set(b.id, b);
-    }
-    for (const b of incoming) {
-      if (b && b.id) map.set(b.id, b);
-    }
-
-    const merged = Array.from(map.values());
-    localStorage.setItem(LOCAL_BATCHES_KEY, JSON.stringify(merged));
-    return merged;
+    localStorage.setItem(LOCAL_BATCHES_KEY, JSON.stringify(incoming));
+    return incoming;
   } catch (err) {
     console.warn('Could not persist local N-INTEL batches:', err);
     return incoming;
@@ -95,97 +74,90 @@ export function saveLocalBatches(incoming: NIntelBatch[]): NIntelBatch[] {
 }
 
 /**
- * Non-destructively merges server editions with local storage editions.
- * Guarantees that newly published editions never disappear when serverless workers cold-start.
+ * Server is authoritative: server editions replace cached editions.
+ * Fallback to local only if server returns empty due to network offline.
  */
 export function mergeEditionsWithLocal(serverEditions: EditionSummary[]): EditionSummary[] {
+  if (Array.isArray(serverEditions) && serverEditions.length > 0) {
+    // Server returned valid editions — server is authoritative
+    return serverEditions;
+  }
+  // Offline fallback only
   const localStories = getLocalStories();
-  if (localStories.length === 0) return serverEditions;
+  if (localStories.length === 0) return serverEditions || [];
 
   const editionsMap = new Map<string, EditionSummary>();
-
-  // Add server editions first
-  for (const ed of serverEditions) {
-    if (ed && ed.date) {
-      editionsMap.set(ed.date, { ...ed });
-    }
-  }
-
-  // Group local stories by date
   const localByDate: Record<string, NIntelStory[]> = {};
   for (const story of localStories) {
     if (!story || !story.date || story.isDeleted) continue;
-    if (!localByDate[story.date]) {
-      localByDate[story.date] = [];
-    }
+    if (!localByDate[story.date]) localByDate[story.date] = [];
     localByDate[story.date].push(story);
   }
 
-  // Merge each date's data
   for (const [date, stories] of Object.entries(localByDate)) {
-    const existing = editionsMap.get(date);
-    if (!existing) {
-      // New edition synthesized from local storage
-      const categories = Array.from(new Set(stories.map(s => s.category).filter(Boolean)));
-      const categoryCounts: Record<string, number> = {};
-      let defenceCount = 0;
-      const highlights: string[] = [];
+    const categories = Array.from(new Set(stories.map(s => s.category).filter(Boolean)));
+    const categoryCounts: Record<string, number> = {};
+    let defenceCount = 0;
+    const highlights: string[] = [];
 
-      for (const s of stories) {
-        categoryCounts[s.category] = (categoryCounts[s.category] || 0) + 1;
-        if (s.isDefence || s.category.toLowerCase().includes('defence')) {
-          defenceCount++;
-        }
-        if (highlights.length < 3 && s.headline) {
-          highlights.push(s.headline);
-        }
+    for (const s of stories) {
+      categoryCounts[s.category] = (categoryCounts[s.category] || 0) + 1;
+      if (s.isDefence || s.category.toLowerCase().includes('defence')) {
+        defenceCount++;
       }
-
-      editionsMap.set(date, {
-        date,
-        storyCount: stories.length,
-        categories,
-        highlights,
-        defenceCount,
-        categoryCounts
-      });
-    } else {
-      // Ensure story count is at least the local count
-      if (stories.length > existing.storyCount) {
-        existing.storyCount = stories.length;
+      if (highlights.length < 3 && s.headline) {
+        highlights.push(s.headline);
       }
     }
+
+    editionsMap.set(date, {
+      date,
+      storyCount: stories.length,
+      categories,
+      highlights,
+      defenceCount,
+      categoryCounts
+    });
   }
 
   return Array.from(editionsMap.values()).sort((a, b) => b.date.localeCompare(a.date));
 }
 
 /**
- * Merges server stories with locally saved stories for a given date
+ * Server stories are authoritative.
+ * Local cache is only used when serverStories is completely empty due to offline network failure.
  */
 export function mergeStoriesWithLocal(serverStories: NIntelStory[], date?: string): NIntelStory[] {
+  if (Array.isArray(serverStories) && serverStories.length > 0) {
+    // Authoritative from server — update local storage cache for this date
+    try {
+      const existing = getLocalStories();
+      const filtered = date ? existing.filter(s => s.date !== date) : [];
+      const updated = [...filtered, ...serverStories];
+      localStorage.setItem(LOCAL_STORIES_KEY, JSON.stringify(updated));
+    } catch {}
+    return serverStories;
+  }
+
+  // If server returned empty because user explicitly deleted all stories, return empty!
+  if (Array.isArray(serverStories) && serverStories.length === 0 && date) {
+    // Clean local storage for this date so deleted stories don't reappear
+    try {
+      const existing = getLocalStories();
+      const filtered = existing.filter(s => s.date !== date);
+      localStorage.setItem(LOCAL_STORIES_KEY, JSON.stringify(filtered));
+    } catch {}
+    return [];
+  }
+
+  // Network offline fallback
   const localStories = getLocalStories();
-  if (localStories.length === 0) return serverStories;
+  const filtered = localStories.filter(s => {
+    if (date && s.date !== date) return false;
+    return !s.isDeleted;
+  });
 
-  const storyMap = new Map<string, NIntelStory>();
-
-  for (const s of serverStories) {
-    if (s && s.id) storyMap.set(s.id, s);
-  }
-
-  for (const s of localStories) {
-    if (s && s.id) {
-      if (date && s.date !== date) continue;
-      // Do not resurrect soft-deleted stories into the active feed
-      if (s.isDeleted) continue;
-      // If server doesn't have it, or local has a newer version
-      if (!storyMap.has(s.id)) {
-        storyMap.set(s.id, s);
-      }
-    }
-  }
-
-  return Array.from(storyMap.values()).sort((a, b) => {
+  return filtered.sort((a, b) => {
     if (a.date !== b.date) return b.date.localeCompare(a.date);
     const timeA = a.createdAt || '';
     const timeB = b.createdAt || '';
@@ -201,13 +173,8 @@ export function deleteLocalStory(id: string, permanent = false): void {
   if (typeof window === 'undefined') return;
   try {
     const existing = getLocalStories();
-    if (permanent) {
-      const filtered = existing.filter(s => s.id !== id);
-      localStorage.setItem(LOCAL_STORIES_KEY, JSON.stringify(filtered));
-    } else {
-      const updated = existing.map(s => s.id === id ? { ...s, isDeleted: true, updatedAt: new Date().toISOString() } : s);
-      localStorage.setItem(LOCAL_STORIES_KEY, JSON.stringify(updated));
-    }
+    const filtered = existing.filter(s => s.id !== id);
+    localStorage.setItem(LOCAL_STORIES_KEY, JSON.stringify(filtered));
   } catch (err) {
     console.warn('Could not delete story in localStorage:', err);
   }
@@ -220,13 +187,8 @@ export function deleteLocalStoriesByDate(date: string, permanent = false): void 
   if (typeof window === 'undefined') return;
   try {
     const existing = getLocalStories();
-    if (permanent) {
-      const filtered = existing.filter(s => s.date !== date);
-      localStorage.setItem(LOCAL_STORIES_KEY, JSON.stringify(filtered));
-    } else {
-      const updated = existing.map(s => s.date === date ? { ...s, isDeleted: true, updatedAt: new Date().toISOString() } : s);
-      localStorage.setItem(LOCAL_STORIES_KEY, JSON.stringify(updated));
-    }
+    const filtered = existing.filter(s => s.date !== date);
+    localStorage.setItem(LOCAL_STORIES_KEY, JSON.stringify(filtered));
   } catch (err) {
     console.warn('Could not delete stories by date in localStorage:', err);
   }
@@ -240,26 +202,20 @@ export function deleteLocalStoriesByCategory(category: string, date?: string, pe
   try {
     const existing = getLocalStories();
     const targetCat = category.trim().toLowerCase();
-    const matches = (s: NIntelStory) => {
-      if (s.category.trim().toLowerCase() !== targetCat) return false;
-      if (date && s.date !== date) return false;
+    const filtered = existing.filter(s => {
+      if (s.category.trim().toLowerCase() === targetCat) {
+        if (!date || s.date === date) return false;
+      }
       return true;
-    };
-
-    if (permanent) {
-      const filtered = existing.filter(s => !matches(s));
-      localStorage.setItem(LOCAL_STORIES_KEY, JSON.stringify(filtered));
-    } else {
-      const updated = existing.map(s => matches(s) ? { ...s, isDeleted: true, updatedAt: new Date().toISOString() } : s);
-      localStorage.setItem(LOCAL_STORIES_KEY, JSON.stringify(updated));
-    }
+    });
+    localStorage.setItem(LOCAL_STORIES_KEY, JSON.stringify(filtered));
   } catch (err) {
     console.warn('Could not delete stories by category in localStorage:', err);
   }
 }
 
 /**
- * Deletes multiple selected stories by ID in localStorage
+ * Deletes all stories matching specified IDs in localStorage
  */
 export function deleteLocalStoriesByIds(ids: string[], permanent = false): void {
   if (typeof window === 'undefined' || !Array.isArray(ids) || ids.length === 0) return;
@@ -267,46 +223,17 @@ export function deleteLocalStoriesByIds(ids: string[], permanent = false): void 
     const existing = getLocalStories();
     const idMap: Record<string, boolean> = {};
     for (const id of ids) idMap[id] = true;
-
-    if (permanent) {
-      const filtered = existing.filter(s => !idMap[s.id]);
-      localStorage.setItem(LOCAL_STORIES_KEY, JSON.stringify(filtered));
-    } else {
-      const updated = existing.map(s => idMap[s.id] ? { ...s, isDeleted: true, updatedAt: new Date().toISOString() } : s);
-      localStorage.setItem(LOCAL_STORIES_KEY, JSON.stringify(updated));
-    }
+    const filtered = existing.filter(s => !idMap[s.id]);
+    localStorage.setItem(LOCAL_STORIES_KEY, JSON.stringify(filtered));
   } catch (err) {
     console.warn('Could not delete stories by IDs in localStorage:', err);
   }
 }
 
 /**
- * Synchronizes local stories with the remote server.
- * Run in background when an administrator visits the platform.
+ * No-op: Automatic background push from client to server is permanently disabled.
+ * Firestore is now the authoritative store, eliminating accidental resurrection of deleted data.
  */
 export async function syncLocalWithServer(token: string): Promise<boolean> {
-  const localStories = getLocalStories();
-  const localBatches = getLocalBatches();
-
-  if (localStories.length === 0) return false;
-
-  try {
-    const res = await fetch('/api/n-intel/sync', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`
-      },
-      body: JSON.stringify({
-        stories: localStories,
-        batches: localBatches
-      })
-    });
-
-    const data = await res.json();
-    return res.ok && data.success;
-  } catch (err) {
-    console.warn('Background N-INTEL sync attempt failed:', err);
-    return false;
-  }
+  return true;
 }

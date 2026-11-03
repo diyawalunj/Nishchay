@@ -1,8 +1,8 @@
 // server.ts
 import express from "express";
-import path5 from "path";
-import fs5 from "fs";
-import os5 from "os";
+import path from "path";
+import fs from "fs";
+import os from "os";
 import cors from "cors";
 import dotenv from "dotenv";
 import helmet from "helmet";
@@ -10,12 +10,10 @@ import { rateLimit } from "express-rate-limit";
 import crypto from "crypto";
 import { GoogleSpreadsheet } from "google-spreadsheet";
 import { JWT } from "google-auth-library";
-import admin from "firebase-admin";
+import admin5 from "firebase-admin";
 
 // n-intel-db.ts
-import fs from "fs";
-import path from "path";
-import os from "os";
+import admin from "firebase-admin";
 
 // n-intel-whatsapp.ts
 function getLocalTodayDate() {
@@ -500,137 +498,43 @@ function parseDailyNewsPost(rawText, pubDate) {
 }
 
 // n-intel-db.ts
-var IS_VERCEL = Boolean(process.env.VERCEL);
-var DATA_DIR = IS_VERCEL ? path.join(os.tmpdir(), "nishchay_data") : path.join(process.cwd(), "data");
-var SEED_DATA_DIR = path.join(process.cwd(), "data");
-var STORIES_FILE = path.join(DATA_DIR, "n-intel-stories.json");
-var BATCHES_FILE = path.join(DATA_DIR, "n-intel-batches.json");
-var AUDIT_FILE = path.join(DATA_DIR, "n-intel-audit.json");
-var SEED_STORIES_FILE = path.join(SEED_DATA_DIR, "n-intel-stories.json");
-var SEED_BATCHES_FILE = path.join(SEED_DATA_DIR, "n-intel-batches.json");
-var SEED_AUDIT_FILE = path.join(SEED_DATA_DIR, "n-intel-audit.json");
-function ensureDataDir() {
-  try {
-    if (!fs.existsSync(DATA_DIR)) {
-      fs.mkdirSync(DATA_DIR, { recursive: true });
-    }
-    if (IS_VERCEL) {
-      if (!fs.existsSync(STORIES_FILE) && fs.existsSync(SEED_STORIES_FILE)) {
-        try {
-          fs.copyFileSync(SEED_STORIES_FILE, STORIES_FILE);
-        } catch {
-        }
-      }
-      if (!fs.existsSync(BATCHES_FILE) && fs.existsSync(SEED_BATCHES_FILE)) {
-        try {
-          fs.copyFileSync(SEED_BATCHES_FILE, BATCHES_FILE);
-        } catch {
-        }
-      }
-      if (!fs.existsSync(AUDIT_FILE) && fs.existsSync(SEED_AUDIT_FILE)) {
-        try {
-          fs.copyFileSync(SEED_AUDIT_FILE, AUDIT_FILE);
-        } catch {
-        }
-      }
-    }
-  } catch (err) {
-    console.warn("Could not ensure data directory:", err);
-  }
+function getDb() {
+  return admin.firestore();
 }
+var CACHE_TTL_MS = 3e4;
 var storiesCache = null;
 var batchesCache = null;
 var auditCache = null;
-function loadStories() {
-  if (storiesCache) return storiesCache;
-  ensureDataDir();
-  let targetFile = STORIES_FILE;
-  if (!fs.existsSync(targetFile) && fs.existsSync(SEED_STORIES_FILE)) {
-    targetFile = SEED_STORIES_FILE;
-  }
-  if (!fs.existsSync(targetFile)) {
-    storiesCache = [];
-    return storiesCache;
-  }
-  try {
-    const raw = fs.readFileSync(targetFile, "utf-8");
-    storiesCache = JSON.parse(raw);
-    return storiesCache || [];
-  } catch (e) {
-    console.error("Error reading stories file:", e);
-    return [];
-  }
+function isCacheValid(entry) {
+  return entry !== null && Date.now() < entry.expiresAt;
 }
-function atomicWriteJsonSync(filePath, data) {
-  ensureDataDir();
-  const tempPath = `${filePath}.${Date.now()}.${Math.random().toString(36).substring(2, 8)}.tmp`;
-  try {
-    fs.writeFileSync(tempPath, JSON.stringify(data, null, 2), "utf-8");
-    fs.renameSync(tempPath, filePath);
-  } catch (err) {
-    if (fs.existsSync(tempPath)) {
-      try {
-        fs.unlinkSync(tempPath);
-      } catch {
-      }
-    }
-    console.warn(`Could not persist ${filePath} to disk:`, err);
-  }
+function invalidateStoriesCache() {
+  storiesCache = null;
 }
-function saveStories(stories) {
-  storiesCache = stories;
-  atomicWriteJsonSync(STORIES_FILE, stories);
+function invalidateBatchesCache() {
+  batchesCache = null;
 }
-function loadBatches() {
-  if (batchesCache) return batchesCache;
-  ensureDataDir();
-  let targetFile = BATCHES_FILE;
-  if (!fs.existsSync(targetFile) && fs.existsSync(SEED_BATCHES_FILE)) {
-    targetFile = SEED_BATCHES_FILE;
-  }
-  if (!fs.existsSync(targetFile)) {
-    batchesCache = [];
-    return batchesCache;
-  }
-  try {
-    const raw = fs.readFileSync(targetFile, "utf-8");
-    batchesCache = JSON.parse(raw);
-    return batchesCache || [];
-  } catch (e) {
-    console.error("Error reading batches file:", e);
-    return [];
-  }
+function invalidateAuditCache() {
+  auditCache = null;
 }
-function saveBatches(batches) {
-  batchesCache = batches;
-  atomicWriteJsonSync(BATCHES_FILE, batches);
+async function loadStoriesFromFirestore() {
+  const db = getDb();
+  const snap = await db.collection("nIntelStories").get();
+  return snap.docs.map((d) => d.data());
 }
-function loadAudit() {
-  if (auditCache) return auditCache;
-  ensureDataDir();
-  let targetFile = AUDIT_FILE;
-  if (!fs.existsSync(targetFile) && fs.existsSync(SEED_AUDIT_FILE)) {
-    targetFile = SEED_AUDIT_FILE;
-  }
-  if (!fs.existsSync(targetFile)) {
-    auditCache = [];
-    return auditCache;
-  }
-  try {
-    const raw = fs.readFileSync(targetFile, "utf-8");
-    auditCache = JSON.parse(raw);
-    return auditCache || [];
-  } catch (e) {
-    console.error("Error reading audit file:", e);
-    return [];
-  }
+async function loadStories() {
+  if (isCacheValid(storiesCache)) return storiesCache.data;
+  const stories = await loadStoriesFromFirestore();
+  storiesCache = { data: stories, expiresAt: Date.now() + CACHE_TTL_MS };
+  return stories;
 }
-function saveAudit(logs) {
-  auditCache = logs;
-  atomicWriteJsonSync(AUDIT_FILE, logs);
+async function saveBatch(batch) {
+  const db = getDb();
+  await db.collection("nIntelBatches").doc(batch.id).set(batch, { merge: true });
+  invalidateBatchesCache();
 }
-function addAuditLog(action, adminEmail, details, storyId, batchId) {
-  const logs = loadAudit();
+async function addAuditLog(action, adminEmail, details, storyId, batchId) {
+  const db = getDb();
   const entry = {
     id: `audit-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
     action,
@@ -640,12 +544,11 @@ function addAuditLog(action, adminEmail, details, storyId, batchId) {
     timestamp: (/* @__PURE__ */ new Date()).toISOString(),
     details
   };
-  logs.unshift(entry);
-  if (logs.length > 1e3) logs.length = 1e3;
-  saveAudit(logs);
+  await db.collection("nIntelAudit").doc(entry.id).set(entry);
+  invalidateAuditCache();
 }
-function getAllStories(options = {}) {
-  let stories = loadStories();
+async function getAllStories(options = {}) {
+  let stories = await loadStories();
   if (!options.includeDeleted) {
     stories = stories.filter((s) => !s.isDeleted);
   }
@@ -666,14 +569,10 @@ function getAllStories(options = {}) {
     );
   }
   stories = [...stories].sort((a, b) => {
-    if (a.date !== b.date) {
-      return b.date.localeCompare(a.date);
-    }
+    if (a.date !== b.date) return b.date.localeCompare(a.date);
     const timeA = a.createdAt || "";
     const timeB = b.createdAt || "";
-    if (timeA && timeB && timeA !== timeB) {
-      return timeB.localeCompare(timeA);
-    }
+    if (timeA && timeB && timeA !== timeB) return timeB.localeCompare(timeA);
     return (b.itemNumber || 0) - (a.itemNumber || 0);
   });
   if (options.limit && options.limit > 0) {
@@ -681,28 +580,32 @@ function getAllStories(options = {}) {
   }
   return stories;
 }
-function getStoryById(id) {
-  const stories = loadStories();
-  return stories.find((s) => s.id === id) || null;
+async function getStoryById(id) {
+  const db = getDb();
+  const doc = await db.collection("nIntelStories").doc(id).get();
+  return doc.exists ? doc.data() : null;
 }
-function findDuplicateBatch(hash, date) {
-  const batches = loadBatches();
-  return batches.find((b) => b.rawContentHash === hash && b.date === date) || null;
+async function findDuplicateBatch(hash, date) {
+  const db = getDb();
+  const snap = await db.collection("nIntelBatches").where("rawContentHash", "==", hash).where("date", "==", date).limit(1).get();
+  return snap.empty ? null : snap.docs[0].data();
 }
-function saveBatchAndStories(batch, newStories, adminEmail) {
-  const existingStories = loadStories();
-  const existingBatches = loadBatches();
-  const storyMap = /* @__PURE__ */ new Map();
-  for (const s of [...newStories, ...existingStories]) {
-    if (!storyMap.has(s.id)) {
-      storyMap.set(s.id, s);
+async function saveBatchAndStories(batch, newStories, adminEmail) {
+  const db = getDb();
+  const CHUNK = 400;
+  for (let i = 0; i < newStories.length; i += CHUNK) {
+    const chunk = newStories.slice(i, i + CHUNK);
+    const fsBatch = db.batch();
+    for (const story of chunk) {
+      const ref = db.collection("nIntelStories").doc(story.id);
+      fsBatch.set(ref, story, { merge: true });
     }
+    await fsBatch.commit();
   }
-  const updatedStories = Array.from(storyMap.values());
-  saveStories(updatedStories);
-  const updatedBatches = [batch, ...existingBatches];
-  saveBatches(updatedBatches);
-  addAuditLog(
+  await saveBatch(batch);
+  invalidateStoriesCache();
+  invalidateBatchesCache();
+  await addAuditLog(
     "PUBLISH",
     adminEmail,
     `Published ${newStories.length} stories across ${batch.categories.length} categories for ${batch.date}`,
@@ -710,11 +613,12 @@ function saveBatchAndStories(batch, newStories, adminEmail) {
     batch.id
   );
 }
-function updateStory(id, updates, adminEmail) {
-  const stories = loadStories();
-  const index = stories.findIndex((s) => s.id === id);
-  if (index === -1) return null;
-  const current = stories[index];
+async function updateStory(id, updates, adminEmail) {
+  const db = getDb();
+  const docRef = db.collection("nIntelStories").doc(id);
+  const snap = await docRef.get();
+  if (!snap.exists) return null;
+  const current = snap.data();
   let categoryKey = current.categoryKey;
   if (typeof updates.category === "string" && updates.category.trim()) {
     categoryKey = updates.category.toLowerCase().replace(/[^a-z0-9]+/g, "-");
@@ -731,178 +635,174 @@ function updateStory(id, updates, adminEmail) {
     updatedAt: (/* @__PURE__ */ new Date()).toISOString(),
     lastEditedBy: adminEmail
   };
-  stories[index] = updated;
-  saveStories(stories);
-  const changeKeys = Object.keys(updates).join(", ");
-  addAuditLog("EDIT", adminEmail, `Edited story [${id}]: updated (${changeKeys})`, id);
+  await docRef.set(updated, { merge: true });
+  invalidateStoriesCache();
+  await addAuditLog("EDIT", adminEmail, `Edited story [${id}]: updated (${Object.keys(updates).join(", ")})`, id);
   return updated;
 }
-function deleteStory(id, adminEmail) {
-  const stories = loadStories();
-  const index = stories.findIndex((s) => s.id === id);
-  if (index === -1) return false;
-  stories[index] = {
-    ...stories[index],
+async function deleteStory(id, adminEmail) {
+  const db = getDb();
+  const docRef = db.collection("nIntelStories").doc(id);
+  const snap = await docRef.get();
+  if (!snap.exists) return false;
+  const current = snap.data();
+  const updated = {
+    ...current,
     isDeleted: true,
     deletedAt: (/* @__PURE__ */ new Date()).toISOString(),
     deletedBy: adminEmail,
     updatedAt: (/* @__PURE__ */ new Date()).toISOString()
   };
-  saveStories(stories);
-  addAuditLog("DELETE", adminEmail, `Soft-deleted story [${id}]: "${stories[index].headline}"`, id);
+  await docRef.set(updated, { merge: true });
+  invalidateStoriesCache();
+  await addAuditLog("DELETE", adminEmail, `Soft-deleted story [${id}]: "${current.headline}"`, id);
   return true;
 }
-function restoreStory(id, adminEmail) {
-  const stories = loadStories();
-  const index = stories.findIndex((s) => s.id === id);
-  if (index === -1) return false;
-  stories[index] = {
-    ...stories[index],
+async function restoreStory(id, adminEmail) {
+  const db = getDb();
+  const docRef = db.collection("nIntelStories").doc(id);
+  const snap = await docRef.get();
+  if (!snap.exists) return false;
+  const current = snap.data();
+  await docRef.set({
+    ...current,
     isDeleted: false,
-    deletedAt: void 0,
-    deletedBy: void 0,
+    deletedAt: admin.firestore.FieldValue.delete(),
+    deletedBy: admin.firestore.FieldValue.delete(),
     updatedAt: (/* @__PURE__ */ new Date()).toISOString()
-  };
-  saveStories(stories);
-  addAuditLog("RESTORE", adminEmail, `Restored story [${id}]: "${stories[index].headline}"`, id);
+  }, { merge: true });
+  invalidateStoriesCache();
+  await addAuditLog("RESTORE", adminEmail, `Restored story [${id}]: "${current.headline}"`, id);
   return true;
 }
-function purgeStory(id, adminEmail) {
-  const stories = loadStories();
-  const story = stories.find((s) => s.id === id);
-  if (!story) return false;
-  const filtered = stories.filter((s) => s.id !== id);
-  saveStories(filtered);
-  addAuditLog("DELETE", adminEmail, `Permanently purged story [${id}]: "${story.headline}"`, id);
+async function purgeStory(id, adminEmail) {
+  const db = getDb();
+  const docRef = db.collection("nIntelStories").doc(id);
+  const snap = await docRef.get();
+  if (!snap.exists) return false;
+  const headline = snap.data().headline;
+  await docRef.delete();
+  invalidateStoriesCache();
+  await addAuditLog("DELETE", adminEmail, `Permanently purged story [${id}]: "${headline}"`, id);
   return true;
 }
-function purgeAllDeletedStories(adminEmail) {
-  const stories = loadStories();
-  const deleted = stories.filter((s) => s.isDeleted);
-  if (deleted.length === 0) return 0;
-  const retained = stories.filter((s) => !s.isDeleted);
-  saveStories(retained);
-  addAuditLog("DELETE", adminEmail, `Emptied trash: permanently purged all ${deleted.length} deleted stories.`);
-  return deleted.length;
-}
-function deleteStoriesByDate(date, adminEmail, permanent = false) {
-  const stories = loadStories();
-  let count = 0;
-  if (permanent) {
-    const retained = stories.filter((s) => {
-      if (s.date === date) {
-        count++;
-        return false;
-      }
-      return true;
-    });
-    saveStories(retained);
-    addAuditLog("DELETE", adminEmail, `Permanently purged entire briefing for ${date} (${count} stories removed).`);
-  } else {
-    for (let i = 0; i < stories.length; i++) {
-      if (stories[i].date === date && !stories[i].isDeleted) {
-        stories[i] = {
-          ...stories[i],
-          isDeleted: true,
-          deletedAt: (/* @__PURE__ */ new Date()).toISOString(),
-          deletedBy: adminEmail,
-          updatedAt: (/* @__PURE__ */ new Date()).toISOString()
-        };
-        count++;
-      }
-    }
-    saveStories(stories);
-    addAuditLog("DELETE", adminEmail, `Soft-deleted entire briefing for ${date} (${count} stories moved to trash).`);
+async function purgeAllDeletedStories(adminEmail) {
+  const db = getDb();
+  const snap = await db.collection("nIntelStories").where("isDeleted", "==", true).get();
+  if (snap.empty) return 0;
+  const fsBatch = db.batch();
+  for (const doc of snap.docs) {
+    fsBatch.delete(doc.ref);
   }
+  await fsBatch.commit();
+  invalidateStoriesCache();
+  await addAuditLog("DELETE", adminEmail, `Emptied trash: permanently purged ${snap.size} deleted stories.`);
+  return snap.size;
+}
+async function deleteStoriesByDate(date, adminEmail, permanent = false) {
+  const db = getDb();
+  const snap = await db.collection("nIntelStories").where("date", "==", date).get();
+  if (snap.empty) return { count: 0, date };
+  const fsBatch = db.batch();
+  let count = 0;
+  for (const docSnap of snap.docs) {
+    const story = docSnap.data();
+    if (permanent) {
+      fsBatch.delete(docSnap.ref);
+      count++;
+    } else if (!story.isDeleted) {
+      fsBatch.set(docSnap.ref, {
+        ...story,
+        isDeleted: true,
+        deletedAt: (/* @__PURE__ */ new Date()).toISOString(),
+        deletedBy: adminEmail,
+        updatedAt: (/* @__PURE__ */ new Date()).toISOString()
+      }, { merge: true });
+      count++;
+    }
+  }
+  await fsBatch.commit();
+  invalidateStoriesCache();
+  const action = permanent ? "Permanently purged" : "Soft-deleted";
+  await addAuditLog("DELETE", adminEmail, `${action} entire briefing for ${date} (${count} stories).`);
   return { count, date };
 }
-function deleteStoriesByCategory(category, adminEmail, date, permanent = false) {
-  const stories = loadStories();
-  let count = 0;
-  const targetCategory = category.trim().toLowerCase();
-  const matchesCategory = (s) => {
-    if (s.category.trim().toLowerCase() !== targetCategory) return false;
-    if (date && s.date !== date) return false;
-    return true;
-  };
-  if (permanent) {
-    const retained = stories.filter((s) => {
-      if (matchesCategory(s)) {
-        count++;
-        return false;
-      }
-      return true;
-    });
-    saveStories(retained);
-    addAuditLog(
-      "DELETE",
-      adminEmail,
-      `Permanently purged category "${category}"${date ? ` for date ${date}` : ""} (${count} stories removed).`
-    );
-  } else {
-    for (let i = 0; i < stories.length; i++) {
-      if (matchesCategory(stories[i]) && !stories[i].isDeleted) {
-        stories[i] = {
-          ...stories[i],
-          isDeleted: true,
-          deletedAt: (/* @__PURE__ */ new Date()).toISOString(),
-          deletedBy: adminEmail,
-          updatedAt: (/* @__PURE__ */ new Date()).toISOString()
-        };
-        count++;
-      }
-    }
-    saveStories(stories);
-    addAuditLog(
-      "DELETE",
-      adminEmail,
-      `Soft-deleted category "${category}"${date ? ` for date ${date}` : ""} (${count} stories moved to trash).`
-    );
+async function deleteStoriesByCategory(category, adminEmail, date, permanent = false) {
+  const db = getDb();
+  let query = db.collection("nIntelStories").where("category", "==", category.trim());
+  if (date) {
+    query = query.where("date", "==", date);
   }
+  const snap = await query.get();
+  if (snap.empty) return { count: 0, category, date };
+  const fsBatch = db.batch();
+  let count = 0;
+  for (const docSnap of snap.docs) {
+    const story = docSnap.data();
+    if (permanent) {
+      fsBatch.delete(docSnap.ref);
+      count++;
+    } else if (!story.isDeleted) {
+      fsBatch.set(docSnap.ref, {
+        ...story,
+        isDeleted: true,
+        deletedAt: (/* @__PURE__ */ new Date()).toISOString(),
+        deletedBy: adminEmail,
+        updatedAt: (/* @__PURE__ */ new Date()).toISOString()
+      }, { merge: true });
+      count++;
+    }
+  }
+  await fsBatch.commit();
+  invalidateStoriesCache();
+  const action = permanent ? "Permanently purged" : "Soft-deleted";
+  await addAuditLog(
+    "DELETE",
+    adminEmail,
+    `${action} category "${category}"${date ? ` for date ${date}` : ""} (${count} stories).`
+  );
   return { count, category, date };
 }
-function deleteStoriesByIds(ids, adminEmail, permanent = false) {
-  if (!Array.isArray(ids) || ids.length === 0) {
-    return { count: 0, ids: [] };
-  }
-  const idMap = {};
-  for (const id of ids) idMap[id] = true;
-  const stories = loadStories();
+async function deleteStoriesByIds(ids, adminEmail, permanent = false) {
+  if (!Array.isArray(ids) || ids.length === 0) return { count: 0, ids: [] };
+  const db = getDb();
+  const fsBatch = db.batch();
   let count = 0;
-  if (permanent) {
-    const retained = stories.filter((s) => {
-      if (idMap[s.id]) {
-        count++;
-        return false;
-      }
-      return true;
-    });
-    saveStories(retained);
-    addAuditLog("DELETE", adminEmail, `Permanently purged ${count} selected stories.`);
-  } else {
-    for (let i = 0; i < stories.length; i++) {
-      if (idMap[stories[i].id] && !stories[i].isDeleted) {
-        stories[i] = {
-          ...stories[i],
-          isDeleted: true,
-          deletedAt: (/* @__PURE__ */ new Date()).toISOString(),
-          deletedBy: adminEmail,
-          updatedAt: (/* @__PURE__ */ new Date()).toISOString()
-        };
-        count++;
-      }
+  for (const id of ids) {
+    const docRef = db.collection("nIntelStories").doc(id);
+    const snap = await docRef.get();
+    if (!snap.exists) continue;
+    const story = snap.data();
+    if (permanent) {
+      fsBatch.delete(docRef);
+      count++;
+    } else if (!story.isDeleted) {
+      fsBatch.set(docRef, {
+        ...story,
+        isDeleted: true,
+        deletedAt: (/* @__PURE__ */ new Date()).toISOString(),
+        deletedBy: adminEmail,
+        updatedAt: (/* @__PURE__ */ new Date()).toISOString()
+      }, { merge: true });
+      count++;
     }
-    saveStories(stories);
-    addAuditLog("DELETE", adminEmail, `Soft-deleted ${count} selected stories (moved to trash).`);
   }
+  await fsBatch.commit();
+  invalidateStoriesCache();
+  const action = permanent ? "Permanently purged" : "Soft-deleted";
+  await addAuditLog("DELETE", adminEmail, `${action} ${count} selected stories.`);
   return { count, ids };
 }
-function getAuditLogs(limitCount = 100) {
-  const logs = loadAudit();
-  return logs.slice(0, limitCount);
+async function getAuditLogs(limitCount = 100) {
+  if (isCacheValid(auditCache)) return auditCache.data.slice(0, limitCount);
+  const db = getDb();
+  const snap = await db.collection("nIntelAudit").orderBy("timestamp", "desc").limit(Math.min(limitCount, 1e3)).get();
+  const logs = snap.docs.map((d) => d.data());
+  auditCache = { data: logs, expiresAt: Date.now() + CACHE_TTL_MS };
+  return logs;
 }
-function getAvailableEditions() {
-  const stories = getAllStories({ includeDeleted: false });
+async function getAvailableEditions() {
+  const stories = await getAllStories({ includeDeleted: false });
   const map = {};
   for (const s of stories) {
     if (!map[s.date]) {
@@ -934,10 +834,11 @@ function getAvailableEditions() {
     categoryCounts: e.categoryCounts
   })).sort((a, b) => b.date.localeCompare(a.date));
 }
-function seedSampleDataIfEmpty(samplePostText) {
-  const existing = loadStories();
-  if (existing.length > 0) return;
-  console.log("\u{1F331} Seeding initial N-INTEL sample edition...");
+async function seedSampleDataIfEmpty(samplePostText) {
+  const db = getDb();
+  const snap = await db.collection("nIntelStories").limit(1).get();
+  if (!snap.empty) return;
+  console.log("\u{1F331} Seeding initial N-INTEL sample edition into Firestore...");
   const parseResult = parseDailyNewsPost(samplePostText, "2026-10-28");
   if (parseResult.success && parseResult.stories.length > 0) {
     const batch = {
@@ -949,57 +850,49 @@ function seedSampleDataIfEmpty(samplePostText) {
       storyCount: parseResult.totalStories,
       categories: parseResult.categories
     };
-    saveBatchAndStories(batch, parseResult.stories, "system@nishchay.defence");
-    console.log(`\u2705 Seeded ${parseResult.totalStories} N-INTEL stories for 2026-10-28!`);
+    await saveBatchAndStories(batch, parseResult.stories, "system@nishchay.defence");
+    console.log(`\u2705 Seeded ${parseResult.totalStories} N-INTEL stories into Firestore.`);
   }
 }
-function syncNIntelStories(incomingStories, incomingBatches) {
+async function syncNIntelStories(incomingStories, incomingBatches) {
   if (!Array.isArray(incomingStories) || incomingStories.length === 0) {
-    return { count: 0, total: loadStories().length };
+    const all2 = await loadStories();
+    return { count: 0, total: all2.length };
   }
-  const existingStories = loadStories();
-  const storyMap = /* @__PURE__ */ new Map();
-  for (const s of existingStories) {
-    if (s && s.id) storyMap.set(s.id, s);
+  const db = getDb();
+  const fsBatch = db.batch();
+  for (const story of incomingStories) {
+    if (!story || !story.id) continue;
+    const ref = db.collection("nIntelStories").doc(story.id);
+    const existing = await ref.get();
+    if (!existing.exists) {
+      fsBatch.set(ref, story);
+    }
   }
-  for (const s of incomingStories) {
-    if (s && s.id) storyMap.set(s.id, s);
-  }
-  const updatedStories = Array.from(storyMap.values());
-  saveStories(updatedStories);
+  await fsBatch.commit();
+  invalidateStoriesCache();
   if (Array.isArray(incomingBatches) && incomingBatches.length > 0) {
-    const existingBatches = loadBatches();
-    const batchMap = /* @__PURE__ */ new Map();
-    for (const b of existingBatches) {
-      if (b && b.id) batchMap.set(b.id, b);
-    }
+    const bFsBatch = db.batch();
     for (const b of incomingBatches) {
-      if (b && b.id) batchMap.set(b.id, b);
+      if (!b || !b.id) continue;
+      const ref = db.collection("nIntelBatches").doc(b.id);
+      const existing = await ref.get();
+      if (!existing.exists) {
+        bFsBatch.set(ref, b);
+      }
     }
-    saveBatches(Array.from(batchMap.values()));
+    await bFsBatch.commit();
+    invalidateBatchesCache();
   }
-  return { count: incomingStories.length, total: updatedStories.length };
+  const all = await loadStories();
+  return { count: incomingStories.length, total: all.length };
 }
 
 // articles-db.ts
-import fs2 from "fs";
-import path2 from "path";
-import os2 from "os";
-var IS_VERCEL2 = Boolean(process.env.VERCEL);
-var DATA_DIR2 = IS_VERCEL2 ? path2.join(os2.tmpdir(), "nishchay_data") : path2.join(process.cwd(), "data");
-var SEED_DATA_DIR2 = path2.join(process.cwd(), "data");
-var ARTICLES_FILE = path2.join(DATA_DIR2, "articles.json");
-var SEED_ARTICLES_FILE = path2.join(SEED_DATA_DIR2, "articles.json");
-function ensureDataDir2() {
-  try {
-    if (!fs2.existsSync(DATA_DIR2)) {
-      fs2.mkdirSync(DATA_DIR2, { recursive: true });
-    }
-  } catch (err) {
-    console.warn("Could not ensure data directory:", err);
-  }
+import admin2 from "firebase-admin";
+function getDb2() {
+  return admin2.firestore();
 }
-var articlesCache = null;
 function slugify(text) {
   return text.toLowerCase().replace(/[^\w\s-]/g, "").trim().replace(/\s+/g, "-");
 }
@@ -1008,148 +901,33 @@ function calculateReadingTime(text) {
   const minutes = Math.max(2, Math.ceil(words / 180));
   return `${minutes} min read`;
 }
-function loadArticles() {
-  if (articlesCache) return articlesCache;
-  ensureDataDir2();
-  let targetFile = ARTICLES_FILE;
-  if (!fs2.existsSync(targetFile) && fs2.existsSync(SEED_ARTICLES_FILE)) {
-    targetFile = SEED_ARTICLES_FILE;
-  }
-  if (!fs2.existsSync(targetFile)) {
-    const initialArticles = [
-      {
-        id: "article-tied-by-geography-divided-by-politics",
-        slug: "tied-by-geography-divided-by-politics",
-        title: "Tied by geography, divided by politics",
-        bannerImageUrl: "https://images.unsplash.com/photo-1541872703-74c5e44368f9?auto=format&fit=crop&w=1200&q=80",
-        category: "International Relations",
-        authorName: "Mohammed Ayoob",
-        authorRole: 'University Distinguished Professor Emeritus of International Relations, Michigan State University, and author of "The Liberation War" (1972)',
-        authorAvatarUrl: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=200&q=80",
-        publishDate: "2026-10-30",
-        readingTime: "7 min read",
-        pullQuote: "India and Bangladesh must overcome mistrust and pursue pragmatic neighbourhood cooperation.",
-        tags: ["International Relations", "India-Bangladesh", "Foreign Policy", "1971 Liberation War", "Defence Studies"],
-        sourceReference: "Strategic Analysis & Editorial Study",
-        viewsCount: 142,
-        pdfDownloadCount: 29,
-        createdAt: (/* @__PURE__ */ new Date()).toISOString(),
-        content: `With speculation rife that Bangladesh's recently elected Prime Minister Tarique Rahman (and also Bangladesh Nationalist Party [BNP] Chairman) will be visiting New Delhi in November or December, it is time to assess the state of India-Bangladesh relations and analyse the roots of the problems between the two countries.
-
-The seeds of their current tension lie in the ==liberation war of 1971== itself. From the very beginning, the attitude of Bangladesh's elites toward India has wavered between gratitude and resentment \u2014 gratitude for India's crucial role in the liberation of their country and resentment against the fact that India had to play the role of liberator \u2014 a role they should have performed themselves.
-
-### An ambivalence
-Nations cherish narratives in which they are the principal authors of their own liberation. Bangladesh is no exception. The contribution of the Mukti Bahini notwithstanding, the decisive military blow against Pakistan was delivered by India. What was initially the source of immense gratitude with the passage of time became a source of grave discomfort.
-
-Moreover, from the very beginning Dhaka was worried that India's policy towards Bangladesh would be mediated through a Hindu-majority West Bengal next door which has strong cultural and linguistic affinities with Bangladesh that could threaten the development of Bangladesh's independent identity. ^^The open borders in the immediate aftermath of the liberation war also revived memories of the socio-economic dominance of the Hindu bhadralok in pre-Partition Bengal.^^
-
-This was compounded by the fact that ==Bangladesh was virtually surrounded by India, sharing a border of more than 4,000 kilometres.== Its principal rivers flowed through or originated in India. Its economic and strategic room for manoeuvre appeared constrained by geography. Consequently, the fear of Indian domination became an important component of Bangladeshi nationalism.
-
-The honeymoon between Dhaka and New Delhi was indeed short. Sheikh Mujib and Indira Gandhi shared a great deal of goodwill. But the governments that succeeded Mujib deliberately distanced Bangladesh from India. Under Ziaur Rahman, ==Bangladeshi nationalism was redefined in overtly Islamic terms in contradistinction to the linguistic nationalism that had provided the ideological foundation of the liberation movement.==
-
-### Dhaka's foreign policy
-This had important foreign policy consequences. ==Dhaka sought closer relations with Pakistan, China, and the United States to counterbalance India.== What New Delhi often interpreted as gratuitous anti-Indianism was, from Dhaka's perspective, an assertion of strategic autonomy by a much weaker state living in the shadow of an overwhelmingly powerful neighbour.
-
-This pattern became deeply embedded in Bangladesh's domestic politics. ==The Awami League remained identified with the secular and Bengali-nationalist legacy of 1971 and generally favoured close relations with India.== The BNP and its allies were much more suspicious of New Delhi. <u>India consequently ceased to be merely a foreign policy issue; attitudes towards India became part of the contest over Bangladesh's national identity.</u>
-
-### The road ahead
-The election of Mr. Rahman and the return of the BNP to power in February 2026 have opened a new chapter. Both New Delhi and Dhaka have compelling reasons to avoid permanent alienation, and functional engagement has resumed. But substantial mutual suspicion continues to bedevil bilateral relations.
-
-==The lesson that New Delhi should draw from the turbulent history of the relationship is that India cannot expect gratitude for 1971 to constitute the permanent foundation of Bangladeshi foreign policy. Gratitude is a transient sentiment; national interest especially when linked to issues of national identity is enduring.==
-
-Dhaka, for its part, cannot wish away geography. No relationship with Beijing, Islamabad or Washington can substitute for a workable relationship with the country that surrounds Bangladesh on three sides, shares its major river systems and is indispensable to its regional connectivity.
-
-^^India must learn to exercise its preponderant power with restraint and sensitivity and abjure demanding reciprocity for any magnanimity it shows towards its smaller neighbour especially on the sharing of river waters. Bangladesh must recognise that strategic autonomy need not be defined through knee-jerk opposition to India.^^ Only then can the two countries finally move beyond the burdens of the past while preserving its most important legacy: the recognition that their security and stability are inextricably intertwined.`
-      }
-    ];
-    saveArticles(initialArticles);
-    articlesCache = initialArticles;
-    return articlesCache;
-  }
-  try {
-    const raw = fs2.readFileSync(ARTICLES_FILE, "utf-8");
-    articlesCache = JSON.parse(raw);
-    return articlesCache || [];
-  } catch (e) {
-    console.error("Error reading articles file:", e);
-    return [];
-  }
+var CACHE_TTL_MS2 = 3e4;
+var articlesCache = null;
+function invalidateArticlesCache() {
+  articlesCache = null;
 }
-function atomicWriteJsonSync2(filePath, data) {
-  ensureDataDir2();
-  const tempPath = `${filePath}.${Date.now()}.${Math.random().toString(36).substring(2, 8)}.tmp`;
-  try {
-    fs2.writeFileSync(tempPath, JSON.stringify(data, null, 2), "utf-8");
-    fs2.renameSync(tempPath, filePath);
-  } catch (err) {
-    if (fs2.existsSync(tempPath)) {
-      try {
-        fs2.unlinkSync(tempPath);
-      } catch {
-      }
-    }
-    console.warn(`Could not persist ${filePath} to disk:`, err);
+async function getAllArticles() {
+  if (articlesCache && Date.now() < articlesCache.expiresAt) {
+    return articlesCache.data;
   }
+  const db = getDb2();
+  const snap = await db.collection("articles").orderBy("publishDate", "desc").get();
+  const articles = snap.docs.map((d) => d.data());
+  articlesCache = { data: articles, expiresAt: Date.now() + CACHE_TTL_MS2 };
+  return articles;
 }
-function saveArticles(articles) {
-  articlesCache = articles;
-  atomicWriteJsonSync2(ARTICLES_FILE, articles);
-}
-function getAllArticles() {
-  const articles = loadArticles();
-  return [...articles].sort((a, b) => new Date(b.publishDate || b.createdAt).getTime() - new Date(a.publishDate || a.createdAt).getTime());
-}
-function getArticleById(idOrSlug) {
+async function getArticleById(idOrSlug) {
   if (!idOrSlug) return null;
-  const articles = loadArticles();
-  const query = String(idOrSlug).trim().toLowerCase();
-  return articles.find(
-    (a) => a.id === idOrSlug || a.slug === idOrSlug || a.id.toLowerCase() === query || a.slug && a.slug.toLowerCase() === query
-  ) || null;
+  const db = getDb2();
+  const query = String(idOrSlug).trim();
+  const byId = await db.collection("articles").doc(query).get();
+  if (byId.exists) return byId.data();
+  const slugSnap = await db.collection("articles").where("slug", "==", query).limit(1).get();
+  if (!slugSnap.empty) return slugSnap.docs[0].data();
+  return null;
 }
-function syncArticles(incoming) {
-  if (!Array.isArray(incoming) || incoming.length === 0) {
-    const all = getAllArticles();
-    return { added: 0, updated: 0, total: all.length };
-  }
-  const articles = loadArticles();
-  const existingMap = /* @__PURE__ */ new Map();
-  articles.forEach((a, idx) => {
-    existingMap.set(a.id, idx);
-    if (a.slug) existingMap.set(a.slug, idx);
-  });
-  let added = 0;
-  let updated = 0;
-  for (const item of incoming) {
-    if (!item || !item.id || !item.title) continue;
-    const matchIdx = existingMap.get(item.id) ?? (item.slug ? existingMap.get(item.slug) : void 0);
-    if (matchIdx !== void 0) {
-      const curr = articles[matchIdx];
-      const incomingTime = new Date(item.updatedAt || item.createdAt || 0).getTime();
-      const currTime = new Date(curr.updatedAt || curr.createdAt || 0).getTime();
-      if (incomingTime >= currTime) {
-        articles[matchIdx] = {
-          ...curr,
-          ...item,
-          viewsCount: Math.max(curr.viewsCount || 0, item.viewsCount || 0),
-          pdfDownloadCount: Math.max(curr.pdfDownloadCount || 0, item.pdfDownloadCount || 0)
-        };
-        updated++;
-      }
-    } else {
-      articles.push(item);
-      existingMap.set(item.id, articles.length - 1);
-      if (item.slug) existingMap.set(item.slug, articles.length - 1);
-      added++;
-    }
-  }
-  if (added > 0 || updated > 0) {
-    saveArticles(articles);
-  }
-  return { added, updated, total: articles.length };
-}
-function createArticle(data) {
-  const articles = loadArticles();
+async function createArticle(data) {
+  const db = getDb2();
   const slug = slugify(data.title) + "-" + Date.now().toString().slice(-4);
   const id = `article-${slug}`;
   const now = /* @__PURE__ */ new Date();
@@ -1176,15 +954,16 @@ function createArticle(data) {
     createdAt: (/* @__PURE__ */ new Date()).toISOString(),
     authorEmail: data.authorEmail
   };
-  articles.unshift(newArticle);
-  saveArticles(articles);
+  await db.collection("articles").doc(id).set(newArticle);
+  invalidateArticlesCache();
   return newArticle;
 }
-function updateArticle(id, updates) {
-  const articles = loadArticles();
-  const index = articles.findIndex((a) => a.id === id);
-  if (index === -1) return null;
-  const current = articles[index];
+async function updateArticle(id, updates) {
+  const db = getDb2();
+  const docRef = db.collection("articles").doc(id);
+  const snap = await docRef.get();
+  if (!snap.exists) return null;
+  const current = snap.data();
   const updated = {
     ...current,
     title: typeof updates.title === "string" ? updates.title.trim() : current.title,
@@ -1203,112 +982,100 @@ function updateArticle(id, updates) {
   if (updates.content && typeof updates.content === "string") {
     updated.readingTime = calculateReadingTime(updates.content);
   }
-  articles[index] = updated;
-  saveArticles(articles);
+  await docRef.set(updated, { merge: true });
+  invalidateArticlesCache();
   return updated;
 }
-function deleteArticle(id) {
-  const articles = loadArticles();
-  const index = articles.findIndex((a) => a.id === id);
-  if (index === -1) return false;
-  const articleToDelete = articles[index];
-  if (articleToDelete.bannerImageUrl && articleToDelete.bannerImageUrl.startsWith("/uploads/")) {
-    const filename = path2.basename(articleToDelete.bannerImageUrl);
-    if (/^banner-\d+-[a-f0-9]+\.(png|jpg|webp)$/i.test(filename)) {
-      const filePath = path2.join(process.cwd(), "public", "uploads", filename);
-      if (fs2.existsSync(filePath)) {
-        try {
-          fs2.unlinkSync(filePath);
-        } catch (err) {
-          console.warn("Could not remove orphaned banner on article deletion:", err);
-        }
+async function deleteArticle(id) {
+  const db = getDb2();
+  const docRef = db.collection("articles").doc(id);
+  const snap = await docRef.get();
+  if (!snap.exists) return false;
+  await docRef.delete();
+  invalidateArticlesCache();
+  return true;
+}
+async function incrementDownloadCount(id) {
+  const db = getDb2();
+  const byId = await db.collection("articles").doc(id).get();
+  if (byId.exists) {
+    await byId.ref.update({
+      pdfDownloadCount: admin2.firestore.FieldValue.increment(1)
+    });
+    invalidateArticlesCache();
+    return;
+  }
+  const slugSnap = await db.collection("articles").where("slug", "==", id).limit(1).get();
+  if (!slugSnap.empty) {
+    await slugSnap.docs[0].ref.update({
+      pdfDownloadCount: admin2.firestore.FieldValue.increment(1)
+    });
+    invalidateArticlesCache();
+  }
+}
+async function syncArticles(incoming) {
+  if (!Array.isArray(incoming) || incoming.length === 0) {
+    const all2 = await getAllArticles();
+    return { added: 0, updated: 0, total: all2.length };
+  }
+  const db = getDb2();
+  let added = 0;
+  let updated = 0;
+  for (const item of incoming) {
+    if (!item || !item.id || !item.title) continue;
+    const ref = db.collection("articles").doc(item.id);
+    const snap = await ref.get();
+    if (!snap.exists) {
+      await ref.set(item);
+      added++;
+    } else {
+      const curr = snap.data();
+      const incomingTime = new Date(item.updatedAt || item.createdAt || 0).getTime();
+      const currTime = new Date(curr.updatedAt || curr.createdAt || 0).getTime();
+      if (incomingTime > currTime) {
+        await ref.set({
+          ...curr,
+          ...item,
+          viewsCount: Math.max(curr.viewsCount || 0, item.viewsCount || 0),
+          pdfDownloadCount: Math.max(curr.pdfDownloadCount || 0, item.pdfDownloadCount || 0)
+        }, { merge: true });
+        updated++;
       }
     }
   }
-  const filtered = articles.filter((a) => a.id !== id);
-  saveArticles(filtered);
-  return true;
-}
-function incrementDownloadCount(id) {
-  const articles = loadArticles();
-  const art = articles.find((a) => a.id === id || a.slug === id);
-  if (art) {
-    art.pdfDownloadCount = (art.pdfDownloadCount || 0) + 1;
-    saveArticles(articles);
-  }
+  invalidateArticlesCache();
+  const all = await getAllArticles();
+  return { added, updated, total: all.length };
 }
 
 // pyq-db.ts
-import fs3 from "fs";
-import path3 from "path";
-import os3 from "os";
-var IS_VERCEL3 = Boolean(process.env.VERCEL);
-var DATA_DIR3 = IS_VERCEL3 ? path3.join(os3.tmpdir(), "nishchay_data") : path3.join(process.cwd(), "data");
-var SEED_DATA_DIR3 = path3.join(process.cwd(), "data");
-var PYQ_FILE = path3.join(DATA_DIR3, "pyq-papers.json");
-var SEED_PYQ_FILE = path3.join(SEED_DATA_DIR3, "pyq-papers.json");
-function ensureDataDir3() {
-  try {
-    if (!fs3.existsSync(DATA_DIR3)) {
-      fs3.mkdirSync(DATA_DIR3, { recursive: true });
-    }
-    if (IS_VERCEL3 && !fs3.existsSync(PYQ_FILE) && fs3.existsSync(SEED_PYQ_FILE)) {
-      fs3.copyFileSync(SEED_PYQ_FILE, PYQ_FILE);
-    }
-  } catch (err) {
-    console.warn("Could not ensure data directory:", err);
-  }
+import admin3 from "firebase-admin";
+function getDb3() {
+  return admin3.firestore();
 }
+var CACHE_TTL_MS3 = 3e4;
 var pyqCache = null;
-function getAllPyqSessions() {
-  if (pyqCache) {
-    return pyqCache;
-  }
-  ensureDataDir3();
-  let targetFile = PYQ_FILE;
-  if (!fs3.existsSync(targetFile) && fs3.existsSync(SEED_PYQ_FILE)) {
-    targetFile = SEED_PYQ_FILE;
-  }
-  if (!fs3.existsSync(targetFile)) {
-    pyqCache = {};
-    return pyqCache;
-  }
-  try {
-    const raw = fs3.readFileSync(targetFile, "utf-8");
-    pyqCache = JSON.parse(raw);
-    return pyqCache || {};
-  } catch (err) {
-    console.error("Failed to parse pyq-papers.json, fallback to empty:", err);
-    pyqCache = {};
-    return pyqCache;
-  }
+function invalidatePyqCache() {
+  pyqCache = null;
 }
-function persistPyqData(data) {
-  ensureDataDir3();
-  pyqCache = data;
-  try {
-    const tempFile = `${PYQ_FILE}.tmp.${Date.now()}`;
-    fs3.writeFileSync(tempFile, JSON.stringify(data, null, 2), "utf-8");
-    fs3.renameSync(tempFile, PYQ_FILE);
-  } catch (err) {
-    console.warn("Could not write pyq-papers.json to disk:", err);
+async function getAllPyqSessions() {
+  if (pyqCache && Date.now() < pyqCache.expiresAt) return pyqCache.data;
+  const db = getDb3();
+  const snap = await db.collection("pyqSessions").get();
+  const sessions = {};
+  for (const doc of snap.docs) {
+    const data = doc.data();
+    sessions[data.sessionId] = data;
   }
+  pyqCache = { data: sessions, expiresAt: Date.now() + CACHE_TTL_MS3 };
+  return sessions;
 }
-function savePyqFileRecord(params) {
-  const all = getAllPyqSessions();
+async function savePyqFileRecord(params) {
+  const db = getDb3();
   const { sessionId, exam, session, year, title, subjectKey, fileType, url, driveFileId, fileName, fileSize } = params;
-  if (!all[sessionId]) {
-    all[sessionId] = {
-      sessionId,
-      exam,
-      session,
-      year,
-      title,
-      subjects: {},
-      updatedAt: (/* @__PURE__ */ new Date()).toISOString()
-    };
-  }
-  const sessionRecord = all[sessionId];
+  const ref = db.collection("pyqSessions").doc(sessionId);
+  const snap = await ref.get();
+  let sessionRecord = snap.exists ? snap.data() : { sessionId, exam, session, year, title, subjects: {}, updatedAt: (/* @__PURE__ */ new Date()).toISOString() };
   if (!sessionRecord.subjects[subjectKey]) {
     sessionRecord.subjects[subjectKey] = {};
   }
@@ -1325,122 +1092,95 @@ function savePyqFileRecord(params) {
     sessionRecord.subjects[subjectKey].key = fileItem;
   }
   sessionRecord.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
-  persistPyqData(all);
+  await ref.set(sessionRecord, { merge: true });
+  invalidatePyqCache();
   return sessionRecord;
 }
-function deletePyqFileRecord(params) {
-  const all = getAllPyqSessions();
+async function deletePyqFileRecord(params) {
+  const db = getDb3();
   const { sessionId, subjectKey, fileType } = params;
-  const sessionRecord = all[sessionId];
-  if (!sessionRecord || !sessionRecord.subjects[subjectKey]) {
-    return sessionRecord || null;
-  }
+  const ref = db.collection("pyqSessions").doc(sessionId);
+  const snap = await ref.get();
+  if (!snap.exists) return null;
+  const sessionRecord = snap.data();
+  if (!sessionRecord.subjects[subjectKey]) return sessionRecord;
   if (fileType === "paper") {
     delete sessionRecord.subjects[subjectKey].paper;
   } else {
     delete sessionRecord.subjects[subjectKey].key;
   }
   sessionRecord.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
-  persistPyqData(all);
+  await ref.set(sessionRecord, { merge: true });
+  invalidatePyqCache();
   return sessionRecord;
 }
-function syncPyqSessions(incomingSessions) {
+async function syncPyqSessions(incomingSessions) {
   if (!incomingSessions || typeof incomingSessions !== "object") {
     return getAllPyqSessions();
   }
-  const all = getAllPyqSessions();
+  const db = getDb3();
   let changed = false;
   for (const [sessionId, session] of Object.entries(incomingSessions)) {
     if (!session || !session.subjects) continue;
-    if (!all[sessionId]) {
-      all[sessionId] = session;
+    const ref = db.collection("pyqSessions").doc(sessionId);
+    const snap = await ref.get();
+    if (!snap.exists) {
+      await ref.set(session);
       changed = true;
     } else {
-      for (const key of ["maths", "gat", "english", "gs"]) {
+      const existing = snap.data();
+      let updated = false;
+      for (const key of ["maths", "gat", "english", "gs", "afcat"]) {
         const incSlot = session.subjects[key];
         if (!incSlot) continue;
-        if (!all[sessionId].subjects[key]) {
-          all[sessionId].subjects[key] = {};
+        if (!existing.subjects[key]) {
+          existing.subjects[key] = {};
+          updated = true;
         }
-        if (incSlot.paper && !all[sessionId].subjects[key].paper) {
-          all[sessionId].subjects[key].paper = incSlot.paper;
-          changed = true;
+        if (incSlot.paper && !existing.subjects[key].paper) {
+          existing.subjects[key].paper = incSlot.paper;
+          updated = true;
         }
-        if (incSlot.key && !all[sessionId].subjects[key].key) {
-          all[sessionId].subjects[key].key = incSlot.key;
-          changed = true;
+        if (incSlot.key && !existing.subjects[key].key) {
+          existing.subjects[key].key = incSlot.key;
+          updated = true;
         }
+      }
+      if (updated) {
+        existing.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
+        await ref.set(existing, { merge: true });
+        changed = true;
       }
     }
   }
-  if (changed) {
-    persistPyqData(all);
-  }
-  return all;
+  if (changed) invalidatePyqCache();
+  return getAllPyqSessions();
 }
 
 // notes-db.ts
-import fs4 from "fs";
-import path4 from "path";
-import os4 from "os";
-var IS_VERCEL4 = Boolean(process.env.VERCEL);
-var DATA_DIR4 = IS_VERCEL4 ? path4.join(os4.tmpdir(), "nishchay_data") : path4.join(process.cwd(), "data");
-var SEED_DATA_DIR4 = path4.join(process.cwd(), "data");
-var NOTES_FILE = path4.join(DATA_DIR4, "notes.json");
-var SEED_NOTES_FILE = path4.join(SEED_DATA_DIR4, "notes.json");
-function ensureDataDir4() {
-  try {
-    if (!fs4.existsSync(DATA_DIR4)) {
-      fs4.mkdirSync(DATA_DIR4, { recursive: true });
-    }
-    if (IS_VERCEL4 && !fs4.existsSync(NOTES_FILE) && fs4.existsSync(SEED_NOTES_FILE)) {
-      fs4.copyFileSync(SEED_NOTES_FILE, NOTES_FILE);
-    }
-  } catch (err) {
-    console.warn("Could not ensure data directory:", err);
-  }
+import admin4 from "firebase-admin";
+function getDb4() {
+  return admin4.firestore();
 }
+var CACHE_TTL_MS4 = 3e4;
 var notesCache = null;
-function getAllNotes() {
-  if (notesCache) {
-    return notesCache;
-  }
-  ensureDataDir4();
-  let targetFile = NOTES_FILE;
-  if (!fs4.existsSync(targetFile) && fs4.existsSync(SEED_NOTES_FILE)) {
-    targetFile = SEED_NOTES_FILE;
-  }
-  if (!fs4.existsSync(targetFile)) {
-    notesCache = [];
-    return notesCache;
-  }
-  try {
-    const raw = fs4.readFileSync(targetFile, "utf-8");
-    notesCache = JSON.parse(raw);
-    return notesCache || [];
-  } catch (err) {
-    console.error("Failed to parse notes.json, fallback to empty list:", err);
-    notesCache = [];
-    return notesCache;
-  }
+function invalidateNotesCache() {
+  notesCache = null;
 }
-function getNotesBySubject(subjectId) {
-  const all = getAllNotes();
+async function getAllNotes() {
+  if (notesCache && Date.now() < notesCache.expiresAt) return notesCache.data;
+  const db = getDb4();
+  const snap = await db.collection("subjectNotes").orderBy("uploadedAt", "desc").get();
+  const notes = snap.docs.map((d) => d.data());
+  notesCache = { data: notes, expiresAt: Date.now() + CACHE_TTL_MS4 };
+  return notes;
+}
+async function getNotesBySubject(subjectId) {
+  const all = await getAllNotes();
   return all.filter((n) => n.subjectId.toLowerCase() === subjectId.toLowerCase());
 }
-function persistNotes(notes) {
-  ensureDataDir4();
-  notesCache = notes;
-  try {
-    const tempFile = `${NOTES_FILE}.tmp.${Date.now()}`;
-    fs4.writeFileSync(tempFile, JSON.stringify(notes, null, 2), "utf-8");
-    fs4.renameSync(tempFile, NOTES_FILE);
-  } catch (err) {
-    console.warn("Could not write notes.json to disk:", err);
-  }
-}
-function saveNote(data) {
-  const all = getAllNotes();
+async function saveNote(data) {
+  const db = getDb4();
   const id = `note-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
   const newNote = {
     id,
@@ -1454,42 +1194,36 @@ function saveNote(data) {
     fileSize: data.fileSize || "PDF Document",
     uploadedAt: (/* @__PURE__ */ new Date()).toISOString()
   };
-  all.unshift(newNote);
-  persistNotes(all);
+  await db.collection("subjectNotes").doc(id).set(newNote);
+  invalidateNotesCache();
   return newNote;
 }
-function deleteNote(id) {
-  const all = getAllNotes();
-  const index = all.findIndex((n) => n.id === id);
-  if (index === -1) return false;
-  all.splice(index, 1);
-  persistNotes(all);
+async function deleteNote(id) {
+  const db = getDb4();
+  const ref = db.collection("subjectNotes").doc(id);
+  const snap = await ref.get();
+  if (!snap.exists) return false;
+  await ref.delete();
+  invalidateNotesCache();
   return true;
 }
-function syncNotes(incomingNotes) {
+async function syncNotes(incomingNotes) {
   if (!Array.isArray(incomingNotes) || incomingNotes.length === 0) {
     return getAllNotes();
   }
-  const all = getAllNotes();
-  const map = /* @__PURE__ */ new Map();
-  for (const n of all) {
-    if (n && n.id) map.set(n.id, n);
-  }
+  const db = getDb4();
   let added = false;
-  for (const n of incomingNotes) {
-    if (n && n.id && !map.has(n.id)) {
-      map.set(n.id, n);
+  for (const note of incomingNotes) {
+    if (!note || !note.id) continue;
+    const ref = db.collection("subjectNotes").doc(note.id);
+    const snap = await ref.get();
+    if (!snap.exists) {
+      await ref.set(note);
       added = true;
     }
   }
-  if (added) {
-    const merged = Array.from(map.values()).sort(
-      (a, b) => new Date(b.uploadedAt || 0).getTime() - new Date(a.uploadedAt || 0).getTime()
-    );
-    persistNotes(merged);
-    return merged;
-  }
-  return all;
+  if (added) invalidateNotesCache();
+  return getAllNotes();
 }
 
 // n-intel-sample-data.ts
@@ -1770,11 +1504,11 @@ var publishLimiter = rateLimit({
   validate: false,
   message: { success: false, error: "Publishing rate limit exceeded." }
 });
-var IS_VERCEL5 = Boolean(process.env.VERCEL);
-var UPLOADS_DIR = IS_VERCEL5 ? path5.join(os5.tmpdir(), "nishchay_uploads") : path5.join(process.cwd(), "public", "uploads");
+var IS_VERCEL = Boolean(process.env.VERCEL);
+var UPLOADS_DIR = IS_VERCEL ? path.join(os.tmpdir(), "nishchay_uploads") : path.join(process.cwd(), "public", "uploads");
 try {
-  if (!fs5.existsSync(UPLOADS_DIR)) {
-    fs5.mkdirSync(UPLOADS_DIR, { recursive: true });
+  if (!fs.existsSync(UPLOADS_DIR)) {
+    fs.mkdirSync(UPLOADS_DIR, { recursive: true });
   }
 } catch (fsErr) {
   console.warn("Could not initialize uploads directory:", fsErr);
@@ -1789,25 +1523,28 @@ app.use(
   })
 );
 try {
-  if (!admin.apps.length) {
+  if (!admin5.apps.length) {
     const projectId = process.env.VITE_FIREBASE_PROJECT_ID || "nishchay-defence";
     const serviceEmail = process.env.FIREBASE_SERVICE_ACCOUNT_EMAIL;
     const serviceKey = process.env.FIREBASE_PRIVATE_KEY ? process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, "\n").replace(/^"(.*)"$/, "$1").trim() : void 0;
-    if (serviceEmail && serviceKey && serviceKey.includes("BEGIN PRIVATE KEY")) {
-      admin.initializeApp({
-        credential: admin.credential.cert({
+    const googleEmail = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
+    const googleKey = process.env.GOOGLE_PRIVATE_KEY ? process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, "\n").replace(/^"(.*)"$/, "$1").trim() : void 0;
+    const effectiveEmail = serviceEmail || googleEmail;
+    const effectiveKey = serviceKey || googleKey;
+    if (effectiveEmail && effectiveKey && effectiveKey.includes("BEGIN PRIVATE KEY")) {
+      admin5.initializeApp({
+        credential: admin5.credential.cert({
           projectId,
-          clientEmail: serviceEmail,
-          privateKey: serviceKey
+          clientEmail: effectiveEmail,
+          privateKey: effectiveKey
         }),
-        projectId
+        projectId,
+        databaseURL: `https://${projectId}-default-rtdb.firebaseio.com`
       });
-      console.log("\u2705 Firebase Admin initialized with dedicated Service Account for:", projectId);
+      console.log("\u2705 Firebase Admin initialized with Service Account for:", projectId);
     } else {
-      admin.initializeApp({
-        projectId
-      });
-      console.log("\u2705 Firebase Admin initialized with Project ID (public cert verification):", projectId);
+      admin5.initializeApp({ projectId });
+      console.log("\u2705 Firebase Admin initialized with Project ID only:", projectId);
     }
   }
 } catch (error) {
@@ -1865,7 +1602,7 @@ var authenticate = async (req, res, next) => {
     });
   }
   try {
-    const decodedToken = await admin.auth().verifyIdToken(token);
+    const decodedToken = await admin5.auth().verifyIdToken(token);
     const email = decodedToken.email?.trim().toLowerCase();
     if (!email) {
       return res.status(403).json({
@@ -1899,6 +1636,13 @@ app.use((req, res, next) => {
   if (req.url.startsWith("/api")) {
     console.log(`[${(/* @__PURE__ */ new Date()).toISOString()}] ${req.method} ${req.url}`);
   }
+  next();
+});
+app.use("/api", (req, res, next) => {
+  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+  res.setHeader("Pragma", "no-cache");
+  res.setHeader("Expires", "0");
+  res.setHeader("Surrogate-Control", "no-store");
   next();
 });
 function getSheetAuth() {
@@ -2000,7 +1744,7 @@ app.get("/api/health", (req, res) => {
     timestamp: (/* @__PURE__ */ new Date()).toISOString(),
     services: {
       sheetsConfigured: !!(process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL && process.env.GOOGLE_PRIVATE_KEY),
-      firebaseConfigured: !!admin.apps.length
+      firebaseConfigured: !!admin5.apps.length
     }
   });
 });
@@ -2043,10 +1787,10 @@ app.post("/api/contact", contactLimiter, async (req, res) => {
     });
   }
 });
-app.get("/api/n-intel/stories", (req, res) => {
+app.get("/api/n-intel/stories", async (req, res) => {
   try {
     const { date, month, category, search, includeDeleted } = req.query;
-    const stories = getAllStories({
+    const stories = await getAllStories({
       date,
       month,
       category,
@@ -2065,9 +1809,9 @@ app.param("id", (req, res, next, id) => {
   }
   next();
 });
-app.get("/api/n-intel/stories/:id", (req, res) => {
+app.get("/api/n-intel/stories/:id", async (req, res) => {
   try {
-    const story = getStoryById(req.params.id);
+    const story = await getStoryById(req.params.id);
     if (!story) {
       return res.status(404).json({ success: false, error: "Story not found" });
     }
@@ -2077,27 +1821,27 @@ app.get("/api/n-intel/stories/:id", (req, res) => {
     res.status(500).json({ success: false, error: error.message });
   }
 });
-app.get("/api/n-intel/editions", (req, res) => {
+app.get("/api/n-intel/editions", async (req, res) => {
   try {
-    const editions = getAvailableEditions();
+    const editions = await getAvailableEditions();
     res.json({ success: true, editions });
   } catch (error) {
     console.error("Error fetching editions:", error);
     res.status(500).json({ success: false, error: error.message });
   }
 });
-app.get("/api/articles", (req, res) => {
+app.get("/api/articles", async (req, res) => {
   try {
-    const articles = getAllArticles();
+    const articles = await getAllArticles();
     res.json({ success: true, articles });
   } catch (error) {
     console.error("Error fetching articles:", error);
     res.status(500).json({ success: false, error: error.message });
   }
 });
-app.get("/api/articles/:id", (req, res) => {
+app.get("/api/articles/:id", async (req, res) => {
   try {
-    const article = getArticleById(req.params.id);
+    const article = await getArticleById(req.params.id);
     if (!article) {
       return res.status(404).json({ success: false, error: "Article not found." });
     }
@@ -2109,9 +1853,9 @@ app.get("/api/articles/:id", (req, res) => {
 });
 app.get("/api/uploads/:filename", (req, res) => {
   try {
-    const safeName = path5.basename(req.params.filename);
-    const filePath = path5.join(UPLOADS_DIR, safeName);
-    if (fs5.existsSync(filePath)) {
+    const safeName = path.basename(req.params.filename);
+    const filePath = path.join(UPLOADS_DIR, safeName);
+    if (fs.existsSync(filePath)) {
       res.setHeader("X-Content-Type-Options", "nosniff");
       res.sendFile(filePath);
     } else {
@@ -2121,22 +1865,22 @@ app.get("/api/uploads/:filename", (req, res) => {
     res.status(500).json({ success: false, error: "Error reading file." });
   }
 });
-app.post("/api/articles/sync", (req, res) => {
+app.post("/api/articles/sync", async (req, res) => {
   try {
     const { articles } = req.body;
     if (!Array.isArray(articles)) {
       return res.status(400).json({ success: false, error: "Articles array required." });
     }
-    const result = syncArticles(articles);
+    const result = await syncArticles(articles);
     res.json({ success: true, ...result });
   } catch (error) {
     console.error("Error syncing articles:", error);
     res.status(500).json({ success: false, error: "Failed to sync articles." });
   }
 });
-app.post("/api/articles/:id/download", downloadLimiter, (req, res) => {
+app.post("/api/articles/:id/download", downloadLimiter, async (req, res) => {
   try {
-    incrementDownloadCount(req.params.id);
+    await incrementDownloadCount(req.params.id);
     res.json({ success: true });
   } catch (error) {
     res.status(500).json({ success: false, error: "Failed to record download count." });
@@ -2175,13 +1919,13 @@ app.post("/api/articles/upload-banner", publishLimiter, authenticate, (req, res)
       });
     }
     try {
-      if (!fs5.existsSync(UPLOADS_DIR)) {
-        fs5.mkdirSync(UPLOADS_DIR, { recursive: true });
+      if (!fs.existsSync(UPLOADS_DIR)) {
+        fs.mkdirSync(UPLOADS_DIR, { recursive: true });
       }
       const safeRandomToken = crypto.randomBytes(16).toString("hex");
       const safeName = `banner-${Date.now()}-${safeRandomToken}.${ext}`;
-      const filePath = path5.join(UPLOADS_DIR, safeName);
-      fs5.writeFileSync(filePath, buffer, { flag: "wx" });
+      const filePath = path.join(UPLOADS_DIR, safeName);
+      fs.writeFileSync(filePath, buffer, { flag: "wx" });
       const publicUrl = `/api/uploads/${safeName}`;
       res.json({ success: true, url: publicUrl, localUrl: `/uploads/${safeName}` });
     } catch (writeErr) {
@@ -2193,7 +1937,7 @@ app.post("/api/articles/upload-banner", publishLimiter, authenticate, (req, res)
     res.status(500).json({ success: false, error: "Failed to process image upload." });
   }
 });
-app.post("/api/articles", authenticate, (req, res) => {
+app.post("/api/articles", authenticate, async (req, res) => {
   if (!req.user?.isAdmin) {
     return res.status(403).json({ success: false, error: "Access denied: Admin privileges required." });
   }
@@ -2226,7 +1970,7 @@ app.post("/api/articles", authenticate, (req, res) => {
     if (!content || typeof content !== "string" || content.trim().length < 20 || content.length > 3e5) {
       return res.status(400).json({ success: false, error: "Article content must be between 20 and 300,000 characters." });
     }
-    const newArticle = createArticle({
+    const newArticle = await createArticle({
       title: title.trim(),
       bannerImageUrl: bannerImageUrl.trim(),
       category: typeof category === "string" && category.trim() ? category.trim() : "International Relations",
@@ -2246,7 +1990,7 @@ app.post("/api/articles", authenticate, (req, res) => {
     res.status(500).json({ success: false, error: "Failed to create article." });
   }
 });
-app.put("/api/articles/:id", authenticate, (req, res) => {
+app.put("/api/articles/:id", authenticate, async (req, res) => {
   if (!req.user?.isAdmin) {
     return res.status(403).json({ success: false, error: "Access denied: Admin privileges required." });
   }
@@ -2267,7 +2011,7 @@ app.put("/api/articles/:id", authenticate, (req, res) => {
     if (content !== void 0 && (typeof content !== "string" || content.trim().length < 20 || content.length > 3e5)) {
       return res.status(400).json({ success: false, error: "Content must be between 20 and 300,000 characters." });
     }
-    const updated = updateArticle(req.params.id, req.body);
+    const updated = await updateArticle(req.params.id, req.body);
     if (!updated) {
       return res.status(404).json({ success: false, error: "Article not found." });
     }
@@ -2277,12 +2021,12 @@ app.put("/api/articles/:id", authenticate, (req, res) => {
     res.status(500).json({ success: false, error: "Failed to update article." });
   }
 });
-app.delete("/api/articles/:id", authenticate, (req, res) => {
+app.delete("/api/articles/:id", authenticate, async (req, res) => {
   if (!req.user?.isAdmin) {
     return res.status(403).json({ success: false, error: "Access denied: Admin privileges required." });
   }
   try {
-    const success = deleteArticle(req.params.id);
+    const success = await deleteArticle(req.params.id);
     if (!success) {
       return res.status(404).json({ success: false, error: "Article not found." });
     }
@@ -2292,7 +2036,7 @@ app.delete("/api/articles/:id", authenticate, (req, res) => {
     res.status(500).json({ success: false, error: "Failed to delete article." });
   }
 });
-app.post("/api/n-intel/publish", publishLimiter, authenticate, (req, res) => {
+app.post("/api/n-intel/publish", publishLimiter, authenticate, async (req, res) => {
   if (!req.user?.isAdmin) {
     return res.status(403).json({ success: false, error: "Access denied: Admin privileges required." });
   }
@@ -2309,7 +2053,7 @@ app.post("/api/n-intel/publish", publishLimiter, authenticate, (req, res) => {
     if (!parseResult.success) {
       return res.status(400).json({ success: false, error: parseResult.error || "Failed to parse news text." });
     }
-    const duplicate = findDuplicateBatch(parseResult.hash, pubDate);
+    const duplicate = await findDuplicateBatch(parseResult.hash, pubDate);
     if (duplicate) {
       return res.status(409).json({
         success: false,
@@ -2325,7 +2069,7 @@ app.post("/api/n-intel/publish", publishLimiter, authenticate, (req, res) => {
       storyCount: parseResult.totalStories,
       categories: parseResult.categories
     };
-    saveBatchAndStories(batch, parseResult.stories, req.user.email || "Admin");
+    await saveBatchAndStories(batch, parseResult.stories, req.user.email || "Admin");
     console.log(`\u2705 [N-INTEL] Published ${parseResult.totalStories} stories for ${pubDate} by ${req.user.email}`);
     res.json({
       success: true,
@@ -2342,7 +2086,7 @@ app.post("/api/n-intel/publish", publishLimiter, authenticate, (req, res) => {
     res.status(500).json({ success: false, error: error.message });
   }
 });
-app.post("/api/n-intel/sync", authenticate, (req, res) => {
+app.post("/api/n-intel/sync", authenticate, async (req, res) => {
   if (!req.user?.isAdmin) {
     return res.status(403).json({ success: false, error: "Access denied: Admin privileges required." });
   }
@@ -2351,8 +2095,8 @@ app.post("/api/n-intel/sync", authenticate, (req, res) => {
     if (!Array.isArray(stories)) {
       return res.status(400).json({ success: false, error: "Invalid stories array." });
     }
-    const result = syncNIntelStories(stories, batches);
-    const editions = getAvailableEditions();
+    const result = await syncNIntelStories(stories, batches);
+    const editions = await getAvailableEditions();
     console.log(`\u2705 [N-INTEL] Synced ${result.count} stories from client by ${req.user.email}. Store total: ${result.total}`);
     res.json({
       success: true,
@@ -2364,12 +2108,12 @@ app.post("/api/n-intel/sync", authenticate, (req, res) => {
     res.status(500).json({ success: false, error: "Failed to sync N-INTEL stories." });
   }
 });
-var handleStoryUpdate = (req, res) => {
+var handleStoryUpdate = async (req, res) => {
   if (!req.user?.isAdmin) {
     return res.status(403).json({ success: false, error: "Access denied: Admin privileges required." });
   }
   try {
-    const updated = updateStory(req.params.id, req.body, req.user.email || "Admin");
+    const updated = await updateStory(req.params.id, req.body, req.user.email || "Admin");
     if (!updated) {
       return res.status(404).json({ success: false, error: "Story not found" });
     }
@@ -2381,7 +2125,7 @@ var handleStoryUpdate = (req, res) => {
 };
 app.patch("/api/n-intel/stories/:id", authenticate, handleStoryUpdate);
 app.put("/api/n-intel/stories/:id", authenticate, handleStoryUpdate);
-app.delete("/api/n-intel/stories/:id", authenticate, (req, res) => {
+app.delete("/api/n-intel/stories/:id", authenticate, async (req, res) => {
   if (!req.user?.isAdmin) {
     return res.status(403).json({ success: false, error: "Access denied: Admin privileges required." });
   }
@@ -2389,13 +2133,13 @@ app.delete("/api/n-intel/stories/:id", authenticate, (req, res) => {
     const isPermanent = req.query.permanent === "true";
     const adminEmail = req.user.email || "Admin";
     if (isPermanent) {
-      const success2 = purgeStory(req.params.id, adminEmail);
+      const success2 = await purgeStory(req.params.id, adminEmail);
       if (!success2) {
         return res.status(404).json({ success: false, error: "Story not found" });
       }
       return res.json({ success: true, message: "Story permanently purged from database.", permanent: true });
     }
-    const success = deleteStory(req.params.id, adminEmail);
+    const success = await deleteStory(req.params.id, adminEmail);
     if (!success) {
       return res.status(404).json({ success: false, error: "Story not found" });
     }
@@ -2405,7 +2149,7 @@ app.delete("/api/n-intel/stories/:id", authenticate, (req, res) => {
     res.status(500).json({ success: false, error: error.message });
   }
 });
-app.post("/api/n-intel/stories/bulk-delete", authenticate, (req, res) => {
+app.post("/api/n-intel/stories/bulk-delete", authenticate, async (req, res) => {
   if (!req.user?.isAdmin) {
     return res.status(403).json({ success: false, error: "Access denied: Admin privileges required." });
   }
@@ -2417,7 +2161,7 @@ app.post("/api/n-intel/stories/bulk-delete", authenticate, (req, res) => {
       if (!date) {
         return res.status(400).json({ success: false, error: "Target date is required for date-wise deletion." });
       }
-      const result = deleteStoriesByDate(date, adminEmail, isPermanent);
+      const result = await deleteStoriesByDate(date, adminEmail, isPermanent);
       return res.json({
         success: true,
         type: "date",
@@ -2431,7 +2175,7 @@ app.post("/api/n-intel/stories/bulk-delete", authenticate, (req, res) => {
       if (!category) {
         return res.status(400).json({ success: false, error: "Target category is required for category-wise deletion." });
       }
-      const result = deleteStoriesByCategory(category, adminEmail, date, isPermanent);
+      const result = await deleteStoriesByCategory(category, adminEmail, date, isPermanent);
       return res.json({
         success: true,
         type: "category",
@@ -2446,7 +2190,7 @@ app.post("/api/n-intel/stories/bulk-delete", authenticate, (req, res) => {
       if (!Array.isArray(ids) || ids.length === 0) {
         return res.status(400).json({ success: false, error: "Story IDs array is required." });
       }
-      const result = deleteStoriesByIds(ids, adminEmail, isPermanent);
+      const result = await deleteStoriesByIds(ids, adminEmail, isPermanent);
       return res.json({
         success: true,
         type: "ids",
@@ -2462,14 +2206,14 @@ app.post("/api/n-intel/stories/bulk-delete", authenticate, (req, res) => {
     res.status(500).json({ success: false, error: error.message });
   }
 });
-app.delete("/api/n-intel/editions/:date", authenticate, (req, res) => {
+app.delete("/api/n-intel/editions/:date", authenticate, async (req, res) => {
   if (!req.user?.isAdmin) {
     return res.status(403).json({ success: false, error: "Access denied: Admin privileges required." });
   }
   try {
     const isPermanent = req.query.permanent === "true";
     const adminEmail = req.user.email || "Admin";
-    const result = deleteStoriesByDate(req.params.date, adminEmail, isPermanent);
+    const result = await deleteStoriesByDate(req.params.date, adminEmail, isPermanent);
     res.json({
       success: true,
       count: result.count,
@@ -2482,13 +2226,13 @@ app.delete("/api/n-intel/editions/:date", authenticate, (req, res) => {
     res.status(500).json({ success: false, error: error.message });
   }
 });
-app.post("/api/n-intel/stories/:id/restore", authenticate, (req, res) => {
+app.post("/api/n-intel/stories/:id/restore", authenticate, async (req, res) => {
   if (!req.user?.isAdmin) {
     return res.status(403).json({ success: false, error: "Access denied: Admin privileges required." });
   }
   try {
     const adminEmail = req.user.email || "Admin";
-    const success = restoreStory(req.params.id, adminEmail);
+    const success = await restoreStory(req.params.id, adminEmail);
     if (!success) {
       return res.status(404).json({ success: false, error: "Story not found" });
     }
@@ -2498,13 +2242,13 @@ app.post("/api/n-intel/stories/:id/restore", authenticate, (req, res) => {
     res.status(500).json({ success: false, error: error.message });
   }
 });
-app.delete("/api/n-intel/trash/empty", authenticate, (req, res) => {
+app.delete("/api/n-intel/trash/empty", authenticate, async (req, res) => {
   if (!req.user?.isAdmin) {
     return res.status(403).json({ success: false, error: "Access denied: Admin privileges required." });
   }
   try {
     const adminEmail = req.user.email || "Admin";
-    const purgedCount = purgeAllDeletedStories(adminEmail);
+    const purgedCount = await purgeAllDeletedStories(adminEmail);
     res.json({
       success: true,
       message: `Trash emptied successfully. ${purgedCount} stories permanently erased.`,
@@ -2515,28 +2259,28 @@ app.delete("/api/n-intel/trash/empty", authenticate, (req, res) => {
     res.status(500).json({ success: false, error: error.message });
   }
 });
-app.get("/api/n-intel/audit", authenticate, (req, res) => {
+app.get("/api/n-intel/audit", authenticate, async (req, res) => {
   if (!req.user?.isAdmin) {
     return res.status(403).json({ success: false, error: "Access denied: Admin privileges required." });
   }
   try {
-    const logs = getAuditLogs();
+    const logs = await getAuditLogs();
     res.json({ success: true, logs });
   } catch (error) {
     console.error("Error fetching audit logs:", error);
     res.status(500).json({ success: false, error: error.message });
   }
 });
-app.get("/api/pyq", (req, res) => {
+app.get("/api/pyq", async (req, res) => {
   try {
-    const sessions = getAllPyqSessions();
+    const sessions = await getAllPyqSessions();
     res.json({ success: true, sessions });
   } catch (err) {
     console.error("Error retrieving PYQ sessions:", err);
     res.status(500).json({ success: false, error: err.message || "Failed to load PYQ papers" });
   }
 });
-app.post("/api/pyq/link", authenticate, (req, res) => {
+app.post("/api/pyq/link", authenticate, async (req, res) => {
   if (!req.user?.isAdmin) {
     return res.status(403).json({ success: false, error: "Access denied: Administrator privileges required." });
   }
@@ -2559,7 +2303,7 @@ app.post("/api/pyq/link", authenticate, (req, res) => {
     if (!isValidUrlOrPath(url)) {
       return res.status(400).json({ success: false, error: "Invalid URL. Only valid HTTP/HTTPS URLs are accepted." });
     }
-    const sessionRecord = savePyqFileRecord({
+    const sessionRecord = await savePyqFileRecord({
       sessionId,
       exam: exam || (sessionId.startsWith("nda") ? "NDA" : sessionId.startsWith("afcat") ? "AFCAT" : "CDS"),
       session: session || "I",
@@ -2577,7 +2321,7 @@ app.post("/api/pyq/link", authenticate, (req, res) => {
     res.status(500).json({ success: false, error: "Failed to save link." });
   }
 });
-app.post("/api/pyq/delete", authenticate, (req, res) => {
+app.post("/api/pyq/delete", authenticate, async (req, res) => {
   if (!req.user?.isAdmin) {
     return res.status(403).json({ success: false, error: "Access denied: Administrator privileges required." });
   }
@@ -2586,14 +2330,14 @@ app.post("/api/pyq/delete", authenticate, (req, res) => {
     if (!sessionId || !subjectKey || !fileType) {
       return res.status(400).json({ success: false, error: "Missing required parameters." });
     }
-    const sessionRecord = deletePyqFileRecord({ sessionId, subjectKey, fileType });
+    const sessionRecord = await deletePyqFileRecord({ sessionId, subjectKey, fileType });
     res.json({ success: true, session: sessionRecord });
   } catch (err) {
     console.error("Error deleting PYQ file:", err);
     res.status(500).json({ success: false, error: "Failed to delete file." });
   }
 });
-app.post("/api/pyq/sync", authenticate, (req, res) => {
+app.post("/api/pyq/sync", authenticate, async (req, res) => {
   if (!req.user?.isAdmin) {
     return res.status(403).json({ success: false, error: "Access denied: Administrator privileges required." });
   }
@@ -2602,28 +2346,28 @@ app.post("/api/pyq/sync", authenticate, (req, res) => {
     if (!sessions || typeof sessions !== "object") {
       return res.status(400).json({ success: false, error: "Invalid sessions payload." });
     }
-    const updated = syncPyqSessions(sessions);
+    const updated = await syncPyqSessions(sessions);
     res.json({ success: true, sessions: updated });
   } catch (err) {
     console.error("Error syncing PYQ sessions:", err);
     res.status(500).json({ success: false, error: "Failed to sync PYQ sessions." });
   }
 });
-app.get("/api/notes", (req, res) => {
+app.get("/api/notes", async (req, res) => {
   try {
     const { subject } = req.query;
     if (typeof subject === "string" && subject.trim()) {
-      const notes2 = getNotesBySubject(subject.trim());
+      const notes2 = await getNotesBySubject(subject.trim());
       return res.json({ success: true, notes: notes2 });
     }
-    const notes = getAllNotes();
+    const notes = await getAllNotes();
     res.json({ success: true, notes });
   } catch (err) {
     console.error("Error fetching subject notes:", err);
     res.status(500).json({ success: false, error: "Failed to retrieve notes." });
   }
 });
-app.post("/api/notes/link", authenticate, (req, res) => {
+app.post("/api/notes/link", authenticate, async (req, res) => {
   if (!req.user?.isAdmin) {
     return res.status(403).json({ success: false, error: "Access denied: Administrator privileges required." });
   }
@@ -2632,7 +2376,7 @@ app.post("/api/notes/link", authenticate, (req, res) => {
     if (!subjectId || !subjectTitle || !title || !url) {
       return res.status(400).json({ success: false, error: "Missing required parameters." });
     }
-    const note = saveNote({
+    const note = await saveNote({
       subjectId,
       subjectTitle,
       title,
@@ -2647,7 +2391,7 @@ app.post("/api/notes/link", authenticate, (req, res) => {
     res.status(500).json({ success: false, error: "Failed to save note link." });
   }
 });
-app.post("/api/notes/delete", authenticate, (req, res) => {
+app.post("/api/notes/delete", authenticate, async (req, res) => {
   if (!req.user?.isAdmin) {
     return res.status(403).json({ success: false, error: "Access denied: Administrator privileges required." });
   }
@@ -2656,14 +2400,14 @@ app.post("/api/notes/delete", authenticate, (req, res) => {
     if (!id) {
       return res.status(400).json({ success: false, error: "Missing note ID." });
     }
-    const success = deleteNote(id);
+    const success = await deleteNote(id);
     res.json({ success });
   } catch (err) {
     console.error("Error deleting subject note:", err);
     res.status(500).json({ success: false, error: "Failed to delete note." });
   }
 });
-app.post("/api/notes/sync", authenticate, (req, res) => {
+app.post("/api/notes/sync", authenticate, async (req, res) => {
   if (!req.user?.isAdmin) {
     return res.status(403).json({ success: false, error: "Access denied: Administrator privileges required." });
   }
@@ -2672,7 +2416,7 @@ app.post("/api/notes/sync", authenticate, (req, res) => {
     if (!Array.isArray(notes)) {
       return res.status(400).json({ success: false, error: "Invalid notes array." });
     }
-    const updated = syncNotes(notes);
+    const updated = await syncNotes(notes);
     res.json({ success: true, notes: updated });
   } catch (err) {
     console.error("Error syncing notes:", err);
@@ -2704,7 +2448,7 @@ async function setupServer() {
   console.log("---------------------------------");
   if (!process.env.VERCEL) {
     try {
-      seedSampleDataIfEmpty(SAMPLE_NINTEL_POST);
+      await seedSampleDataIfEmpty(SAMPLE_NINTEL_POST);
     } catch (err) {
       console.warn("\u26A0\uFE0F Could not seed sample N-INTEL data:", err);
     }
@@ -2717,11 +2461,11 @@ async function setupServer() {
     });
     app.use(vite.middlewares);
   } else if (!process.env.VERCEL) {
-    const distPath = path5.join(process.cwd(), "dist");
-    if (fs5.existsSync(distPath)) {
+    const distPath = path.join(process.cwd(), "dist");
+    if (fs.existsSync(distPath)) {
       app.use(express.static(distPath));
       app.get("*", (req, res) => {
-        res.sendFile(path5.join(distPath, "index.html"));
+        res.sendFile(path.join(distPath, "index.html"));
       });
     }
   }

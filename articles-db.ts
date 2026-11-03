@@ -1,12 +1,19 @@
-import fs from 'fs';
-import path from 'path';
-import os from 'os';
+/**
+ * articles-db.ts — Firestore-backed persistent storage for Articles.
+ *
+ * MIGRATION: Previously used Vercel /tmp JSON files (ephemeral, caused 24-hour data loss).
+ * Now uses Firebase Admin Firestore (permanent, cross-device, single source of truth).
+ *
+ * Collection: articles
+ */
+
+import admin from 'firebase-admin';
 
 export interface Article {
   id: string;
   slug: string;
   title: string;
-  bannerImageUrl: string; // Compulsory field
+  bannerImageUrl: string;
   category: string;
   authorName: string;
   authorRole: string;
@@ -24,23 +31,13 @@ export interface Article {
   authorEmail?: string;
 }
 
-const IS_VERCEL = Boolean(process.env.VERCEL);
-const DATA_DIR = IS_VERCEL ? path.join(os.tmpdir(), 'nishchay_data') : path.join(process.cwd(), 'data');
-const SEED_DATA_DIR = path.join(process.cwd(), 'data');
-const ARTICLES_FILE = path.join(DATA_DIR, 'articles.json');
-const SEED_ARTICLES_FILE = path.join(SEED_DATA_DIR, 'articles.json');
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
 
-function ensureDataDir() {
-  try {
-    if (!fs.existsSync(DATA_DIR)) {
-      fs.mkdirSync(DATA_DIR, { recursive: true });
-    }
-  } catch (err) {
-    console.warn('Could not ensure data directory:', err);
-  }
+function getDb(): FirebaseFirestore.Firestore {
+  return admin.firestore();
 }
-
-let articlesCache: Article[] | null = null;
 
 function slugify(text: string): string {
   return text
@@ -56,163 +53,44 @@ function calculateReadingTime(text: string): string {
   return `${minutes} min read`;
 }
 
-function loadArticles(): Article[] {
-  if (articlesCache) return articlesCache;
-  ensureDataDir();
+// Short-lived in-memory cache (30 seconds) to reduce cold-read Firestore costs
+const CACHE_TTL_MS = 30_000;
+let articlesCache: { data: Article[]; expiresAt: number } | null = null;
 
-  let targetFile = ARTICLES_FILE;
-  if (!fs.existsSync(targetFile) && fs.existsSync(SEED_ARTICLES_FILE)) {
-    targetFile = SEED_ARTICLES_FILE;
+function invalidateArticlesCache() { articlesCache = null; }
+
+// ---------------------------------------------------------------------------
+// Public API
+// ---------------------------------------------------------------------------
+
+export async function getAllArticles(): Promise<Article[]> {
+  if (articlesCache && Date.now() < articlesCache.expiresAt) {
+    return articlesCache.data;
   }
-
-  if (!fs.existsSync(targetFile)) {
-    // Seed initial dataset with the sample editorial from the user's brief
-    const initialArticles: Article[] = [
-      {
-        id: 'article-tied-by-geography-divided-by-politics',
-        slug: 'tied-by-geography-divided-by-politics',
-        title: 'Tied by geography, divided by politics',
-        bannerImageUrl: 'https://images.unsplash.com/photo-1541872703-74c5e44368f9?auto=format&fit=crop&w=1200&q=80',
-        category: 'International Relations',
-        authorName: 'Mohammed Ayoob',
-        authorRole: 'University Distinguished Professor Emeritus of International Relations, Michigan State University, and author of "The Liberation War" (1972)',
-        authorAvatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=200&q=80',
-        publishDate: '2026-10-30',
-        readingTime: '7 min read',
-        pullQuote: 'India and Bangladesh must overcome mistrust and pursue pragmatic neighbourhood cooperation.',
-        tags: ['International Relations', 'India-Bangladesh', 'Foreign Policy', '1971 Liberation War', 'Defence Studies'],
-        sourceReference: 'Strategic Analysis & Editorial Study',
-        viewsCount: 142,
-        pdfDownloadCount: 29,
-        createdAt: new Date().toISOString(),
-        content: `With speculation rife that Bangladesh's recently elected Prime Minister Tarique Rahman (and also Bangladesh Nationalist Party [BNP] Chairman) will be visiting New Delhi in November or December, it is time to assess the state of India-Bangladesh relations and analyse the roots of the problems between the two countries.
-
-The seeds of their current tension lie in the ==liberation war of 1971== itself. From the very beginning, the attitude of Bangladesh's elites toward India has wavered between gratitude and resentment — gratitude for India's crucial role in the liberation of their country and resentment against the fact that India had to play the role of liberator — a role they should have performed themselves.
-
-### An ambivalence
-Nations cherish narratives in which they are the principal authors of their own liberation. Bangladesh is no exception. The contribution of the Mukti Bahini notwithstanding, the decisive military blow against Pakistan was delivered by India. What was initially the source of immense gratitude with the passage of time became a source of grave discomfort.
-
-Moreover, from the very beginning Dhaka was worried that India's policy towards Bangladesh would be mediated through a Hindu-majority West Bengal next door which has strong cultural and linguistic affinities with Bangladesh that could threaten the development of Bangladesh's independent identity. ^^The open borders in the immediate aftermath of the liberation war also revived memories of the socio-economic dominance of the Hindu bhadralok in pre-Partition Bengal.^^
-
-This was compounded by the fact that ==Bangladesh was virtually surrounded by India, sharing a border of more than 4,000 kilometres.== Its principal rivers flowed through or originated in India. Its economic and strategic room for manoeuvre appeared constrained by geography. Consequently, the fear of Indian domination became an important component of Bangladeshi nationalism.
-
-The honeymoon between Dhaka and New Delhi was indeed short. Sheikh Mujib and Indira Gandhi shared a great deal of goodwill. But the governments that succeeded Mujib deliberately distanced Bangladesh from India. Under Ziaur Rahman, ==Bangladeshi nationalism was redefined in overtly Islamic terms in contradistinction to the linguistic nationalism that had provided the ideological foundation of the liberation movement.==
-
-### Dhaka's foreign policy
-This had important foreign policy consequences. ==Dhaka sought closer relations with Pakistan, China, and the United States to counterbalance India.== What New Delhi often interpreted as gratuitous anti-Indianism was, from Dhaka's perspective, an assertion of strategic autonomy by a much weaker state living in the shadow of an overwhelmingly powerful neighbour.
-
-This pattern became deeply embedded in Bangladesh's domestic politics. ==The Awami League remained identified with the secular and Bengali-nationalist legacy of 1971 and generally favoured close relations with India.== The BNP and its allies were much more suspicious of New Delhi. <u>India consequently ceased to be merely a foreign policy issue; attitudes towards India became part of the contest over Bangladesh's national identity.</u>
-
-### The road ahead
-The election of Mr. Rahman and the return of the BNP to power in February 2026 have opened a new chapter. Both New Delhi and Dhaka have compelling reasons to avoid permanent alienation, and functional engagement has resumed. But substantial mutual suspicion continues to bedevil bilateral relations.
-
-==The lesson that New Delhi should draw from the turbulent history of the relationship is that India cannot expect gratitude for 1971 to constitute the permanent foundation of Bangladeshi foreign policy. Gratitude is a transient sentiment; national interest especially when linked to issues of national identity is enduring.==
-
-Dhaka, for its part, cannot wish away geography. No relationship with Beijing, Islamabad or Washington can substitute for a workable relationship with the country that surrounds Bangladesh on three sides, shares its major river systems and is indispensable to its regional connectivity.
-
-^^India must learn to exercise its preponderant power with restraint and sensitivity and abjure demanding reciprocity for any magnanimity it shows towards its smaller neighbour especially on the sharing of river waters. Bangladesh must recognise that strategic autonomy need not be defined through knee-jerk opposition to India.^^ Only then can the two countries finally move beyond the burdens of the past while preserving its most important legacy: the recognition that their security and stability are inextricably intertwined.`
-      }
-    ];
-
-    saveArticles(initialArticles);
-    articlesCache = initialArticles;
-    return articlesCache;
-  }
-
-  try {
-    const raw = fs.readFileSync(ARTICLES_FILE, 'utf-8');
-    articlesCache = JSON.parse(raw);
-    return articlesCache || [];
-  } catch (e) {
-    console.error('Error reading articles file:', e);
-    return [];
-  }
+  const db = getDb();
+  const snap = await db.collection('articles').orderBy('publishDate', 'desc').get();
+  const articles = snap.docs.map(d => d.data() as Article);
+  articlesCache = { data: articles, expiresAt: Date.now() + CACHE_TTL_MS };
+  return articles;
 }
 
-function atomicWriteJsonSync(filePath: string, data: any): void {
-  ensureDataDir();
-  const tempPath = `${filePath}.${Date.now()}.${Math.random().toString(36).substring(2, 8)}.tmp`;
-  try {
-    fs.writeFileSync(tempPath, JSON.stringify(data, null, 2), 'utf-8');
-    fs.renameSync(tempPath, filePath);
-  } catch (err) {
-    if (fs.existsSync(tempPath)) {
-      try { fs.unlinkSync(tempPath); } catch {}
-    }
-    console.warn(`Could not persist ${filePath} to disk:`, err);
-  }
-}
-
-function saveArticles(articles: Article[]): void {
-  articlesCache = articles;
-  atomicWriteJsonSync(ARTICLES_FILE, articles);
-}
-
-export function getAllArticles(): Article[] {
-  const articles = loadArticles();
-  return [...articles].sort((a, b) => new Date(b.publishDate || b.createdAt).getTime() - new Date(a.publishDate || a.createdAt).getTime());
-}
-
-export function getArticleById(idOrSlug: string): Article | null {
+export async function getArticleById(idOrSlug: string): Promise<Article | null> {
   if (!idOrSlug) return null;
-  const articles = loadArticles();
-  const query = String(idOrSlug).trim().toLowerCase();
-  return articles.find(a => 
-    a.id === idOrSlug || 
-    a.slug === idOrSlug ||
-    a.id.toLowerCase() === query ||
-    (a.slug && a.slug.toLowerCase() === query)
-  ) || null;
+  const db = getDb();
+  const query = String(idOrSlug).trim();
+
+  // Try direct doc lookup by ID first (fast)
+  const byId = await db.collection('articles').doc(query).get();
+  if (byId.exists) return byId.data() as Article;
+
+  // Fall back to slug query
+  const slugSnap = await db.collection('articles').where('slug', '==', query).limit(1).get();
+  if (!slugSnap.empty) return slugSnap.docs[0].data() as Article;
+
+  return null;
 }
 
-export function syncArticles(incoming: Article[]): { added: number; updated: number; total: number } {
-  if (!Array.isArray(incoming) || incoming.length === 0) {
-    const all = getAllArticles();
-    return { added: 0, updated: 0, total: all.length };
-  }
-
-  const articles = loadArticles();
-  const existingMap = new Map<string, number>();
-  articles.forEach((a, idx) => {
-    existingMap.set(a.id, idx);
-    if (a.slug) existingMap.set(a.slug, idx);
-  });
-
-  let added = 0;
-  let updated = 0;
-
-  for (const item of incoming) {
-    if (!item || !item.id || !item.title) continue;
-    const matchIdx = existingMap.get(item.id) ?? (item.slug ? existingMap.get(item.slug) : undefined);
-    if (matchIdx !== undefined) {
-      const curr = articles[matchIdx];
-      const incomingTime = new Date(item.updatedAt || item.createdAt || 0).getTime();
-      const currTime = new Date(curr.updatedAt || curr.createdAt || 0).getTime();
-      if (incomingTime >= currTime) {
-        articles[matchIdx] = {
-          ...curr,
-          ...item,
-          viewsCount: Math.max(curr.viewsCount || 0, item.viewsCount || 0),
-          pdfDownloadCount: Math.max(curr.pdfDownloadCount || 0, item.pdfDownloadCount || 0),
-        };
-        updated++;
-      }
-    } else {
-      articles.push(item);
-      existingMap.set(item.id, articles.length - 1);
-      if (item.slug) existingMap.set(item.slug, articles.length - 1);
-      added++;
-    }
-  }
-
-  if (added > 0 || updated > 0) {
-    saveArticles(articles);
-  }
-
-  return { added, updated, total: articles.length };
-}
-
-export function createArticle(data: {
+export async function createArticle(data: {
   title: string;
   bannerImageUrl: string;
   category: string;
@@ -225,8 +103,8 @@ export function createArticle(data: {
   tags?: string[];
   sourceReference?: string;
   authorEmail?: string;
-}): Article {
-  const articles = loadArticles();
+}): Promise<Article> {
+  const db = getDb();
   const slug = slugify(data.title) + '-' + Date.now().toString().slice(-4);
   const id = `article-${slug}`;
   const now = new Date();
@@ -247,7 +125,11 @@ export function createArticle(data: {
     readingTime,
     pullQuote: data.pullQuote?.trim() || undefined,
     content: data.content.trim(),
-    tags: Array.isArray(data.tags) ? data.tags : (typeof data.tags === 'string' ? (data.tags as string).split(',').map(t => t.trim()).filter(Boolean) : []),
+    tags: Array.isArray(data.tags)
+      ? data.tags
+      : (typeof data.tags === 'string'
+          ? (data.tags as string).split(',').map(t => t.trim()).filter(Boolean)
+          : []),
     sourceReference: data.sourceReference?.trim() || undefined,
     viewsCount: 1,
     pdfDownloadCount: 0,
@@ -255,20 +137,20 @@ export function createArticle(data: {
     authorEmail: data.authorEmail
   };
 
-  articles.unshift(newArticle);
-  saveArticles(articles);
+  await db.collection('articles').doc(id).set(newArticle);
+  invalidateArticlesCache();
   return newArticle;
 }
 
-export function updateArticle(id: string, updates: Partial<Article>): Article | null {
-  const articles = loadArticles();
-  const index = articles.findIndex(a => a.id === id);
-  if (index === -1) return null;
+export async function updateArticle(id: string, updates: Partial<Article>): Promise<Article | null> {
+  const db = getDb();
+  const docRef = db.collection('articles').doc(id);
+  const snap = await docRef.get();
+  if (!snap.exists) return null;
 
-  const current = articles[index];
-  
-  // Security: Explicit field whitelisting to prevent Mass Assignment & State Tampering
-  // Protected fields like id, slug, viewsCount, pdfDownloadCount, createdAt, and authorEmail cannot be overwritten
+  const current = snap.data() as Article;
+
+  // Security: Explicit field whitelisting — protected fields cannot be overwritten
   const updated: Article = {
     ...current,
     title: typeof updates.title === 'string' ? updates.title.trim() : current.title,
@@ -289,43 +171,79 @@ export function updateArticle(id: string, updates: Partial<Article>): Article | 
     updated.readingTime = calculateReadingTime(updates.content);
   }
 
-  articles[index] = updated;
-  saveArticles(articles);
+  await docRef.set(updated, { merge: true });
+  invalidateArticlesCache();
   return updated;
 }
 
-export function deleteArticle(id: string): boolean {
-  const articles = loadArticles();
-  const index = articles.findIndex(a => a.id === id);
-  if (index === -1) return false;
-  const articleToDelete = articles[index];
+export async function deleteArticle(id: string): Promise<boolean> {
+  const db = getDb();
+  const docRef = db.collection('articles').doc(id);
+  const snap = await docRef.get();
+  if (!snap.exists) return false;
 
-  // Security: Clean up orphaned uploaded banner images to prevent storage exhaustion
-  if (articleToDelete.bannerImageUrl && articleToDelete.bannerImageUrl.startsWith('/uploads/')) {
-    const filename = path.basename(articleToDelete.bannerImageUrl);
-    // Strict basename check prevents path traversal
-    if (/^banner-\d+-[a-f0-9]+\.(png|jpg|webp)$/i.test(filename)) {
-      const filePath = path.join(process.cwd(), 'public', 'uploads', filename);
-      if (fs.existsSync(filePath)) {
-        try {
-          fs.unlinkSync(filePath);
-        } catch (err) {
-          console.warn('Could not remove orphaned banner on article deletion:', err);
-        }
+  await docRef.delete();
+  invalidateArticlesCache();
+  return true;
+}
+
+export async function incrementDownloadCount(id: string): Promise<void> {
+  const db = getDb();
+  // Try both id and slug
+  const byId = await db.collection('articles').doc(id).get();
+  if (byId.exists) {
+    await byId.ref.update({
+      pdfDownloadCount: admin.firestore.FieldValue.increment(1)
+    });
+    invalidateArticlesCache();
+    return;
+  }
+  const slugSnap = await db.collection('articles').where('slug', '==', id).limit(1).get();
+  if (!slugSnap.empty) {
+    await slugSnap.docs[0].ref.update({
+      pdfDownloadCount: admin.firestore.FieldValue.increment(1)
+    });
+    invalidateArticlesCache();
+  }
+}
+
+/** Sync: merge client-side articles into Firestore only if they don't exist yet. */
+export async function syncArticles(incoming: Article[]): Promise<{ added: number; updated: number; total: number }> {
+  if (!Array.isArray(incoming) || incoming.length === 0) {
+    const all = await getAllArticles();
+    return { added: 0, updated: 0, total: all.length };
+  }
+
+  const db = getDb();
+  let added = 0;
+  let updated = 0;
+
+  for (const item of incoming) {
+    if (!item || !item.id || !item.title) continue;
+    const ref = db.collection('articles').doc(item.id);
+    const snap = await ref.get();
+
+    if (!snap.exists) {
+      await ref.set(item);
+      added++;
+    } else {
+      // Only update if incoming is newer
+      const curr = snap.data() as Article;
+      const incomingTime = new Date(item.updatedAt || item.createdAt || 0).getTime();
+      const currTime = new Date(curr.updatedAt || curr.createdAt || 0).getTime();
+      if (incomingTime > currTime) {
+        await ref.set({
+          ...curr,
+          ...item,
+          viewsCount: Math.max(curr.viewsCount || 0, item.viewsCount || 0),
+          pdfDownloadCount: Math.max(curr.pdfDownloadCount || 0, item.pdfDownloadCount || 0),
+        }, { merge: true });
+        updated++;
       }
     }
   }
 
-  const filtered = articles.filter(a => a.id !== id);
-  saveArticles(filtered);
-  return true;
-}
-
-export function incrementDownloadCount(id: string): void {
-  const articles = loadArticles();
-  const art = articles.find(a => a.id === id || a.slug === id);
-  if (art) {
-    art.pdfDownloadCount = (art.pdfDownloadCount || 0) + 1;
-    saveArticles(articles);
-  }
+  invalidateArticlesCache();
+  const all = await getAllArticles();
+  return { added, updated, total: all.length };
 }
