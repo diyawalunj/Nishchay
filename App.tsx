@@ -62,9 +62,9 @@ function AnimatedRoutes() {
   return (
     <motion.div
       key={location.pathname}
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      transition={{ duration: 0.16, ease: "easeOut" }}
+      initial={{ opacity: 0, y: 6 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
       className="print:opacity-100 print:transform-none print:overflow-visible print:block print:h-auto"
     >
       <Routes location={location}>

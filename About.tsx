@@ -152,7 +152,7 @@ export default function About() {
                 whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true }}
                 transition={{ delay: idx * 0.1 }}
-                className="bg-white p-6 md:p-10 rounded-[2rem] border border-gray-100 shadow-sm card-hover-shadow text-center group relative overflow-hidden"
+                className="bg-white p-6 md:p-10 rounded-[2rem] border border-gray-100 shadow-sm card-hover-shadow soft-lift text-center group relative overflow-hidden"
               >
                 <div className="relative w-full aspect-[4/5] mb-8 overflow-hidden rounded-[2rem] group-hover:shadow-2xl transition-all duration-700">
                   <img
@@ -215,7 +215,7 @@ export default function About() {
                 whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true }}
                 transition={{ delay: idx * 0.1 }}
-                className="bg-white p-8 md:p-12 rounded-[2rem] border border-gray-100 shadow-sm card-hover-shadow group"
+                className="bg-white p-8 md:p-12 rounded-[2rem] border border-gray-100 shadow-sm card-hover-shadow soft-lift group"
               >
                 <div className={`w-16 h-16 ${item.color} rounded-2xl flex items-center justify-center mb-10 group-hover:scale-110 transition-transform duration-500 shadow-lg shadow-current/10`}>
                   <item.icon size={32} />
@@ -257,7 +257,7 @@ export default function About() {
                 whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true }}
                 transition={{ delay: idx * 0.1 }}
-                className="bg-white p-6 md:p-10 rounded-[2rem] border border-gray-100 shadow-sm card-hover-shadow group relative overflow-hidden"
+                className="bg-white p-6 md:p-10 rounded-[2rem] border border-gray-100 shadow-sm card-hover-shadow soft-lift group relative overflow-hidden"
               >
                 {/* Number badge */}
                 <div className="absolute top-6 right-6 text-[10px] font-black tracking-widest text-gray-200 uppercase">
