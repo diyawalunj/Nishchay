@@ -509,13 +509,13 @@ function cloneRecords(records) {
 function canonical(record) {
   return JSON.stringify(Object.fromEntries(Object.entries(record).sort(([a], [b]) => a.localeCompare(b))));
 }
-function omitUndefined(value) {
+function omitUndefinedFirestoreValues(value) {
   if (Array.isArray(value)) {
-    return value.map((item) => item === void 0 ? null : omitUndefined(item));
+    return value.map((item) => item === void 0 ? null : omitUndefinedFirestoreValues(item));
   }
   if (value && typeof value === "object" && !(value instanceof Date)) {
     return Object.fromEntries(
-      Object.entries(value).filter(([, child]) => child !== void 0).map(([key, child]) => [key, omitUndefined(child)])
+      Object.entries(value).filter(([, child]) => child !== void 0).map(([key, child]) => [key, omitUndefinedFirestoreValues(child)])
     );
   }
   return value;
@@ -547,7 +547,7 @@ async function writeContentCollection(name, records, deletedIds = []) {
     const ref = collection.doc(docId(record.id));
     const old = existing.get(ref.id);
     if (!old || canonical(old) !== canonical(record)) {
-      writer.set(ref, omitUndefined(record));
+      writer.set(ref, omitUndefinedFirestoreValues(record));
     }
   }
   for (const id of new Set(deletedIds)) writer.delete(collection.doc(docId(id)));

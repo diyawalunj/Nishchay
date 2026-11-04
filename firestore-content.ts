@@ -15,15 +15,15 @@ function canonical(record: Record<string, unknown>): string {
 // ignore them. Optional fields from parsers (for example, a story without a
 // source URL) and audit entries can legitimately be undefined, so strip those
 // fields at the persistence boundary instead of failing the whole write.
-function omitUndefined(value: unknown): unknown {
+export function omitUndefinedFirestoreValues(value: unknown): unknown {
   if (Array.isArray(value)) {
-    return value.map(item => item === undefined ? null : omitUndefined(item));
+    return value.map(item => item === undefined ? null : omitUndefinedFirestoreValues(item));
   }
   if (value && typeof value === 'object' && !(value instanceof Date)) {
     return Object.fromEntries(
       Object.entries(value as Record<string, unknown>)
         .filter(([, child]) => child !== undefined)
-        .map(([key, child]) => [key, omitUndefined(child)])
+        .map(([key, child]) => [key, omitUndefinedFirestoreValues(child)])
     );
   }
   return value;
@@ -63,7 +63,7 @@ export async function writeContentCollection<T extends { id: string }>(
     const ref = collection.doc(docId(record.id));
     const old = existing.get(ref.id);
     if (!old || canonical(old) !== canonical(record)) {
-      writer.set(ref, omitUndefined(record) as T);
+      writer.set(ref, omitUndefinedFirestoreValues(record) as T);
     }
   }
   for (const id of new Set(deletedIds)) writer.delete(collection.doc(docId(id)));
