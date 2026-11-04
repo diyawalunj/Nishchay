@@ -11,6 +11,24 @@ function canonical(record: Record<string, unknown>): string {
   return JSON.stringify(Object.fromEntries(Object.entries(record).sort(([a], [b]) => a.localeCompare(b))));
 }
 
+// Firestore rejects `undefined` values unless the Admin SDK is configured to
+// ignore them. Optional fields from parsers (for example, a story without a
+// source URL) and audit entries can legitimately be undefined, so strip those
+// fields at the persistence boundary instead of failing the whole write.
+function omitUndefined(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map(item => item === undefined ? null : omitUndefined(item));
+  }
+  if (value && typeof value === 'object' && !(value instanceof Date)) {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>)
+        .filter(([, child]) => child !== undefined)
+        .map(([key, child]) => [key, omitUndefined(child)])
+    );
+  }
+  return value;
+}
+
 function firestore() {
   if (!admin.apps.length) {
     throw new Error('Firebase Admin is not initialized; configure a Firestore service account before using persistent content storage.');
@@ -45,7 +63,7 @@ export async function writeContentCollection<T extends { id: string }>(
     const ref = collection.doc(docId(record.id));
     const old = existing.get(ref.id);
     if (!old || canonical(old) !== canonical(record)) {
-      writer.set(ref, record);
+      writer.set(ref, omitUndefined(record) as T);
     }
   }
   for (const id of new Set(deletedIds)) writer.delete(collection.doc(docId(id)));
