@@ -1,5 +1,4 @@
 import { useState, useEffect, useRef } from 'react';
-import { motion, AnimatePresence, useInView } from 'motion/react';
 import { Link } from 'react-router-dom';
 import { Quote, ArrowRight, Download, MessageCircle } from 'lucide-react';
 import { SERVICES } from './constants';
@@ -71,7 +70,20 @@ function useAnimatedCounter(target: number, duration: number = 2000, inView: boo
 export default function Home() {
   const [activeQuote, setActiveQuote] = useState(0);
   const statsRef = useRef<HTMLDivElement>(null);
-  const statsInView = useInView(statsRef, { once: true, margin: "-100px" });
+  const [statsInView, setStatsInView] = useState(false);
+
+  useEffect(() => {
+    const element = statsRef.current;
+    if (!element || statsInView) return;
+    const observer = new IntersectionObserver(([entry]) => {
+      if (entry.isIntersecting) {
+        setStatsInView(true);
+        observer.disconnect();
+      }
+    }, { rootMargin: '0px 0px 100px 0px' });
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [statsInView]);
 
   const stat1 = useAnimatedCounter(10, 2000, statsInView);
   const stat2 = useAnimatedCounter(4, 1500, statsInView);
@@ -99,6 +111,8 @@ export default function Home() {
           <img
             src="/hero-bg-BtRLye3t.jpg"
             alt="Military Background"
+            fetchPriority="high"
+            decoding="async"
             className="w-full h-full object-cover"
             referrerPolicy="no-referrer"
           />
@@ -109,62 +123,32 @@ export default function Home() {
         </div>
 
         <div className="relative z-10 max-w-5xl mx-auto px-4 text-center mt-10">
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6 }}
-            className="inline-flex items-center gap-2 px-4 py-1.5 bg-white/10 backdrop-blur-md border border-white/20 rounded-full text-white text-xs font-bold tracking-widest uppercase mb-8"
-          >
+          <div className="inline-flex items-center gap-2 px-4 py-1.5 bg-white/10 backdrop-blur-md border border-white/20 rounded-full text-white text-xs font-bold tracking-widest uppercase mb-8">
             <span>🎖️</span> BY ASPIRANTS FOR ASPIRANTS
-          </motion.div>
+          </div>
 
-          <motion.h1
-            initial={{ opacity: 0, scale: 0.9 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ duration: 1, delay: 0.2, ease: [0.16, 1, 0.3, 1] }}
-            className="text-4xl md:text-[6rem] lg:text-[8rem] font-display mb-6 tracking-tighter text-glow-white leading-none px-2 text-white"
-          >
+          <h1 className="text-4xl md:text-[6rem] lg:text-[8rem] font-display mb-6 tracking-tighter text-glow-white leading-none px-2 text-white">
             NISHCHAY
-          </motion.h1>
+          </h1>
 
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ duration: 0.8, delay: 0.4 }}
-            className="mb-12"
-          >
+          <div className="mb-12">
             <p className="text-2xl md:text-3xl font-serif italic text-white mb-3 tracking-tight">
               "लक्ष्यं मा परिवर्तय, मार्गं परिवर्तय।"
             </p>
             <p className="text-xs md:text-sm text-white/60 font-black uppercase tracking-[0.4em]">
               Don't Change the Aim, Change the Path
             </p>
-          </motion.div>
+          </div>
 
-          <motion.h2
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6, delay: 0.6 }}
-            className="text-xl md:text-2xl font-black text-white mb-8 tracking-widest uppercase"
-          >
+          <h2 className="text-xl md:text-2xl font-black text-white mb-8 tracking-widest uppercase">
             Preparing Future Officers
-          </motion.h2>
+          </h2>
 
-          <motion.p
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6, delay: 0.8 }}
-            className="text-base md:text-lg text-white/70 max-w-2xl mx-auto mb-16 leading-relaxed font-medium"
-          >
+          <p className="text-base md:text-lg text-white/70 max-w-2xl mx-auto mb-16 leading-relaxed font-medium">
             Genuine mentorship, curated notes & defence career guidance — all from aspirants who've been in your shoes.
-          </motion.p>
+          </p>
 
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6, delay: 1 }}
-            className="flex flex-col sm:flex-row items-center justify-center gap-6"
-          >
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-6">
             <Link to="/contact" className="w-full sm:w-auto">
               <button className="btn-white w-full flex items-center justify-center gap-2">
                 CONTACT US <ArrowRight size={18} />
@@ -185,25 +169,22 @@ export default function Home() {
                 <MessageCircle size={18} /> WHATSAPP COMMUNITY
               </button>
             </a>
-          </motion.div>
+          </div>
         </div>
 
         {/* Stats Section at bottom of Hero */}
         <div ref={statsRef} className="relative z-10 w-full max-w-6xl mx-auto px-4 mt-24 md:mt-40 pb-16">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-            {stats.map((stat, idx) => (
-              <motion.div
+            {stats.map((stat) => (
+              <div
                 key={stat.label}
-                initial={{ opacity: 0, filter: 'blur(10px)', y: 30 }}
-                animate={statsInView ? { opacity: 1, filter: 'blur(0px)', y: 0 } : {}}
-                transition={{ duration: 0.8, delay: 0.1 * idx, ease: [0.16, 1, 0.3, 1] }}
                 className="glass-card-dark rounded-[2rem] p-6 md:p-10 text-center group hover:bg-white/10 transition-all duration-500 relative overflow-hidden"
               >
                 <p className="text-5xl font-black text-white mb-3 tracking-tighter premium-zoom group-hover:scale-110 tabular-nums">
                   {stat.value}{stat.suffix}
                 </p>
                 <p className="text-[10px] font-black tracking-[0.3em] text-white/40 uppercase">{stat.label}</p>
-              </motion.div>
+              </div>
             ))}
           </div>
         </div>
@@ -217,19 +198,10 @@ export default function Home() {
           </div>
 
           <div className="relative h-64 md:h-48">
-            <AnimatePresence mode="wait">
-              <motion.div
-                key={activeQuote}
-                initial={{ opacity: 0, scale: 0.95, y: 10 }}
-                animate={{ opacity: 1, scale: 1, y: 0 }}
-                exit={{ opacity: 0, scale: 1.02, y: -10 }}
-                transition={{ duration: 0.5, ease: "easeOut" }}
-                className="absolute inset-0 flex flex-col items-center justify-center"
-              >
+              <div key={activeQuote} className="absolute inset-0 flex flex-col items-center justify-center">
                 <p className="quote-text mb-8">"{quotes[activeQuote].text}"</p>
                 <p className="text-[10px] font-black tracking-[0.4em] text-[#1B4332] uppercase">— {quotes[activeQuote].author}</p>
-              </motion.div>
-            </AnimatePresence>
+              </div>
           </div>
 
           <div className="flex justify-center gap-3 mt-12">
@@ -251,10 +223,7 @@ export default function Home() {
         <div className="max-w-7xl mx-auto px-4 text-center relative z-10">
           <h2 className="text-5xl md:text-7xl font-black mb-20 text-[#1A1A1A] tracking-tighter">Our Mission</h2>
 
-          <motion.div
-            initial={{ opacity: 0, y: 40 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true }}
+          <div
             className="max-w-5xl mx-auto bg-white p-6 md:p-28 rounded-[2rem] shadow-[0_40px_100px_rgba(0,0,0,0.03)] border border-gray-100 relative group"
           >
             <div className="absolute top-10 left-10 opacity-5 group-hover:opacity-10 transition-opacity">
@@ -268,7 +237,7 @@ export default function Home() {
               <p className="text-[10px] font-black tracking-[0.4em] text-gray-400 uppercase">Field Marshal Sam Manekshaw</p>
               <div className="w-12 h-px bg-gray-200"></div>
             </div>
-          </motion.div>
+          </div>
         </div>
       </section>
 
@@ -281,13 +250,9 @@ export default function Home() {
           </p>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-10">
-            {SERVICES.map((service, idx) => (
-              <motion.div
+            {SERVICES.map((service) => (
+              <div
                 key={service.title}
-                initial={{ opacity: 0, y: 30 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true, margin: "-50px" }}
-                transition={{ delay: idx * 0.08, duration: 0.5, ease: "easeOut" }}
                 className="bg-white p-6 md:p-10 rounded-[2rem] border border-gray-100 shadow-sm card-hover-shadow card-lift text-left group relative overflow-hidden"
               >
                 <div className="absolute -right-8 -bottom-8 opacity-[0.03] group-hover:opacity-[0.08] transition-opacity duration-500">
@@ -300,7 +265,7 @@ export default function Home() {
                 <p className="text-gray-500 leading-relaxed font-medium">
                   {service.description}
                 </p>
-              </motion.div>
+              </div>
             ))}
           </div>
         </div>

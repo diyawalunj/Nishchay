@@ -17,12 +17,11 @@ import {
   formatDisplayDate,
   getLocalTodayDate
 } from './n-intel-whatsapp';
-import { auth, onAuthStateChanged, checkIfAdmin } from './firebase';
+import { auth, onAuthStateChanged, checkIfAdmin } from './firebase-auth';
 import {
   mergeEditionsWithLocal,
   mergeStoriesWithLocal,
   saveLocalBatches,
-  syncLocalWithServer,
   type EditionSummary
 } from './n-intel-storage';
 
@@ -622,8 +621,8 @@ export default function NIntel() {
   const activeCategory = searchParams.get('category') || null;
 
   // Level 1: Editions list
-  const [editions, setEditions] = useState<EditionSummary[]>([]);
-  const [loadingEditions, setLoadingEditions] = useState(true);
+  const [editions, setEditions] = useState<EditionSummary[]>(() => mergeEditionsWithLocal([]));
+  const [loadingEditions, setLoadingEditions] = useState(() => editions.length === 0);
   const [editionSearch, setEditionSearch] = useState('');
 
   // Level 2 & 3: Stories for activeDate
@@ -752,7 +751,7 @@ export default function NIntel() {
 
   // Initial fetch and automatic cross-device sync (revalidate on tab visibility & 60s polling)
   useEffect(() => {
-    fetchEditions(true);
+    fetchEditions(false);
 
     const handleFocus = () => {
       if (document.visibilityState === 'visible') {

@@ -158,6 +158,8 @@ export default function About() {
                   <img
                     src={founder.image}
                     alt={founder.name}
+                    loading="lazy"
+                    decoding="async"
                     className="w-full h-full object-cover premium-zoom group-hover:scale-110"
                     referrerPolicy="no-referrer"
                   />

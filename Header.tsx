@@ -1,9 +1,8 @@
 import { useState, useEffect } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
 import { Menu, X, LogOut, User as UserIcon } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
 import { NAV_LINKS } from './constants';
-import { auth, signInWithGoogle, logout, onAuthStateChanged, type User, isFirebaseConfigured } from './firebase';
+import { auth, signInWithGoogle, logout, onAuthStateChanged, type User, isFirebaseConfigured } from './firebase-auth';
 
 export default function Header() {
   const [isScrolled, setIsScrolled] = useState(false);
@@ -56,30 +55,23 @@ export default function Header() {
   const shouldBeSolid = isScrolled || !isHome;
 
   return (
-    <motion.header 
-      initial={{ y: -100 }}
-      animate={{ y: 0 }}
+    <header
       className="fixed top-0 left-0 right-0 z-50 pointer-events-none flex flex-col items-center"
     >
       <div
-        className={`pointer-events-auto w-[calc(100%-2rem)] rounded-full border transition-[margin,padding,background-color,backdrop-filter,box-shadow] duration-300 ease-out lg:max-w-6xl ${
+        className={`pointer-events-auto mt-3 w-[calc(100%-2rem)] rounded-full border py-3 transition-[background-color,border-color,box-shadow] duration-150 ease-out lg:max-w-6xl ${
           shouldBeSolid
-            ? 'mt-4 border-white/20 bg-white/95 py-2 shadow-[0_20px_40px_-12px_rgba(0,0,0,0.15)] backdrop-blur-xl'
-            : 'mt-2 border-transparent bg-transparent py-5 shadow-none backdrop-blur-0'
+            ? 'border-white/20 bg-white/95 shadow-[0_20px_40px_-12px_rgba(0,0,0,0.15)]'
+            : 'border-transparent bg-transparent shadow-none'
         }`}
       >
         <div
-          className={`mx-auto flex max-w-7xl items-center justify-between transition-[padding] duration-300 ease-out ${
-            shouldBeSolid ? 'px-8' : 'px-4'
-          }`}
+          className="mx-auto flex max-w-7xl items-center justify-between px-6"
         >
           <Link to="/" className="flex items-center gap-3 cursor-pointer">
-            <motion.div 
-              whileHover={{ scale: 1.05 }}
-              className="w-10 h-10 rounded-full overflow-hidden flex items-center justify-center shadow-md border border-white/20 shrink-0"
-            >
+            <div className="w-10 h-10 rounded-full overflow-hidden flex items-center justify-center shadow-md border border-white/20 shrink-0 transition-transform hover:scale-105">
               <img src="/logo.jpg" alt="Nishchay Defence Logo" className="w-full h-full object-cover" />
-            </motion.div>
+            </div>
             <div>
               <h1 className={`text-xl font-black tracking-tighter transition-colors duration-300 ${shouldBeSolid ? 'text-[#1B4332]' : 'text-white'}`}>NISHCHAY</h1>
               <p className={`text-[9px] uppercase tracking-[0.3em] font-bold transition-colors duration-300 ${shouldBeSolid ? 'text-gray-500' : 'text-white/70'}`}>Defence</p>
@@ -91,7 +83,7 @@ export default function Header() {
             {NAV_LINKS.map((link) => {
               const isActive = link.href === '/' ? location.pathname === '/' : location.pathname.startsWith(link.href);
               return (
-                <motion.div key={link.name} whileHover={{ y: -2 }} whileTap={{ scale: 0.95 }}>
+                <div key={link.name}>
                   <Link
                     to={link.href}
                     className={`px-4 py-2 text-xs font-bold tracking-widest rounded-md transition-all duration-300 relative group ${
@@ -102,13 +94,10 @@ export default function Header() {
                   >
                     {link.name}
                     {isActive && (
-                      <motion.div 
-                        layoutId="activeNav"
-                        className={`absolute bottom-0 left-4 right-4 h-0.5 ${shouldBeSolid ? 'bg-[#1B4332]' : 'bg-white'}`}
-                      />
+                      <div className={`absolute bottom-0 left-4 right-4 h-0.5 ${shouldBeSolid ? 'bg-[#1B4332]' : 'bg-white'}`} />
                     )}
                   </Link>
-                </motion.div>
+                </div>
               );
             })}
           </nav>
@@ -116,9 +105,7 @@ export default function Header() {
           <div className="flex items-center gap-4">
             {user ? (
               <div className="relative">
-                <motion.button
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
+                <button
                   onClick={() => setIsProfileOpen(!isProfileOpen)}
                   className={`flex items-center gap-2 p-1 pr-4 rounded-full transition-all duration-300 ${
                     shouldBeSolid ? 'bg-gray-100 text-[#1B4332]' : 'bg-white/10 text-white backdrop-blur-md border border-white/20'
@@ -134,16 +121,10 @@ export default function Header() {
                   <span className="text-xs font-bold tracking-widest truncate max-w-[80px] hidden sm:block">
                     {user.displayName?.split(' ')[0]}
                   </span>
-                </motion.button>
+                </button>
 
-                <AnimatePresence>
-                  {isProfileOpen && (
-                    <motion.div
-                      initial={{ opacity: 0, y: 10, scale: 0.95 }}
-                      animate={{ opacity: 1, y: 0, scale: 1 }}
-                      exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                      className="absolute right-0 mt-2 w-48 bg-white rounded-2xl shadow-2xl border border-gray-100 overflow-hidden py-2 z-[60]"
-                    >
+                {isProfileOpen && (
+                    <div className="absolute right-0 mt-2 w-48 bg-white rounded-2xl shadow-2xl border border-gray-100 overflow-hidden py-2 z-[60]">
                       <button
                         onClick={() => {
                           logout();
@@ -154,15 +135,12 @@ export default function Header() {
                         <LogOut size={16} />
                         Logout
                       </button>
-                    </motion.div>
+                    </div>
                   )}
-                </AnimatePresence>
               </div>
             ) : (
               <div className="relative">
-                <motion.button 
-                  whileHover={{ scale: isSigningIn ? 1 : 1.05, boxShadow: "0 10px 20px rgba(0,0,0,0.1)" }}
-                  whileTap={{ scale: isSigningIn ? 1 : 0.95 }}
+                <button
                   onClick={handleSignIn}
                   disabled={isSigningIn}
                   className={`px-7 py-2.5 rounded-full text-sm font-black tracking-widest transition-all duration-300 whitespace-nowrap flex items-center gap-2 cursor-pointer disabled:opacity-75 ${
@@ -179,7 +157,7 @@ export default function Header() {
                   ) : (
                     'SIGN IN'
                   )}
-                </motion.button>
+                </button>
                 {authError && (
                   <div className="absolute top-full right-0 mt-3 w-80 bg-red-50 text-red-700 text-xs p-3.5 rounded-2xl border border-red-200 shadow-xl font-bold z-[100] flex items-start gap-2">
                     <span className="flex-1 leading-relaxed">{authError}</span>
@@ -212,14 +190,8 @@ export default function Header() {
       </div>
 
       {/* Mobile Menu */}
-      <AnimatePresence>
-        {isMobileMenuOpen && (
-          <motion.div
-            initial={{ opacity: 0, y: -20 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0 }}
-            className="lg:hidden pointer-events-auto overflow-hidden transition-all duration-500 mt-2 w-[calc(100%-2rem)] bg-white/80 backdrop-blur-md rounded-3xl shadow-2xl border border-white/20"
-          >
+      {isMobileMenuOpen && (
+          <div className="lg:hidden pointer-events-auto overflow-hidden transition-all duration-300 mt-2 w-[calc(100%-2rem)] bg-white/95 rounded-3xl shadow-2xl border border-white/20">
             <div className="px-4 py-6 space-y-2">
               {NAV_LINKS.map((link) => {
                 const isActive = link.href === '/' ? location.pathname === '/' : location.pathname.startsWith(link.href);
@@ -268,9 +240,8 @@ export default function Header() {
                 </div>
               )}
             </div>
-          </motion.div>
+          </div>
         )}
-      </AnimatePresence>
-    </motion.header>
+    </header>
   );
 }

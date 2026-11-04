@@ -8,7 +8,6 @@ export interface EditionSummary {
   defenceCount?: number;
   categoryCounts?: Record<string, number>;
 }
-
 const LOCAL_STORIES_KEY = 'nishchay_nintel_local_stories';
 const LOCAL_BATCHES_KEY = 'nishchay_nintel_local_batches';
 
@@ -228,12 +227,4 @@ export function deleteLocalStoriesByIds(ids: string[], permanent = false): void 
   } catch (err) {
     console.warn('Could not delete stories by IDs in localStorage:', err);
   }
-}
-
-/**
- * No-op: Automatic background push from client to server is permanently disabled.
- * Firestore is now the authoritative store, eliminating accidental resurrection of deleted data.
- */
-export async function syncLocalWithServer(token: string): Promise<boolean> {
-  return true;
 }

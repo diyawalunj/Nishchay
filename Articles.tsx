@@ -9,7 +9,7 @@ import {
 } from 'lucide-react';
 import type { Article } from './articles-db';
 import { safeImageUrl } from './safe-image-url';
-import { auth, onAuthStateChanged, checkIfAdmin, type User as FirebaseUser } from './firebase';
+import { auth, onAuthStateChanged, checkIfAdmin, type User as FirebaseUser } from './firebase-auth';
 import { getLocalTodayDate } from './n-intel-whatsapp';
 import {
   getLocalArticles,
@@ -122,11 +122,11 @@ export default function Articles() {
       .finally(() => setLoading(false));
   }, []);
 
-  // Initial fetch and automatic cross-device sync (revalidate on focus & 25s polling)
+  // Revalidate when entering the page and periodically while visible.
   useEffect(() => {
     fetchArticles(articles.length === 0);
 
-    const handleFocus = () => {
+    const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
         fetchArticles(false);
       }
@@ -136,15 +136,13 @@ export default function Articles() {
       if (document.visibilityState === 'visible') {
         fetchArticles(false);
       }
-    }, 25000);
+    }, 60000);
 
-    window.addEventListener('focus', handleFocus);
-    document.addEventListener('visibilitychange', handleFocus);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
 
     return () => {
       clearInterval(interval);
-      window.removeEventListener('focus', handleFocus);
-      document.removeEventListener('visibilitychange', handleFocus);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
   }, [fetchArticles]);
 

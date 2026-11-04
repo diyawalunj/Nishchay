@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Mail, Phone, MapPin, Send, Instagram, MessageCircle } from 'lucide-react';
-import { auth, onAuthStateChanged, type User as FirebaseUser } from './firebase';
+import { auth, onAuthStateChanged, type User as FirebaseUser } from './firebase-auth';
 
 interface FormData {
   fullName: string;

@@ -5,11 +5,11 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Upload, Edit3, Trash2, Shield, Calendar, Search, AlertCircle,
   CheckCircle2, Clock, Lock, RefreshCw, Eye, ArrowLeft, History as HistoryIcon,
-  Save, X, FileText, Check, RotateCcw, Download, Sparkles, ChevronDown, ChevronUp,
+  Save, X, FileText, Check, RotateCcw, Sparkles, ChevronDown, ChevronUp,
   MessageCircle, CheckSquare, Square, Filter, Layers
 } from 'lucide-react';
 import type { NIntelStory, NIntelAuditLog } from './types';
-import { auth, onAuthStateChanged, checkIfAdmin, type User } from './firebase';
+import { auth, onAuthStateChanged, checkIfAdmin, type User } from './firebase-auth';
 import {
   formatDisplayDate,
   getLocalTodayDate,
@@ -21,9 +21,6 @@ import {
   saveLocalStories,
   saveLocalBatches,
   mergeStoriesWithLocal,
-  syncLocalWithServer,
-  getLocalStories,
-  getLocalBatches,
   deleteLocalStory,
   deleteLocalStoriesByDate,
   deleteLocalStoriesByCategory,
@@ -55,7 +52,6 @@ export default function NIntelAdmin() {
 
   // Live Client-side Parsing State
   const [showLivePreview, setShowLivePreview] = useState(false);
-  const [backupMessage, setBackupMessage] = useState<string | null>(null);
 
   // Instant real-time parsing preview
   const liveParseResult = useMemo(() => {
@@ -389,65 +385,6 @@ export default function NIntelAdmin() {
     } finally {
       setIsPublishing(false);
     }
-  };
-
-  const handleExportBackup = () => {
-    try {
-      const allStories = getLocalStories();
-      const allBatches = getLocalBatches();
-      const backupData = {
-        exportedAt: new Date().toISOString(),
-        stories: allStories,
-        batches: allBatches
-      };
-      const blob = new Blob([JSON.stringify(backupData, null, 2)], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `nishchay-nintel-backup-${getLocalTodayDate()}.json`;
-      a.click();
-      URL.revokeObjectURL(url);
-      setBackupMessage('✅ Backup downloaded successfully!');
-      setTimeout(() => setBackupMessage(null), 3000);
-    } catch (e: any) {
-      alert(`Export failed: ${e.message}`);
-    }
-  };
-
-  const handleImportBackup = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = async (event) => {
-      try {
-        const text = event.target?.result as string;
-        const parsed = JSON.parse(text);
-        if (Array.isArray(parsed.stories)) {
-          saveLocalStories(parsed.stories);
-          if (Array.isArray(parsed.batches)) {
-            saveLocalBatches(parsed.batches);
-          }
-          setStories(prev => {
-            const map = new Map<string, NIntelStory>();
-            for (const s of parsed.stories) map.set(s.id, s);
-            for (const s of prev) if (!map.has(s.id)) map.set(s.id, s);
-            return Array.from(map.values());
-          });
-          const token = await getAuthToken();
-          if (token) {
-            await syncLocalWithServer(token);
-          }
-          setBackupMessage(`✅ Restored ${parsed.stories.length} stories from backup!`);
-          setTimeout(() => setBackupMessage(null), 4000);
-        } else {
-          alert('Invalid backup file: missing stories array.');
-        }
-      } catch (err: any) {
-        alert(`Restore failed: ${err.message}`);
-      }
-    };
-    reader.readAsText(file);
-    e.target.value = '';
   };
 
   // Open Edit Modal
@@ -1116,44 +1053,6 @@ export default function NIntelAdmin() {
                 </ul>
               </div>
 
-              {/* Data Safety & Backup Panel */}
-              <div className="bg-white rounded-3xl p-6 border border-gray-100 shadow-sm">
-                <h3 className="text-sm font-black text-gray-900 tracking-tight uppercase mb-3 flex items-center gap-2">
-                  <Shield size={16} className="text-[#1B4332]" />
-                  <span>Data Safety & Backup</span>
-                </h3>
-                <p className="text-xs text-gray-500 font-medium mb-4">
-                  Export all published N-INTEL editions or restore them onto any device with one click.
-                </p>
-
-                {backupMessage && (
-                  <div className="p-3 bg-emerald-50 text-emerald-800 border border-emerald-200 rounded-xl text-xs font-bold mb-3">
-                    {backupMessage}
-                  </div>
-                )}
-
-                <div className="space-y-2">
-                  <button
-                    type="button"
-                    onClick={handleExportBackup}
-                    className="w-full py-2.5 px-4 bg-gray-50 hover:bg-gray-100 border border-gray-200 text-gray-800 text-xs font-bold rounded-xl flex items-center justify-center gap-2 transition-colors"
-                  >
-                    <Download size={15} />
-                    <span>Download JSON Backup</span>
-                  </button>
-
-                  <label className="w-full py-2.5 px-4 bg-gray-50 hover:bg-gray-100 border border-gray-200 text-gray-800 text-xs font-bold rounded-xl flex items-center justify-center gap-2 transition-colors cursor-pointer text-center">
-                    <Upload size={15} />
-                    <span>Restore from JSON Backup</span>
-                    <input
-                      type="file"
-                      accept=".json"
-                      onChange={handleImportBackup}
-                      className="hidden"
-                    />
-                  </label>
-                </div>
-              </div>
             </div>
           </div>
         )}

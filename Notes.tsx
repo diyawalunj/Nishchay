@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { auth, onAuthStateChanged, checkIfAdmin } from './firebase';
+import { auth, onAuthStateChanged, checkIfAdmin } from './firebase-auth';
 import type { SubjectNote } from './notes-db';
 import { motion, AnimatePresence } from 'motion/react';
 import {

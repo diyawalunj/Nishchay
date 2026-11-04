@@ -5,12 +5,12 @@ import {
   Calendar, Search, ArrowRight, Newspaper, ChevronLeft
 } from 'lucide-react';
 import { formatDisplayDate } from './n-intel-whatsapp';
-import { auth, onAuthStateChanged, checkIfAdmin } from './firebase';
+import { auth, onAuthStateChanged, checkIfAdmin } from './firebase-auth';
 import { mergeEditionsWithLocal, type EditionSummary } from './n-intel-storage';
 
 export default function NIntelArchive() {
-  const [editions, setEditions] = useState<EditionSummary[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [editions, setEditions] = useState<EditionSummary[]>(() => mergeEditionsWithLocal([]));
+  const [loading, setLoading] = useState(() => editions.length === 0);
   const [searchYearMonth, setSearchYearMonth] = useState<string>('All');
   const [searchQuery, setSearchQuery] = useState('');
   const [isAdmin, setIsAdmin] = useState(false);

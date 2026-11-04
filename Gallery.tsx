@@ -210,6 +210,8 @@ const Gallery: React.FC = () => {
                 <img 
                   src={item.image} 
                   alt={item.category}
+                  loading="lazy"
+                  decoding="async"
                   className="absolute inset-0 w-full h-full object-cover premium-zoom group-hover:scale-110"
                   referrerPolicy="no-referrer"
                 />
@@ -293,6 +295,7 @@ const Gallery: React.FC = () => {
                 <img
                   src={selectedItem.image}
                   alt="Gallery Preview"
+                  decoding="async"
                   className="w-full h-full object-contain rounded-[1.5rem] md:rounded-[3.5rem]"
                   referrerPolicy="no-referrer"
                 />
