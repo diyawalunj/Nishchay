@@ -2050,8 +2050,14 @@ app.use(
 try {
   if (!admin2.apps.length) {
     const projectId = process.env.VITE_FIREBASE_PROJECT_ID || "nishchay-defence";
-    const serviceEmail = process.env.FIREBASE_SERVICE_ACCOUNT_EMAIL || process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
-    const rawServiceKey = process.env.FIREBASE_PRIVATE_KEY || process.env.GOOGLE_PRIVATE_KEY;
+    const hasFirebaseCredentials = Boolean(
+      process.env.FIREBASE_SERVICE_ACCOUNT_EMAIL && process.env.FIREBASE_PRIVATE_KEY
+    );
+    const hasGoogleCredentials = Boolean(
+      process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL && process.env.GOOGLE_PRIVATE_KEY
+    );
+    const serviceEmail = hasFirebaseCredentials ? process.env.FIREBASE_SERVICE_ACCOUNT_EMAIL : hasGoogleCredentials ? process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL : void 0;
+    const rawServiceKey = hasFirebaseCredentials ? process.env.FIREBASE_PRIVATE_KEY : hasGoogleCredentials ? process.env.GOOGLE_PRIVATE_KEY : void 0;
     const serviceKey = rawServiceKey ? rawServiceKey.replace(/\\n/g, "\n").replace(/^"(.*)"$/, "$1").trim() : void 0;
     if (serviceEmail && serviceKey && serviceKey.includes("BEGIN PRIVATE KEY")) {
       admin2.initializeApp({
