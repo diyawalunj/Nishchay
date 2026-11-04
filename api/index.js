@@ -1897,8 +1897,6 @@ app.use(
         defaultSrc: ["'self'"],
         scriptSrc: [
           "'self'",
-          "'unsafe-inline'",
-          "'unsafe-eval'",
           "https://apis.google.com",
           "https://*.firebaseapp.com",
           "https://*.gstatic.com",
@@ -1916,7 +1914,7 @@ app.use(
           "ws:",
           "wss:"
         ],
-        imgSrc: ["'self'", "data:", "blob:", "https:", "http:"],
+        imgSrc: ["'self'", "data:", "blob:", "https:"],
         styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
         fontSrc: ["'self'", "https://fonts.gstatic.com", "data:"],
         objectSrc: ["'none'"],
@@ -1931,6 +1929,14 @@ app.use(
     frameguard: { action: "sameorigin" }
   })
 );
+var normalizeOrigin = (value) => {
+  if (!value) return void 0;
+  try {
+    return new URL(value).origin;
+  } catch {
+    return void 0;
+  }
+};
 var ALLOWED_ORIGINS = [
   "http://localhost:3000",
   "http://localhost:5173",
@@ -1938,19 +1944,21 @@ var ALLOWED_ORIGINS = [
   "http://127.0.0.1:5173",
   "https://nishchaydefence.in",
   "https://www.nishchaydefence.in",
-  process.env.CLIENT_URL,
-  process.env.FRONTEND_URL
+  "https://nishchay-gules.vercel.app",
+  normalizeOrigin(process.env.CLIENT_URL),
+  normalizeOrigin(process.env.FRONTEND_URL),
+  normalizeOrigin(process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : void 0)
 ].filter(Boolean);
 app.use(
   cors({
     origin: (origin, callback) => {
       if (!origin) return callback(null, true);
-      if (ALLOWED_ORIGINS.includes(origin) || origin.endsWith(".vercel.app")) {
+      if (ALLOWED_ORIGINS.includes(origin)) {
         return callback(null, true);
       }
       return callback(new Error(`CORS blocked request from origin: ${origin}`));
     },
-    credentials: true,
+    credentials: false,
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization", "X-Original-Name"]
   })
@@ -2066,25 +2074,18 @@ try {
 function isValidUrlOrPath(url) {
   if (!url || typeof url !== "string") return false;
   const trimmed = url.trim();
-  if (trimmed.startsWith("data:image/")) {
-    return true;
-  }
-  if (trimmed.startsWith("/uploads/") && !trimmed.includes("..")) {
-    return true;
-  }
-  if (trimmed.startsWith("/api/uploads/") && !trimmed.includes("..")) {
-    return true;
-  }
+  if (/^data:image\/(?:png|jpe?g|webp|gif);base64,[a-z0-9+/]+={0,2}$/i.test(trimmed)) return trimmed.length <= 3e5;
+  if (/^\/(?:api\/)?uploads\/[a-z0-9._-]+$/i.test(trimmed) && !trimmed.includes("..")) return true;
   try {
     const parsed = new URL(trimmed);
-    return parsed.protocol === "http:" || parsed.protocol === "https:";
+    return parsed.protocol === "https:" && !parsed.username && !parsed.password;
   } catch {
     return false;
   }
 }
 function isValidBannerImage(value) {
   if (typeof value !== "string" || !value.trim()) return false;
-  if (value.startsWith("data:image/")) return value.length <= 3e5;
+  if (value.startsWith("data:image/")) return isValidUrlOrPath(value);
   return isValidUrlOrPath(value);
 }
 function sanitizeSheetCell(val) {
@@ -2099,7 +2100,7 @@ var authenticate = async (req, res, next) => {
   const authHeader = req.headers.authorization;
   const clientIp = req.ip || req.socket.remoteAddress || "unknown";
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
-    console.warn(`[SECURITY WARN] Missing or malformed Authorization header from IP: ${clientIp} for ${req.method} ${req.originalUrl}`);
+    console.warn(`[SECURITY WARN] Missing or malformed Authorization header from IP: ${clientIp} for ${req.method} ${req.path}`);
     return res.status(401).json({
       success: false,
       error: "Unauthorized: Authentication required with a valid Bearer token."
@@ -2113,7 +2114,7 @@ var authenticate = async (req, res, next) => {
     });
   }
   try {
-    const decodedToken = await admin2.auth().verifyIdToken(token);
+    const decodedToken = await admin2.auth().verifyIdToken(token, true);
     const email = decodedToken.email?.trim().toLowerCase();
     if (!email) {
       return res.status(403).json({
@@ -2146,7 +2147,7 @@ var authenticate = async (req, res, next) => {
 };
 app.use((req, res, next) => {
   if (req.url.startsWith("/api")) {
-    console.log(`[${(/* @__PURE__ */ new Date()).toISOString()}] ${req.method} ${req.url}`);
+    console.log(`[${(/* @__PURE__ */ new Date()).toISOString()}] ${req.method} ${req.path}`);
   }
   next();
 });
@@ -2327,7 +2328,7 @@ app.get("/api/n-intel/stories", (req, res, next) => {
     res.json({ success: true, stories });
   } catch (error) {
     console.error("Error fetching N-INTEL stories:", error);
-    res.status(500).json({ success: false, error: error.message });
+    res.status(500).json({ success: false, error: "Internal server error." });
   }
 });
 app.param("id", (req, res, next, id) => {
@@ -2345,7 +2346,7 @@ app.get("/api/n-intel/stories/:id", async (req, res) => {
     res.json({ success: true, story });
   } catch (error) {
     console.error("Error fetching story:", error);
-    res.status(500).json({ success: false, error: error.message });
+    res.status(500).json({ success: false, error: "Internal server error." });
   }
 });
 app.get("/api/n-intel/editions", async (req, res) => {
@@ -2354,7 +2355,7 @@ app.get("/api/n-intel/editions", async (req, res) => {
     res.json({ success: true, editions });
   } catch (error) {
     console.error("Error fetching editions:", error);
-    res.status(500).json({ success: false, error: error.message });
+    res.status(500).json({ success: false, error: "Internal server error." });
   }
 });
 app.get("/api/articles", async (req, res) => {
@@ -2363,7 +2364,7 @@ app.get("/api/articles", async (req, res) => {
     res.json({ success: true, articles });
   } catch (error) {
     console.error("Error fetching articles:", error);
-    res.status(500).json({ success: false, error: error.message });
+    res.status(500).json({ success: false, error: "Internal server error." });
   }
 });
 app.get("/api/articles/:id", async (req, res) => {
@@ -2375,7 +2376,7 @@ app.get("/api/articles/:id", async (req, res) => {
     res.json({ success: true, article });
   } catch (error) {
     console.error("Error fetching article:", error);
-    res.status(500).json({ success: false, error: error.message });
+    res.status(500).json({ success: false, error: "Internal server error." });
   }
 });
 app.get("/api/uploads/:filename", fileReadLimiter, (req, res) => {
@@ -2428,11 +2429,20 @@ app.post("/api/articles/upload-banner", publishLimiter, authenticate, async (req
     if (!imageBase64 || typeof imageBase64 !== "string") {
       return res.status(400).json({ success: false, error: "No image data provided." });
     }
-    const matches = imageBase64.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
+    if (imageBase64.length > 71e5) {
+      return res.status(413).json({ success: false, error: "Image size exceeds maximum limit of 5MB." });
+    }
+    const matches = imageBase64.match(/^data:(image\/(?:png|jpeg|webp));base64,([A-Za-z0-9+/]+={0,2})$/i);
     let buffer;
-    if (matches && matches.length === 3) {
+    if (imageBase64.startsWith("data:")) {
+      if (!matches) {
+        return res.status(400).json({ success: false, error: "Only valid PNG, JPEG, and WebP data URLs are permitted." });
+      }
       buffer = Buffer.from(matches[2], "base64");
     } else {
+      if (!/^[A-Za-z0-9+/]+={0,2}$/.test(imageBase64)) {
+        return res.status(400).json({ success: false, error: "Invalid base64 image data." });
+      }
       buffer = Buffer.from(imageBase64, "base64");
     }
     if (buffer.length > 5 * 1024 * 1024) {
@@ -2450,6 +2460,13 @@ app.post("/api/articles/upload-banner", publishLimiter, authenticate, async (req
         success: false,
         error: "Invalid file signature. Only verified PNG, JPEG, and WebP images are permitted."
       });
+    }
+    if (matches) {
+      const declaredMime = matches[1].toLowerCase();
+      const detectedMime = ext === "png" ? "image/png" : ext === "jpg" ? "image/jpeg" : "image/webp";
+      if (declaredMime !== detectedMime) {
+        return res.status(400).json({ success: false, error: "Image MIME type does not match its file signature." });
+      }
     }
     try {
       if (!fs4.existsSync(UPLOADS_DIR)) {
@@ -2622,7 +2639,7 @@ app.post("/api/n-intel/publish", publishLimiter, authenticate, async (req, res) 
     });
   } catch (error) {
     console.error("Error publishing N-INTEL batch:", error);
-    res.status(500).json({ success: false, error: error.message });
+    res.status(500).json({ success: false, error: "Internal server error." });
   }
 });
 app.post("/api/n-intel/sync", authenticate, async (req, res) => {
@@ -2659,7 +2676,7 @@ var handleStoryUpdate = async (req, res) => {
     res.json({ success: true, story: updated });
   } catch (error) {
     console.error("Error updating story:", error);
-    res.status(500).json({ success: false, error: error.message });
+    res.status(500).json({ success: false, error: "Internal server error." });
   }
 };
 app.patch("/api/n-intel/stories/:id", authenticate, handleStoryUpdate);
@@ -2685,7 +2702,7 @@ app.delete("/api/n-intel/stories/:id", authenticate, async (req, res) => {
     res.json({ success: true, message: "Story removed from public feed.", permanent: false });
   } catch (error) {
     console.error("Error deleting story:", error);
-    res.status(500).json({ success: false, error: error.message });
+    res.status(500).json({ success: false, error: "Internal server error." });
   }
 });
 app.post("/api/n-intel/stories/bulk-delete", authenticate, async (req, res) => {
@@ -2742,7 +2759,7 @@ app.post("/api/n-intel/stories/bulk-delete", authenticate, async (req, res) => {
     return res.status(400).json({ success: false, error: "Invalid deletion criteria. Provide date, category, or story IDs." });
   } catch (error) {
     console.error("Error during bulk deletion:", error);
-    res.status(500).json({ success: false, error: error.message });
+    res.status(500).json({ success: false, error: "Internal server error." });
   }
 });
 app.delete("/api/n-intel/editions/:date", authenticate, async (req, res) => {
@@ -2762,7 +2779,7 @@ app.delete("/api/n-intel/editions/:date", authenticate, async (req, res) => {
     });
   } catch (error) {
     console.error("Error deleting edition by date:", error);
-    res.status(500).json({ success: false, error: error.message });
+    res.status(500).json({ success: false, error: "Internal server error." });
   }
 });
 app.post("/api/n-intel/stories/:id/restore", authenticate, async (req, res) => {
@@ -2778,7 +2795,7 @@ app.post("/api/n-intel/stories/:id/restore", authenticate, async (req, res) => {
     res.json({ success: true, message: "Story restored to public feed." });
   } catch (error) {
     console.error("Error restoring story:", error);
-    res.status(500).json({ success: false, error: error.message });
+    res.status(500).json({ success: false, error: "Internal server error." });
   }
 });
 app.delete("/api/n-intel/trash/empty", authenticate, async (req, res) => {
@@ -2795,7 +2812,7 @@ app.delete("/api/n-intel/trash/empty", authenticate, async (req, res) => {
     });
   } catch (error) {
     console.error("Error emptying trash:", error);
-    res.status(500).json({ success: false, error: error.message });
+    res.status(500).json({ success: false, error: "Internal server error." });
   }
 });
 app.get("/api/n-intel/audit", authenticate, async (req, res) => {
@@ -2807,7 +2824,7 @@ app.get("/api/n-intel/audit", authenticate, async (req, res) => {
     res.json({ success: true, logs });
   } catch (error) {
     console.error("Error fetching audit logs:", error);
-    res.status(500).json({ success: false, error: error.message });
+    res.status(500).json({ success: false, error: "Internal server error." });
   }
 });
 app.get("/api/pyq", async (req, res) => {
@@ -2816,7 +2833,7 @@ app.get("/api/pyq", async (req, res) => {
     res.json({ success: true, sessions });
   } catch (err) {
     console.error("Error retrieving PYQ sessions:", err);
-    res.status(500).json({ success: false, error: err.message || "Failed to load PYQ papers" });
+    res.status(500).json({ success: false, error: "Failed to load PYQ papers." });
   }
 });
 app.post("/api/pyq/link", authenticate, async (req, res) => {
@@ -2967,7 +2984,7 @@ app.post("/api/notes/sync", authenticate, async (req, res) => {
   }
 });
 app.use((err, req, res, next) => {
-  console.error("%s %s %s: %s", "[SERVER ERROR]", req.method, req.url, err.message || err);
+  console.error("%s %s %s: %s", "[SERVER ERROR]", req.method, req.path, err.message || err);
   if (res.headersSent) {
     return next(err);
   }
