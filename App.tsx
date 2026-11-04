@@ -1,5 +1,6 @@
 import { useState, useEffect, useLayoutEffect, useRef, Suspense, lazy } from 'react';
 import { BrowserRouter as Router, Routes, Route, useLocation, useNavigationType } from 'react-router-dom';
+import { motion, AnimatePresence, MotionConfig } from 'motion/react';
 import { ChevronUp } from 'lucide-react';
 import Header from './Header';
 import Footer from './Footer';
@@ -54,6 +55,38 @@ function ScrollToTop() {
   return null;
 }
 
+// Animated route wrapper for smooth page transitions
+function AnimatedRoutes() {
+  const location = useLocation();
+  
+  return (
+    <motion.div
+      key={location.pathname}
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ duration: 0.16, ease: "easeOut" }}
+      className="print:opacity-100 print:transform-none print:overflow-visible print:block print:h-auto"
+    >
+      <Routes location={location}>
+        <Route path="/" element={<Home />} />
+        <Route path="/about" element={<About />} />
+        <Route path="/notes" element={<Notes />} />
+        <Route path="/gallery" element={<Gallery />} />
+        <Route path="/contact" element={<Contact />} />
+        <Route path="/n-intel" element={<NIntel />} />
+        <Route path="/n-intel/edition/:date" element={<NIntel />} />
+        <Route path="/n-intel/story/:id" element={<NIntelStoryDetail />} />
+        <Route path="/n-intel/archive" element={<NIntelArchive />} />
+        <Route path="/n-intel/admin" element={<NIntelAdmin />} />
+        <Route path="/articles" element={<Articles />} />
+        <Route path="/articles/:id" element={<ArticleDetail />} />
+        {/* Fallback for other routes */}
+        <Route path="*" element={<NotFound />} />
+      </Routes>
+    </motion.div>
+  );
+}
+
 function AppContent() {
   const location = useLocation();
   const isHome = location.pathname === '/';
@@ -99,23 +132,7 @@ function AppContent() {
       
       <main className={`flex-grow ${!isHome ? 'pt-20' : ''} print:pt-0 print:m-0 print:flex-none`}>
         <Suspense fallback={<PageLoader />}>
-          <div className="print:opacity-100 print:transform-none print:overflow-visible print:block print:h-auto">
-            <Routes>
-              <Route path="/" element={<Home />} />
-              <Route path="/about" element={<About />} />
-              <Route path="/notes" element={<Notes />} />
-              <Route path="/gallery" element={<Gallery />} />
-              <Route path="/contact" element={<Contact />} />
-              <Route path="/n-intel" element={<NIntel />} />
-              <Route path="/n-intel/edition/:date" element={<NIntel />} />
-              <Route path="/n-intel/story/:id" element={<NIntelStoryDetail />} />
-              <Route path="/n-intel/archive" element={<NIntelArchive />} />
-              <Route path="/n-intel/admin" element={<NIntelAdmin />} />
-              <Route path="/articles" element={<Articles />} />
-              <Route path="/articles/:id" element={<ArticleDetail />} />
-              <Route path="*" element={<NotFound />} />
-            </Routes>
-          </div>
+          <AnimatedRoutes />
         </Suspense>
       </main>
 
@@ -124,16 +141,23 @@ function AppContent() {
       </div>
 
       {/* Scroll to Top */}
-      {showScrollTop && (
+      <AnimatePresence>
+        {showScrollTop && (
           <div className="print:hidden">
-            <button
+            <motion.button
+              initial={{ opacity: 0, scale: 0.5, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.5, y: 20 }}
+              whileHover={{ scale: 1.1 }}
+              whileTap={{ scale: 0.9 }}
               onClick={scrollToTop}
-              className="fixed bottom-8 right-8 w-14 h-14 bg-[#1B4332] text-white rounded-2xl flex items-center justify-center shadow-[0_8px_32px_rgba(27,67,50,0.3)] hover:bg-[#2D6A4F] hover:scale-110 active:scale-90 transition-[transform,background-color] duration-150 z-50"
+              className="fixed bottom-8 right-8 w-14 h-14 bg-[#1B4332] text-white rounded-2xl flex items-center justify-center shadow-[0_8px_32px_rgba(27,67,50,0.3)] hover:bg-[#2D6A4F] transition-colors z-50 backdrop-blur-sm"
             >
               <ChevronUp size={24} />
-            </button>
+            </motion.button>
           </div>
         )}
+      </AnimatePresence>
     </div>
   );
 }
@@ -141,8 +165,10 @@ function AppContent() {
 export default function App() {
   return (
     <Router>
-      <ScrollToTop />
-      <AppContent />
+      <MotionConfig reducedMotion="user">
+        <ScrollToTop />
+        <AppContent />
+      </MotionConfig>
     </Router>
   );
 }

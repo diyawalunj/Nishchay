@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
 
 type ToastType = 'success' | 'error' | 'info';
 
@@ -32,9 +33,11 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
     <ToastContext.Provider value={{ showToast }}>
       {children}
       <div className="fixed bottom-6 right-6 z-[200] flex flex-col gap-3 max-w-sm print:hidden">
-        {toasts.map(toast => (
-          <ToastItem key={toast.id} toast={toast} onDismiss={removeToast} />
-        ))}
+        <AnimatePresence>
+          {toasts.map(toast => (
+            <ToastItem key={toast.id} toast={toast} onDismiss={removeToast} />
+          ))}
+        </AnimatePresence>
       </div>
     </ToastContext.Provider>
   );
@@ -59,13 +62,16 @@ function ToastItem({ toast, onDismiss }: { key?: React.Key; toast: Toast; onDism
   };
 
   return (
-    <div
+    <motion.div
+      initial={{ opacity: 0, y: 20, scale: 0.95 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      exit={{ opacity: 0, x: 60, scale: 0.95 }}
       className={`px-5 py-4 rounded-2xl border shadow-lg flex items-start gap-3 cursor-pointer ${styles[toast.type]}`}
       onClick={() => onDismiss(toast.id)}
     >
       <span className="text-sm font-black mt-0.5">{icons[toast.type]}</span>
       <p className="text-sm font-bold leading-snug">{toast.message}</p>
-    </div>
+    </motion.div>
   );
 }
 

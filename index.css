@@ -1,3 +1,4 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=Anton&display=swap');
 @import "tailwindcss";
 
 @theme {
@@ -111,6 +112,10 @@
   }
 }
 
+.animate-text-glow {
+  animation: text-glow 3s ease-in-out infinite;
+}
+
 /* Shimmer animation for loading states & decorative elements */
 @keyframes shimmer {
   0% { background-position: -200% 0; }
@@ -128,7 +133,86 @@
   animation: shimmer 2.5s ease-in-out infinite;
 }
 
+.animate-shimmer-light {
+  background: linear-gradient(
+    90deg,
+    rgba(27,67,50,0) 0%,
+    rgba(27,67,50,0.05) 50%,
+    rgba(27,67,50,0) 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 2.5s ease-in-out infinite;
+}
+
+@keyframes shimmer-text {
+  0% { background-position: 100% 0; }
+  100% { background-position: -100% 0; }
+}
+
+.shimmer-text {
+  color: white;
+}
+
+/* Gradient border glow on hover */
+.gradient-border {
+  position: relative;
+}
+
+.gradient-border::before {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  background: linear-gradient(135deg, #1B4332, #2D6A4F, #40916C, #2D6A4F, #1B4332);
+  background-size: 300% 300%;
+  z-index: -1;
+  opacity: 0;
+  transition: opacity 0.5s ease;
+  animation: gradient-rotate 4s ease infinite;
+}
+
+.gradient-border:hover::before {
+  opacity: 1;
+}
+
+@keyframes gradient-rotate {
+  0%, 100% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+}
+
 /* Grain texture overlay for dark sections - REMOVED */
+
+/* Pulse for notification badges / live indicators */
+@keyframes pulse-ring {
+  0% { transform: scale(0.8); opacity: 1; }
+  100% { transform: scale(2.2); opacity: 0; }
+}
+
+.animate-pulse-ring::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: inherit;
+  animation: pulse-ring 1.5s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
+}
+
+.nav-link-hover {
+  @apply hover:bg-gray-100/50 transition-all duration-300;
+}
+
+/* Page transition */
+.page-enter {
+  opacity: 0;
+  transform: translateY(12px);
+}
+
+.page-enter-active {
+  opacity: 1;
+  transform: translateY(0);
+  transition: opacity 0.3s ease, transform 0.3s ease;
+}
+
 /* ── Custom Scrollbar (minimal, elegant) ── */
 
 ::-webkit-scrollbar {
