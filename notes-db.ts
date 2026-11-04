@@ -26,7 +26,9 @@ export interface SubjectNote {
 
 const NOTES_TAB = 'subject_notes';
 const NOTES_HEADERS = ['id', 'subjectId', 'subjectTitle', 'title', 'url', 'json', 'uploadedAt'];
-const USE_FIRESTORE = process.env.USE_FIRESTORE_CONTENT !== 'false';
+// Vercel's filesystem is ephemeral. Always use Firestore there so deployed
+// notes cannot silently fall back to temporary storage.
+const USE_FIRESTORE = Boolean(process.env.VERCEL) || process.env.USE_FIRESTORE_CONTENT !== 'false';
 
 export async function getAllNotes(): Promise<SubjectNote[]> {
   const notes = USE_FIRESTORE

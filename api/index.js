@@ -546,7 +546,7 @@ async function writeContentCollection(name, records, deletedIds = []) {
 
 // n-intel-db.ts
 var IS_VERCEL = Boolean(process.env.VERCEL);
-var USE_FIRESTORE = process.env.USE_FIRESTORE_CONTENT !== "false";
+var USE_FIRESTORE = Boolean(process.env.VERCEL) || process.env.USE_FIRESTORE_CONTENT !== "false";
 var DATA_DIR = IS_VERCEL ? path.join(os.tmpdir(), "nishchay_data") : path.join(process.cwd(), "data");
 var SEED_DATA_DIR = path.join(process.cwd(), "data");
 var STORIES_FILE = path.join(DATA_DIR, "n-intel-stories.json");
@@ -1052,7 +1052,7 @@ import fs2 from "fs";
 import path2 from "path";
 import os2 from "os";
 var IS_VERCEL2 = Boolean(process.env.VERCEL);
-var USE_FIRESTORE2 = process.env.USE_FIRESTORE_CONTENT !== "false";
+var USE_FIRESTORE2 = Boolean(process.env.VERCEL) || process.env.USE_FIRESTORE_CONTENT !== "false";
 var DATA_DIR2 = IS_VERCEL2 ? path2.join(os2.tmpdir(), "nishchay_data") : path2.join(process.cwd(), "data");
 var SEED_DATA_DIR2 = path2.join(process.cwd(), "data");
 var ARTICLES_FILE = path2.join(DATA_DIR2, "articles.json");
@@ -1489,7 +1489,7 @@ async function deleteRecord(tabName, headers, id) {
 // pyq-db.ts
 var PYQ_TAB = "pyq_sessions";
 var PYQ_HEADERS = ["id", "exam", "session", "year", "title", "json", "updatedAt"];
-var USE_FIRESTORE3 = process.env.USE_FIRESTORE_CONTENT !== "false";
+var USE_FIRESTORE3 = Boolean(process.env.VERCEL) || process.env.USE_FIRESTORE_CONTENT !== "false";
 var BLOCKED_RECORD_KEYS = /* @__PURE__ */ new Set(["__proto__", "prototype", "constructor"]);
 function isSafeSessionId(value) {
   return typeof value === "string" && value.length > 0 && value.length <= 160 && !BLOCKED_RECORD_KEYS.has(value);
@@ -1643,7 +1643,7 @@ async function syncPyqSessions(incomingSessions) {
 // notes-db.ts
 var NOTES_TAB = "subject_notes";
 var NOTES_HEADERS = ["id", "subjectId", "subjectTitle", "title", "url", "json", "uploadedAt"];
-var USE_FIRESTORE4 = process.env.USE_FIRESTORE_CONTENT !== "false";
+var USE_FIRESTORE4 = Boolean(process.env.VERCEL) || process.env.USE_FIRESTORE_CONTENT !== "false";
 async function getAllNotes() {
   const notes = USE_FIRESTORE4 ? await readContentCollection(NOTES_TAB) : await fetchCollection(NOTES_TAB, NOTES_HEADERS);
   return [...notes].sort(

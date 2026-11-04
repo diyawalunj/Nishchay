@@ -10,7 +10,9 @@ import { parseDailyNewsPost } from './n-intel-parser';
 import { readContentCollection, writeContentCollection } from './firestore-content';
 
 const IS_VERCEL = Boolean(process.env.VERCEL);
-const USE_FIRESTORE = process.env.USE_FIRESTORE_CONTENT !== 'false';
+// Vercel's filesystem is ephemeral. Always use Firestore there so a deployment
+// setting cannot accidentally send published content back to /tmp storage.
+const USE_FIRESTORE = Boolean(process.env.VERCEL) || process.env.USE_FIRESTORE_CONTENT !== 'false';
 const DATA_DIR = IS_VERCEL ? path.join(os.tmpdir(), 'nishchay_data') : path.join(process.cwd(), 'data');
 const SEED_DATA_DIR = path.join(process.cwd(), 'data');
 const STORIES_FILE = path.join(DATA_DIR, 'n-intel-stories.json');

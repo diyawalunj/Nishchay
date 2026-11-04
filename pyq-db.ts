@@ -42,7 +42,9 @@ export interface PyqSessionData {
 
 const PYQ_TAB = 'pyq_sessions';
 const PYQ_HEADERS = ['id', 'exam', 'session', 'year', 'title', 'json', 'updatedAt'];
-const USE_FIRESTORE = process.env.USE_FIRESTORE_CONTENT !== 'false';
+// Vercel's filesystem is ephemeral. Always use Firestore there so PYQ card
+// links cannot be lost after a function restart or deployment.
+const USE_FIRESTORE = Boolean(process.env.VERCEL) || process.env.USE_FIRESTORE_CONTENT !== 'false';
 const BLOCKED_RECORD_KEYS = new Set(['__proto__', 'prototype', 'constructor']);
 
 function isSafeSessionId(value: unknown): value is string {
