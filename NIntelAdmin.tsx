@@ -823,7 +823,7 @@ export default function NIntelAdmin() {
                   <div>
                     <h2 className="text-lg font-black text-gray-900 tracking-tight">Direct News Bulletin Publisher</h2>
                     <p className="text-xs text-gray-500 font-medium">
-                      Paste the daily WhatsApp community broadcast text below. All stories publish immediately.
+                      Paste the complete Defence Aspirants Daily edition. Each numbered story publishes separately.
                     </p>
                   </div>
 
@@ -860,15 +860,18 @@ export default function NIntelAdmin() {
                 {/* Paste Area */}
                 <div className="mb-6">
                   <label className="block text-xs font-black uppercase tracking-wider text-gray-700 mb-2">
-                    Paste Raw Broadcast Text:
+                    Paste Daily Edition Text:
                   </label>
                   <textarea
-                    rows={16}
+                    rows={20}
                     value={rawText}
                     onChange={(e) => setRawText(e.target.value)}
-                    placeholder={`*TODAYS TOP NEWS*\n------------------------------------\n1. President Smt Droupadi Murmu...\n\n*DEFENCE News*\n------------------------------------\n1. Defence Minister Rajnath Singh...`}
+                    placeholder={`THE DEFENCE ASPIRANTS DAILY\n10 NOVEMBER 2026\n\n========================================\n1. DEFENCE AND MILITARY AFFAIRS\n========================================\n\n1.1 INDIA–OMAN NAVAL EXERCISE: NASEEM AL BAHR\n\nWHY IN NEWS:\nAdd the news summary here.\n\nABOUT THE EXERCISE:\n• Add key facts here.\n\nSOURCE:\nMinistry of Defence / PIB\nhttps://www.pib.gov.in/...\n\n========================================\n2. INTERNATIONAL RELATIONS\n========================================\n\n2.1 ADD NEXT STORY TITLE\n...`}
                     className="w-full p-4 bg-gray-50 border border-gray-200 rounded-2xl text-xs sm:text-sm font-mono text-gray-800 placeholder-gray-400 focus:outline-none focus:border-[#1B4332] focus:bg-white transition-all leading-relaxed"
                   />
+                  <p className="mt-2 text-[11px] text-gray-500">
+                    Use section headings like <span className="font-mono">1. DEFENCE AND MILITARY AFFAIRS</span> and story headings like <span className="font-mono">1.1 Story title</span>. Supporting numbered facts remain inside that story; the Quick Revision section is not published as a separate story.
+                  </p>
                 </div>
 
                 {/* Live Parser Dynamic Feedback */}

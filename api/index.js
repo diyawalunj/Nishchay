@@ -326,6 +326,95 @@ function detectHeader(line) {
   }
   return { isHeader: false, isExcluded: false, category: null };
 }
+function resolveEditionSectionCategory(section) {
+  const normalized = section.toUpperCase();
+  if (/HISTORY|HERITAGE|CULTURE/.test(normalized)) return "National Affairs";
+  return resolveCategory(section);
+}
+function parseStructuredEdition(rawText, date, hash) {
+  const categories = [];
+  const stories = [];
+  const batchId = `batch-${date.replace(/-/g, "")}-${hash.slice(0, 8)}`;
+  const lines = rawText.split(/\r?\n/);
+  let currentCategory = null;
+  let currentHeadline = "";
+  let currentStoryNumber = 0;
+  let storyLines = [];
+  const saveStory = () => {
+    if (!currentHeadline || storyLines.length === 0) return;
+    const content = storyLines.join("\n").trim();
+    if (!content) return;
+    const category = currentCategory || classifyStory(`${currentHeadline}
+${content}`);
+    if (!categories.includes(category)) categories.push(category);
+    const { sourceName, sourceUrl } = extractSource(content);
+    const isDefence = category === "Defence News" || checkIsDefence(category, `${currentHeadline}
+${content}`);
+    const categoryKey = category.toLowerCase().replace(/[^a-z0-9]+/g, "-");
+    const now = (/* @__PURE__ */ new Date()).toISOString();
+    stories.push({
+      id: `nintel-${date.replace(/-/g, "")}-${categoryKey.slice(0, 6)}-${String(stories.length + 1).padStart(2, "0")}`,
+      batchId,
+      headline: currentHeadline,
+      content,
+      category,
+      categoryKey,
+      date,
+      itemNumber: currentStoryNumber || stories.length + 1,
+      sourceName,
+      sourceUrl,
+      tags: generateTags(category, `${currentHeadline}
+${content}`, sourceName, isDefence),
+      isDefence,
+      isDeleted: false,
+      createdAt: now,
+      updatedAt: now
+    });
+  };
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    if (!line) {
+      if (currentHeadline && storyLines.length > 0 && storyLines[storyLines.length - 1] !== "") {
+        storyLines.push("");
+      }
+      continue;
+    }
+    if (/^QUICK REVISION\b/i.test(line) || /^END OF (?:SAMPLE )?EDITION\b/i.test(line)) {
+      saveStory();
+      currentHeadline = "";
+      storyLines = [];
+      break;
+    }
+    if (/^[-=~_]{3,}$/.test(line)) continue;
+    const sectionMatch = line.match(/^\d+\.\s+(.+)$/);
+    if (sectionMatch && sectionMatch[1] === sectionMatch[1].toLocaleUpperCase()) {
+      saveStory();
+      currentHeadline = "";
+      storyLines = [];
+      currentCategory = resolveEditionSectionCategory(sectionMatch[1]);
+      continue;
+    }
+    const storyMatch = line.match(/^(\d+)\.(\d+)\s+(.+)$/);
+    if (storyMatch) {
+      saveStory();
+      currentHeadline = storyMatch[3].trim();
+      currentStoryNumber = stories.length + 1;
+      storyLines = [];
+      continue;
+    }
+    if (currentHeadline) storyLines.push(line);
+  }
+  saveStory();
+  return {
+    success: stories.length > 0,
+    date,
+    hash,
+    stories,
+    categories,
+    totalStories: stories.length,
+    ...stories.length === 0 ? { error: "Could not find any numbered stories. Each story title should start with a number like 1.1." } : {}
+  };
+}
 function parseDailyNewsPost(rawText, pubDate) {
   const dateStr = pubDate && /^\d{4}-\d{2}-\d{2}$/.test(pubDate) ? pubDate : getLocalTodayDate();
   if (!rawText || !rawText.trim()) {
@@ -341,6 +430,9 @@ function parseDailyNewsPost(rawText, pubDate) {
   }
   const normalizedForHash = rawText.replace(/\s+/g, " ").trim().toLowerCase();
   const hash = computeTextHash(normalizedForHash);
+  if (/^\s*THE DEFENCE ASPIRANTS DAILY\b/im.test(rawText) && /^\s*\d+\.\d+\s+\S/m.test(rawText)) {
+    return parseStructuredEdition(rawText, dateStr, hash);
+  }
   const lines = rawText.split(/\r?\n/);
   const categories = [];
   const stories = [];
