@@ -32,7 +32,7 @@ export default function Header() {
     try {
       await signInWithGoogle();
     } catch (error: any) {
-      console.error("Sign in error:", error);
+      if (import.meta.env.DEV) console.error("Sign in failed:", error?.message || 'unknown error');
       setAuthError(error.message || "Failed to sign in. Please try again.");
     } finally {
       setIsSigningIn(false);

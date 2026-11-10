@@ -23,7 +23,11 @@ class ErrorBoundary extends Component<Props, State> {
   }
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    console.error('ErrorBoundary caught:', error, errorInfo);
+    if (import.meta.env.DEV) {
+      console.error('ErrorBoundary caught:', error.message, errorInfo.componentStack);
+    } else {
+      console.error('An unexpected client error occurred.');
+    }
   }
 
   render() {
@@ -41,7 +45,7 @@ class ErrorBoundary extends Component<Props, State> {
             <h2 className="text-3xl font-black text-[#1A1A1A] tracking-tight mb-4">Something went wrong</h2>
             <p className="text-gray-500 font-medium mb-6 text-sm">An unexpected error occurred. Please try refreshing the page.</p>
 
-            {this.state.error && (
+            {import.meta.env.DEV && this.state.error && (
               <div className="mb-6 p-3 bg-red-50/70 border border-red-100 rounded-xl text-left">
                 <p className="text-xs font-mono text-red-700 break-all leading-relaxed">
                   {this.state.error.message || String(this.state.error)}

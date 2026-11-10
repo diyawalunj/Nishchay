@@ -1876,14 +1876,26 @@ var ADMIN_EMAILS = [
 dotenv.config();
 var app = express();
 var PORT = 3e3;
+var IS_VERCEL4 = Boolean(process.env.VERCEL);
+var IS_PRODUCTION = process.env.NODE_ENV === "production" || IS_VERCEL4;
+var USE_FIRESTORE_CONTENT = IS_VERCEL4 || process.env.USE_FIRESTORE_CONTENT !== "false";
 function validateEnvironment() {
-  const required = ["GOOGLE_SERVICE_ACCOUNT_EMAIL", "GOOGLE_PRIVATE_KEY", "VITE_FIREBASE_PROJECT_ID"];
-  const missing = required.filter((name) => !process.env[name]?.trim());
+  const missing = [];
+  const hasGoogleCredentials = Boolean(process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL?.trim() && process.env.GOOGLE_PRIVATE_KEY?.trim());
+  const hasFirebaseCredentials = Boolean(process.env.FIREBASE_SERVICE_ACCOUNT_EMAIL?.trim() && process.env.FIREBASE_PRIVATE_KEY?.trim());
+  if (!process.env.VITE_FIREBASE_PROJECT_ID?.trim()) missing.push("VITE_FIREBASE_PROJECT_ID");
+  if (!hasGoogleCredentials) missing.push("GOOGLE_SERVICE_ACCOUNT_EMAIL and GOOGLE_PRIVATE_KEY");
+  if (!process.env.GOOGLE_SHEET_ID_CONTACT?.trim()) missing.push("GOOGLE_SHEET_ID_CONTACT");
+  if (USE_FIRESTORE_CONTENT && !hasFirebaseCredentials && !hasGoogleCredentials) {
+    missing.push("FIREBASE_SERVICE_ACCOUNT_EMAIL and FIREBASE_PRIVATE_KEY (or a Firestore-enabled Google service account)");
+  }
   if (missing.length) {
-    console.error(`[CONFIG ERROR] Missing required environment variables: ${missing.join(", ")}`);
-    if (process.env.NODE_ENV === "production" && !process.env.VERCEL) {
-      process.exit(1);
+    const message = `[CONFIG ERROR] Missing required environment configuration: ${missing.join("; ")}`;
+    if (IS_PRODUCTION) {
+      console.error(message);
+      throw new Error("Required server configuration is missing.");
     }
+    console.warn(message);
   }
 }
 validateEnvironment();
@@ -1930,7 +1942,7 @@ app.use(
         fontSrc: ["'self'", "https://fonts.gstatic.com", "data:"],
         objectSrc: ["'none'"],
         frameSrc: ["'self'", "https://*.firebaseapp.com", "https://*.google.com", "https://accounts.google.com"],
-        upgradeInsecureRequests: process.env.NODE_ENV === "production" ? [] : null
+        upgradeInsecureRequests: IS_PRODUCTION ? [] : null
       }
     },
     // Essential for Firebase signInWithPopup so the authentication popup can communicate with the opener window
@@ -1943,19 +1955,25 @@ app.use(
 var normalizeOrigin = (value) => {
   if (!value) return void 0;
   try {
-    return new URL(value).origin;
+    const url = new URL(value);
+    if (!["http:", "https:"].includes(url.protocol)) return void 0;
+    if (IS_PRODUCTION && url.protocol !== "https:") return void 0;
+    return url.origin;
   } catch {
     return void 0;
   }
 };
-var ALLOWED_ORIGINS = [
+var DEVELOPMENT_ORIGINS = IS_PRODUCTION ? [] : [
   "http://localhost:3000",
   "http://localhost:5173",
   "http://127.0.0.1:3000",
-  "http://127.0.0.1:5173",
+  "http://127.0.0.1:5173"
+];
+var ALLOWED_ORIGINS = [
   "https://nishchaydefence.in",
   "https://www.nishchaydefence.in",
   "https://nishchay-gules.vercel.app",
+  ...DEVELOPMENT_ORIGINS,
   normalizeOrigin(process.env.CLIENT_URL),
   normalizeOrigin(process.env.FRONTEND_URL),
   normalizeOrigin(process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : void 0)
@@ -1967,13 +1985,21 @@ app.use(
       if (ALLOWED_ORIGINS.includes(origin)) {
         return callback(null, true);
       }
-      return callback(new Error(`CORS blocked request from origin: ${origin}`));
+      return callback(Object.assign(new Error("CORS origin is not allowed."), { status: 403 }));
     },
     credentials: false,
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization", "X-Original-Name"]
   })
 );
+var globalApiLimiter = rateLimit({
+  windowMs: 10 * 60 * 1e3,
+  max: 300,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, error: "Too many requests from this network. Please slow down." }
+});
+app.use("/api", globalApiLimiter);
 app.use(express.raw({ type: "application/pdf", limit: "10mb" }));
 app.use(express.json({ limit: "8mb" }));
 app.use(express.urlencoded({ extended: true, limit: "1mb" }));
@@ -1992,17 +2018,6 @@ app.use((err, req, res, next) => {
   }
   next(err);
 });
-var globalApiLimiter = rateLimit({
-  windowMs: 10 * 60 * 1e3,
-  // 10 minutes
-  max: 300,
-  // 300 requests per 10 minutes per IP
-  standardHeaders: true,
-  legacyHeaders: false,
-  validate: false,
-  message: { success: false, error: "Too many requests from this network. Please slow down." }
-});
-app.use("/api", globalApiLimiter);
 var contactLimiter = rateLimit({
   windowMs: 60 * 60 * 1e3,
   // 1 hour
@@ -2010,7 +2025,6 @@ var contactLimiter = rateLimit({
   // 5 submissions per hour per IP
   standardHeaders: true,
   legacyHeaders: false,
-  validate: false,
   message: { success: false, error: "Submission limit reached. Please wait before submitting another message." }
 });
 var downloadLimiter = rateLimit({
@@ -2020,7 +2034,6 @@ var downloadLimiter = rateLimit({
   // 50 increments per minute per IP
   standardHeaders: true,
   legacyHeaders: false,
-  validate: false,
   message: { success: false, error: "Download limit exceeded." }
 });
 var fileReadLimiter = rateLimit({
@@ -2028,7 +2041,6 @@ var fileReadLimiter = rateLimit({
   max: 300,
   standardHeaders: true,
   legacyHeaders: false,
-  validate: false,
   message: { success: false, error: "Too many file requests. Please slow down." }
 });
 var publishLimiter = rateLimit({
@@ -2037,10 +2049,8 @@ var publishLimiter = rateLimit({
   max: 30,
   standardHeaders: true,
   legacyHeaders: false,
-  validate: false,
   message: { success: false, error: "Publishing rate limit exceeded." }
 });
-var IS_VERCEL4 = Boolean(process.env.VERCEL);
 var UPLOADS_DIR = IS_VERCEL4 ? path4.join(os4.tmpdir(), "nishchay_uploads") : path4.join(process.cwd(), "public", "uploads");
 try {
   if (!fs4.existsSync(UPLOADS_DIR)) {
@@ -2115,9 +2125,8 @@ function sanitizeSheetCell(val) {
 }
 var authenticate = async (req, res, next) => {
   const authHeader = req.headers.authorization;
-  const clientIp = req.ip || req.socket.remoteAddress || "unknown";
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
-    console.warn(`[SECURITY WARN] Missing or malformed Authorization header from IP: ${clientIp} for ${req.method} ${req.path}`);
+    if (!IS_PRODUCTION) console.warn(`[SECURITY WARN] Missing or malformed Authorization header for ${req.method} ${req.path}`);
     return res.status(401).json({
       success: false,
       error: "Unauthorized: Authentication required with a valid Bearer token."
@@ -2142,10 +2151,10 @@ var authenticate = async (req, res, next) => {
     const hasAdminClaim = decodedToken.admin === true;
     const isEmailAdmin = decodedToken.email_verified === true && ADMIN_EMAILS.some((e) => e.toLowerCase() === email);
     if (!hasAdminClaim && !isEmailAdmin) {
-      console.warn(`[SECURITY WARN] Forbidden admin access attempt by ${email} from IP: ${clientIp}`);
+      if (!IS_PRODUCTION) console.warn(`[SECURITY WARN] Forbidden admin access attempt for ${req.method} ${req.path}`);
       return res.status(403).json({
         success: false,
-        error: `Access denied: Account ${email} is not authorized for administrative operations.`
+        error: "Access denied: This account is not authorized for administrative operations."
       });
     }
     req.user = {
@@ -2155,7 +2164,11 @@ var authenticate = async (req, res, next) => {
     };
     next();
   } catch (error) {
-    console.error(`[SECURITY ERROR] Token verification failed from IP: ${clientIp}:`, error.code || error.message);
+    if (IS_PRODUCTION) {
+      console.warn("[SECURITY WARN] Firebase token verification failed.");
+    } else {
+      console.error("[SECURITY ERROR] Token verification failed:", error.code || error.message);
+    }
     return res.status(401).json({
       success: false,
       error: "Unauthorized: Authentication token is invalid, expired, or revoked."
@@ -2274,15 +2287,7 @@ async function saveToGoogleSheetNow(data) {
   }
 }
 app.get("/api/health", (req, res) => {
-  res.json({
-    status: "ok",
-    uptime: Math.floor(process.uptime()),
-    timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-    services: {
-      sheetsConfigured: !!(process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL && process.env.GOOGLE_PRIVATE_KEY),
-      firebaseConfigured: !!admin2.apps.length
-    }
-  });
+  res.json({ status: "ok" });
 });
 app.post("/api/contact", contactLimiter, async (req, res) => {
   try {
@@ -3000,15 +3005,22 @@ app.post("/api/notes/sync", authenticate, async (req, res) => {
     res.status(500).json({ success: false, error: "Failed to sync notes." });
   }
 });
+app.use("/api", (req, res) => {
+  res.status(404).json({ success: false, error: "API endpoint not found." });
+});
 app.use((err, req, res, next) => {
-  console.error("%s %s %s: %s", "[SERVER ERROR]", req.method, req.path, err.message || err);
+  if (IS_PRODUCTION) {
+    console.error("[SERVER ERROR] %s %s (status %s)", req.method, req.path, err.status || 500);
+  } else {
+    console.error("%s %s %s: %s", "[SERVER ERROR]", req.method, req.path, err.message || err);
+  }
   if (res.headersSent) {
     return next(err);
   }
   const status = typeof err.status === "number" && err.status >= 400 && err.status < 600 ? err.status : 500;
   res.status(status).json({
     success: false,
-    error: process.env.NODE_ENV === "production" ? "An unexpected internal error occurred. Please try again later." : err.message || "Internal server error"
+    error: IS_PRODUCTION ? "An unexpected internal error occurred. Please try again later." : err.message || "Internal server error"
   });
 });
 async function setupServer() {

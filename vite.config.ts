@@ -5,9 +5,24 @@ import {defineConfig, loadEnv} from 'vite';
 
 export default defineConfig(({mode}) => {
   const env = loadEnv(mode, '.', '');
+  if (mode === 'production') {
+    const requiredClientEnv = [
+      'VITE_FIREBASE_API_KEY',
+      'VITE_FIREBASE_AUTH_DOMAIN',
+      'VITE_FIREBASE_PROJECT_ID',
+      'VITE_FIREBASE_STORAGE_BUCKET',
+      'VITE_FIREBASE_MESSAGING_SENDER_ID',
+      'VITE_FIREBASE_APP_ID',
+    ];
+    const missing = requiredClientEnv.filter((key) => !env[key]?.trim());
+    if (missing.length) {
+      throw new Error(`Missing required client build configuration: ${missing.join(', ')}`);
+    }
+  }
   return {
     plugins: [react(), tailwindcss()],
     build: {
+      sourcemap: false,
       rollupOptions: {
         output: {
           manualChunks(id) {

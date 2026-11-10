@@ -18,5 +18,6 @@ firebase-applet-config.json
 data/firestore-migration-backup-*.json
 data/pyq_sessions.json
 data/subject_notes.json
+/public/uploads/
 
 

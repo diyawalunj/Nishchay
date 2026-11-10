@@ -27,7 +27,7 @@ export const checkIfAdminAsync = async (user: User | null): Promise<boolean> => 
     const token = await user.getIdTokenResult();
     if (token.claims.admin === true) return true;
   } catch (error) {
-    console.warn('Could not verify admin claim from token, checking email fallback', error);
+    if (import.meta.env.DEV) console.warn('Could not verify admin claim; using local admin fallback.');
   }
   return checkIfAdmin(user);
 };
@@ -45,8 +45,8 @@ export const signInWithGoogle = async () => {
       let userDoc;
       try {
         userDoc = await getDoc(userRef);
-      } catch (error) {
-        console.warn('Could not fetch user doc, might be a new user or rules issue', error);
+      } catch {
+        if (import.meta.env.DEV) console.warn('Could not fetch the signed-in user profile.');
       }
 
       if (!userDoc?.exists()) {
@@ -58,17 +58,17 @@ export const signInWithGoogle = async () => {
             photoURL: user.photoURL,
             role: checkIfAdmin(user) ? 'admin' : 'user'
           }, { merge: true });
-        } catch (error) {
-          console.error('Failed to sync user to Firestore', error);
+        } catch {
+          if (import.meta.env.DEV) console.error('Could not sync the signed-in user profile.');
         }
       }
-    } catch (error) {
-      console.warn('Could not load Firestore to sync signed-in user', error);
+    } catch {
+      if (import.meta.env.DEV) console.warn('Could not load Firestore to sync the signed-in profile.');
     }
 
     return user;
   } catch (error: any) {
-    console.error('Sign-in error details:', error?.code, error?.message, error);
+    if (import.meta.env.DEV) console.error('Sign-in failed with Firebase error code:', error?.code || 'unknown');
 
     if (error?.code === 'auth/popup-closed-by-user' || error?.code === 'auth/cancelled-popup-request') {
       return null;

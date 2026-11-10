@@ -12,5 +12,10 @@ export const firebaseConfig = {
   firestoreDatabaseId: import.meta.env.VITE_FIREBASE_DATABASE_ID
 };
 
-export const isFirebaseConfigured = true;
+export const isFirebaseConfigured = Boolean(
+  firebaseConfig.apiKey &&
+  firebaseConfig.authDomain &&
+  firebaseConfig.projectId &&
+  firebaseConfig.appId
+);
 export const app = initializeApp(firebaseConfig);
